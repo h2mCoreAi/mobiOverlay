@@ -1,8 +1,8 @@
 """Free-form canvas that owns Card widgets: positions them, persists layout
-to config, tracks which cards are hidden so the picker can reopen them, and
-shows the purple grid-snap preview while a card is being dragged.
+to config, tracks which cards are stowed (hidden) so the tray can deploy
+them again, and shows the purple grid-snap preview while a card is dragged.
 """
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QWidget, QFrame
 
 from host import theme
@@ -14,11 +14,16 @@ _COLUMNS = 2
 
 
 class CardContainer(QWidget):
+    visibility_changed = Signal()  # a card was stowed or deployed
+
     def __init__(self, config: Config, parent=None):
         super().__init__(parent)
         self.config = config
         self.cards: dict[str, Card] = {}
         self._registration_order: list[str] = []
+        self._stowed: set[str] = set()  # tracked ourselves — Card.isVisible()
+        # is unreliable before the top-level window itself has been shown
+        # (Qt visibility depends on ancestor visibility too)
 
         self.snap_overlay = QFrame(self)
         self.snap_overlay.setStyleSheet(
@@ -32,7 +37,7 @@ class CardContainer(QWidget):
         card.moved.connect(self._on_card_moved)
         card.resized.connect(self._on_card_resized)
         card.collapsed_changed.connect(self._on_card_collapsed_changed)
-        card.closed.connect(self.hide_card)
+        card.stowed.connect(self.stow_card)
 
         state = self.config.card_state(card_id)
         if card_id not in self._registration_order:
@@ -49,9 +54,13 @@ class CardContainer(QWidget):
             card.set_manual_size(state["width"], state["height"])
 
         card.set_collapsed(state.get("collapsed", False))
-        card.setVisible(state.get("visible", True))
+        initially_visible = state.get("visible", True)
+        card.setVisible(initially_visible)
         card.show()
         self.cards[card_id] = card
+        if not initially_visible:
+            self._stowed.add(card_id)
+        self.visibility_changed.emit()
         return card
 
     def _auto_place(self, card: Card):
@@ -63,18 +72,30 @@ class CardContainer(QWidget):
         card.move(x, y)
         self.config.set_card_state(card.card_id, x=x, y=y)
 
-    def hide_card(self, card_id: str):
+    def stow_card(self, card_id: str):
         if card_id in self.cards:
             self.cards[card_id].setVisible(False)
             self.config.set_card_state(card_id, visible=False)
+            self._stowed.add(card_id)
+            self.visibility_changed.emit()
 
-    def show_card(self, card_id: str):
+    def deploy_card(self, card_id: str):
         if card_id in self.cards:
             self.cards[card_id].setVisible(True)
             self.config.set_card_state(card_id, visible=True)
+            self._stowed.discard(card_id)
+            self.visibility_changed.emit()
 
     def is_visible(self, card_id: str) -> bool:
-        return card_id in self.cards and self.cards[card_id].isVisible()
+        return card_id in self.cards and card_id not in self._stowed
+
+    def stowed_cards(self) -> list[tuple[str, str]]:
+        """(card_id, title) pairs for every currently-stowed card."""
+        return [
+            (card_id, card.header.title_label.text())
+            for card_id, card in self.cards.items()
+            if card_id in self._stowed
+        ]
 
     def _on_card_moved(self, card_id: str, x: int, y: int):
         self.config.set_card_state(card_id, x=x, y=y)

@@ -17,7 +17,7 @@ Each module folder exposes an entry point (e.g. `modules/<name>/module.py`)
 with a single class the host can instantiate. That class must provide:
 
 - `module_id: str` — unique, stable, used as the config namespace key
-- `display_name: str` — shown in the card picker
+- `display_name: str` — shown in the card's header and the stow tray
 - `settings_schema` — declares what config keys this module reads/writes
   (merged into `config.json` under `modules.<module_id>`)
 - `create_card(parent) -> Card` — builds and returns this module's card widget
@@ -33,8 +33,8 @@ or to any other module.
 - Discover and load modules from `modules/` at startup; catch and isolate
   per-module import/init failures (log + show error card state, don't crash)
 - Own the window: always-on-top, drag, resize, opacity
-- Own the card container: free-form positioning, collapse/expand, close/reopen
-  via a card picker, persist layout to `config.json`
+- Own the card container: free-form positioning, collapse/expand,
+  stow/deploy via the tray panel, persist layout to `config.json`
 - Own the shared UEX API client (base URL, bearer token, rate-limit handling)
   and hand it to modules rather than each module managing its own HTTP client
 - Own `config.json` read/write; modules only touch their own namespaced section
@@ -53,8 +53,18 @@ or to any other module.
 ## Card system
 
 A reusable `Card` base widget (not one-off per module): title bar (click to
-collapse/expand), close button, drag-to-reposition, consistent HUD styling.
-Modules subclass or compose this to render their own content in the body.
+collapse/expand), a Stow button, drag-to-reposition, resize handle,
+consistent HUD styling. Modules subclass or compose this to render their
+own content in the body.
+
+Stow/Deploy replaces generic "hide/show" language on purpose — matches
+Star Citizen's own in-game vocabulary (stowing a weapon, stowing cargo)
+rather than desktop-UI conventions. Stowing a card (the header's Stow
+button) hides it without destroying its state; the title bar's TRAY
+button opens a small MobiGlas-style panel listing every stowed card,
+click one to deploy it back onto the board. See `host/card_container.py`
+(`stow_card`/`deploy_card`/`stowed_cards`) and `host/main_window.py`
+(`_TrayPanel`).
 
 ## Packaging
 

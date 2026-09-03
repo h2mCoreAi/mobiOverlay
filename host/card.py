@@ -52,6 +52,7 @@ class _DragHeader(QWidget):
         self.close_btn = QPushButton("✕")
         self.close_btn.setObjectName("cardIconBtn")
         self.close_btn.setFixedSize(18, 18)
+        self.close_btn.setToolTip("Stow")
         self.close_btn.clicked.connect(self.close_clicked.emit)
         layout.addWidget(self.close_btn)
 
@@ -113,7 +114,7 @@ class _ResizeHandle(QWidget):
 
 
 class Card(QFrame):
-    closed = Signal(str)   # card_id
+    stowed = Signal(str)   # card_id — emitted when the header's Stow button is clicked
     moved = Signal(str, int, int)  # card_id, x, y
     resized = Signal(str, int, int)  # card_id, width, height
     collapsed_changed = Signal(str, bool)  # card_id, collapsed
@@ -133,7 +134,7 @@ class Card(QFrame):
 
         self.header = _DragHeader(title, self)
         self.header.collapse_toggled.connect(self.toggle_collapsed)
-        self.header.close_clicked.connect(lambda: self.closed.emit(self.card_id))
+        self.header.close_clicked.connect(lambda: self.stowed.emit(self.card_id))
         outer.addWidget(self.header)
 
         # Body: module content lives here.

@@ -1,6 +1,6 @@
 # Progress
 
-## Status: host + 2 modules working; packaging + CI release pipeline set up
+## Status: host + 2 modules + MIT license + GitHub repo live; Stow/Deploy rebuild awaiting human test
 
 ## Done
 
@@ -103,6 +103,16 @@
   Actually built and ran the packaged exe locally with an external
   `modules/` folder next to it — confirmed fonts, both modules, live data,
   and config persistence all work correctly in the frozen build
+- MIT `LICENSE` added; repo pushed public to
+  github.com/h2mCoreAi/mobiOverlay. No release tag cut yet (deliberately —
+  still heavily testing)
+- Card hide/show renamed to Stow/Deploy end-to-end (code + UI), replacing
+  the generic "+ ADD CARD" dropdown with a themed `_TrayPanel` matching
+  SC's own in-game vocabulary — see DECISIONS.md for the full rationale
+  and the visibility-tracking bug found and fixed along the way. Verified
+  the complete stow → tray → deploy cycle via real UI Automation clicks
+  (not just a static screenshot) — confirmed working end-to-end, entirely
+  on the secondary monitor
 
 ## Next
 

@@ -1,10 +1,10 @@
 """Always-on-top, frameless, draggable, opacity-adjustable overlay window.
-Houses the CardContainer and a card picker for hidden cards.
+Houses the CardContainer and the tray for stowed (hidden) cards.
 """
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QMenu,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider,
     QSizeGrip, QSizePolicy
 )
 
@@ -82,6 +82,80 @@ def _default_launch_position() -> tuple[int, int]:
     return geo.x() + 100, geo.y() + 100
 
 
+class _TrayRow(QWidget):
+    """One stowed card's row in the tray panel — click anywhere to deploy it."""
+
+    def __init__(self, card_id: str, title: str, on_deploy):
+        super().__init__()
+        self._card_id = card_id
+        self._on_deploy = on_deploy
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet(f"""
+            _TrayRow {{ background: transparent; }}
+            _TrayRow:hover {{ background: {theme.ACCENT_CYAN_DIM}; }}
+        """)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+
+        label = QLabel(title)
+        label.setStyleSheet(f'color: {theme.TEXT_PRIMARY}; font-family: "{theme.FONT_MONO}"; font-size: 10px;')
+        layout.addWidget(label)
+        layout.addStretch()
+
+        deploy = QLabel("DEPLOY")
+        deploy.setStyleSheet(f'color: {theme.ACCENT_CYAN}; font-family: "{theme.FONT_MONO}"; font-size: 9px; letter-spacing: 1px;')
+        layout.addWidget(deploy)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._on_deploy(self._card_id)
+
+
+class _TrayPanel(QWidget):
+    """Slide-down panel listing stowed cards, styled like a MobiGlas app
+    drawer rather than a native OS dropdown menu. Closes automatically on
+    an outside click (Qt.Popup)."""
+
+    def __init__(self, main_window: "MainWindow"):
+        super().__init__(main_window, Qt.Popup)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            _TrayPanel {{ background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_CYAN}; }}
+        """)
+        self._win = main_window
+        self.setFixedWidth(210)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QLabel("STOWED MODULES")
+        header.setStyleSheet(f"""
+            color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_DISPLAY}";
+            font-weight: 700; font-size: 10px; letter-spacing: 2px;
+            padding: 9px 12px; border-bottom: 1px solid {theme.BORDER_FLAT};
+        """)
+        layout.addWidget(header)
+
+        stowed = main_window.card_container.stowed_cards()
+        if not stowed:
+            empty = QLabel("NOTHING STOWED")
+            empty.setStyleSheet(f"""
+                color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}";
+                font-size: 10px; padding: 16px 12px;
+            """)
+            layout.addWidget(empty)
+        else:
+            for card_id, title in stowed:
+                layout.addWidget(_TrayRow(card_id, title, self._deploy))
+
+    def _deploy(self, card_id: str):
+        self._win.card_container.deploy_card(card_id)
+        self.close()
+
+
 class _TitleBar(QWidget):
     def __init__(self, main_window: "MainWindow"):
         super().__init__()
@@ -102,14 +176,14 @@ class _TitleBar(QWidget):
         layout.addWidget(wordmark)
         layout.addStretch()
 
-        self.picker_btn = QPushButton("+ ADD CARD")
-        self.picker_btn.setObjectName("cardIconBtn")
-        self.picker_btn.setStyleSheet(f"""
+        self.tray_btn = QPushButton("TRAY")
+        self.tray_btn.setObjectName("cardIconBtn")
+        self.tray_btn.setStyleSheet(f"""
             font-family: "{theme.FONT_MONO}"; font-size: 10px; letter-spacing: 1px;
             padding: 3px 8px; border: 1px solid {theme.BORDER_FLAT};
         """)
-        self.picker_btn.clicked.connect(self._win.show_card_picker)
-        layout.addWidget(self.picker_btn)
+        self.tray_btn.clicked.connect(self._win.show_tray)
+        layout.addWidget(self.tray_btn)
 
         opacity_slider = QSlider(Qt.Horizontal)
         opacity_slider.setRange(40, 100)
@@ -123,6 +197,10 @@ class _TitleBar(QWidget):
         close_btn.setFixedSize(20, 20)
         close_btn.clicked.connect(self._win.close)
         layout.addWidget(close_btn)
+
+    def update_tray_label(self):
+        count = len(self._win.card_container.stowed_cards())
+        self.tray_btn.setText(f"TRAY ({count})" if count else "TRAY")
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -156,6 +234,7 @@ class MainWindow(QWidget):
         self.card_container = CardContainer(config)
         self.card_container.setMinimumSize(420, 320)
         self.card_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.card_container.visibility_changed.connect(self.title_bar.update_tray_label)
         outer.addWidget(self.card_container, 1)
 
         footer = QHBoxLayout()
@@ -178,18 +257,11 @@ class MainWindow(QWidget):
         self.config.data["ui"]["opacity"] = opacity
         self.config.save()
 
-    def show_card_picker(self):
-        menu = QMenu(self)
-        for card_id, card in self.card_container.cards.items():
-            visible = self.card_container.is_visible(card_id)
-            label = ("✓ " if visible else "  ") + card.header.title_label.text()
-            action = menu.addAction(label)
-            action.triggered.connect(
-                lambda checked=False, cid=card_id, v=visible: (
-                    self.card_container.hide_card(cid) if v else self.card_container.show_card(cid)
-                )
-            )
-        menu.exec(self.title_bar.picker_btn.mapToGlobal(QPoint(0, self.title_bar.picker_btn.height())))
+    def show_tray(self):
+        panel = _TrayPanel(self)
+        btn = self.title_bar.tray_btn
+        panel.move(btn.mapToGlobal(QPoint(0, btn.height())))
+        panel.show()
 
     def closeEvent(self, event):
         self.config.data["ui"]["window_geometry"] = {

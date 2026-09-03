@@ -65,6 +65,41 @@ availability. Evidence tiers:
 21. **Contracts Browser**
 22. **Organization Lookup**
 
+## High want, high complexity — not ranked in the tiers above
+
+**Multi-Stop Contract Route Optimizer.** User's own explicit high-priority
+want (2026-09-03), not from the community-interest research above — a
+different category of ask, so kept separate rather than slotted into a
+tier.
+
+- **Problem:** when you've picked up multiple hauling/box-delivery
+  contracts, what order should you visit the pickup/dropoff terminals in
+  to minimize travel?
+- **Why it can't be fully automated:** live mission-board contract data
+  (which contracts you're actually holding, their pickup/dropoff points)
+  is server-side, per-player, and not exposed by UEX or any public API —
+  same root limitation as the original Game.log combat-data problem. The
+  user would have to manually enter their current stops; nothing can read
+  that state for them.
+- **What IS confirmed to work (tested live, 2026-09-03):**
+  `terminals_distances?id_terminal_origin=<id>&id_terminal_destination=<id>`
+  returns a real distance for exactly one terminal pair per call — e.g.
+  ARC-L1 → ArcCorp Mining Area 056 returned `distance: 3`. No bulk/matrix
+  mode — an N-stop run needs up to N×(N-1) calls to build a full distance
+  matrix (trivial against the 120/min rate limit for realistic stop counts
+  of 4-8).
+- **Why it's harder than every other module so far:** every other module
+  in this backlog just displays data UEX already computed
+  (`commodities_routes` literally hands back the best route). This one
+  needs actual routing logic written on our side — build a distance
+  matrix from pairwise calls, then solve "best order to visit all stops"
+  (a small-scale TSP-like problem; brute-force or nearest-neighbor is
+  plenty at 4-8 stops, no need for a real solver). It's also the first
+  module whose primary input is manual user entry rather than an API
+  picker — a different UI shape (an editable stop list, not a dropdown).
+- **Not scoped yet.** Revisit when ready — write
+  `docs/modules/contract-route-optimizer.md` at that point.
+
 ## Sources
 
 - [SC Trade Tools](https://sc-trade.tools/)
@@ -76,8 +111,10 @@ availability. Evidence tiers:
 - [CStone.space](https://dutchdemons.com/tool/cstone-space/)
 - [Schaulers Trade Route Planner](https://schaulers.space/app)
 
-## Next pick
+## Status
 
-Trade Route Optimizer (`commodities_routes`) is the strongest next candidate
-by both this research and the original endpoint-availability ranking — write
-`docs/modules/trade-route-optimizer.md` when it's picked up.
+Price Lookup and Trade Route Optimizer (tiers 1.1 and 1.2) are built — see
+docs/PROGRESS.md. Refinery Yield Calculator (1.3) is the strongest
+next pick from the community-interest ranking. The Multi-Stop Contract
+Route Optimizer above is a separate high-priority want, held for later
+due to its complexity.

@@ -94,3 +94,31 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   LICENSE. No release tag pushed yet — user is still heavily testing;
   `.github/workflows/release.yml` only fires on a `v*.*.*` tag, so nothing
   auto-publishes until that's deliberately pushed.
+
+- **2026-09-03 — Card hide/show renamed to Stow/Deploy, dropdown replaced
+  with a themed tray panel.** User's own instinct: generic desktop "hide/
+  add" language didn't fit, asked how SC itself would handle it. SC already
+  has the exact concept under different words — stowing a weapon/tool,
+  deploying it again — so reused that vocabulary throughout, not just in
+  UI text: `Card.stowed` signal (was `closed`), `CardContainer.stow_card`/
+  `deploy_card` (was `hide_card`/`show_card`), the title-bar button reads
+  "TRAY (n)" (was "+ ADD CARD"), and the plain `QMenu` dropdown became a
+  custom `_TrayPanel` styled like the rest of the HUD (dark panel, cyan
+  border) listing only stowed cards with a DEPLOY action, rather than a
+  native OS menu checklist of everything.
+  Hit and fixed a real bug while building this: `Card.isVisible()` is
+  unreliable for tracking stow state — Qt's `isVisible()` reflects
+  ancestor visibility too, so every card read as "not visible" (and the
+  tray badge showed everything as stowed) until the top-level window
+  itself had been shown. Fixed by having `CardContainer` track stowed
+  card IDs itself (`self._stowed: set[str]`) instead of querying Qt
+  widget visibility.
+  Verified the full stow → tray → deploy cycle end-to-end via UI
+  Automation (`System.Windows.Automation`, `InvokePattern` on real
+  buttons, `BoundingRectangle`-derived clicks for the plain-QWidget tray
+  rows) — not coordinate-guessed clicks, which proved unreliable on this
+  multi-window desktop (a "click" can land on whatever window is actually
+  topmost at that screen position, which `PrintWindow`-based screenshots
+  don't reveal since they capture by window handle, not screen region).
+  Testing stayed entirely on the secondary monitor throughout — never
+  touched the user's active game session on the primary display.
