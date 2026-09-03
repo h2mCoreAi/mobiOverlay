@@ -1,0 +1,9 @@
+Orbitron and Share Tech Mono are licensed under the SIL Open Font License,
+Version 1.1, which permits bundling and redistribution (including in
+open-source software) as embedded/bundled fonts.
+
+Full license text: https://openfontlicense.org
+
+Fonts sourced from Google Fonts:
+- Orbitron: https://fonts.google.com/specimen/Orbitron
+- Share Tech Mono: https://fonts.google.com/specimen/Share+Tech+Mono

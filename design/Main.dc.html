@@ -1,0 +1,219 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg-void:#06090b;
+      --bg-panel:#0d1417;
+      --bg-panel-header:#101a1e;
+      --accent-cyan:#2de1d0;
+      --accent-cyan-glow:rgba(45,225,208,0.45);
+      --accent-cyan-dim:#123632;
+      --accent-amber:#ffb443;
+      --accent-amber-glow:rgba(255,180,67,0.5);
+      --accent-amber-dim:#3a2710;
+      --text-primary:#dff5f2;
+      --text-muted:#7fa3a1;
+      --text-dim:#3f5c5a;
+      --border-cyan:rgba(45,225,208,0.5);
+      --border-amber:rgba(255,180,67,0.6);
+      --border-flat:#1c2b2d;
+    }
+    *{box-sizing:border-box;}
+    body{margin:0;background:#000;}
+    a{color:var(--accent-cyan);}
+    a:hover{color:#7ff0e4;}
+    .mono{font-family:'Share Tech Mono',ui-monospace,monospace;}
+    .disp{font-family:'Orbitron',sans-serif;}
+    .scanlines::before{
+      content:"";
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      background:repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,0.025) 0px,
+        rgba(255,255,255,0.025) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+      mix-blend-mode:overlay;
+      z-index:50;
+    }
+    .glow-cyan{box-shadow:0 0 0 1px var(--border-cyan), 0 0 14px var(--accent-cyan-glow);}
+    .glow-amber{box-shadow:0 0 0 1px var(--border-amber), 0 0 14px var(--accent-amber-glow);}
+  </style>
+</helmet>
+
+<div class="scanlines" style="position:relative;width:960px;height:660px;background:
+    radial-gradient(circle at 15% 0%, #0c1618 0%, var(--bg-void) 55%),
+    var(--bg-void);
+    padding:22px;font-family:'Share Tech Mono',monospace;overflow:hidden;">
+
+  <!-- ===== App title bar ===== -->
+  <div class="glow-cyan" style="display:flex;align-items:center;justify-content:space-between;
+      background:linear-gradient(180deg, #0f1a1d 0%, #0a1214 100%);
+      border:1px solid var(--border-cyan);padding:10px 16px;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="1.6">
+        <path d="M12 2 L22 12 L12 22 L2 12 Z"/>
+        <path d="M12 7 L17 12 L12 17 L7 12 Z"/>
+      </svg>
+      <span class="disp" style="color:var(--text-primary);font-weight:800;font-size:16px;letter-spacing:3px;">MOBI<span style="color:var(--accent-cyan);">OVERLAY</span></span>
+      <span class="mono" style="color:var(--text-dim);font-size:11px;letter-spacing:2px;margin-left:6px;">// STANTON.LIVE</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="display:flex;align-items:center;gap:7px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.8">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 3 A9 9 0 0 1 12 21 Z" fill="var(--text-muted)" stroke="none"/>
+        </svg>
+        <div class="mono" style="width:64px;height:4px;background:var(--border-flat);position:relative;">
+          <div style="position:absolute;left:0;top:0;bottom:0;width:70%;background:var(--accent-cyan);"></div>
+        </div>
+        <span class="mono" style="color:var(--text-muted);font-size:10px;">70%</span>
+      </div>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="var(--accent-cyan)" stroke="none">
+        <path d="M14 2 L14 9 L18 13 L13 13 L13 22 L11 22 L11 13 L6 13 L10 9 L10 2 Z"/>
+      </svg>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2">
+        <path d="M5 5 L19 19 M19 5 L5 19"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ===== Card field ===== -->
+  <div style="position:relative;width:100%;height:540px;">
+
+    <!-- ---- Card 1: Price Lookup (EXPANDED, populated) ---- -->
+    <div class="glow-cyan" style="position:absolute;left:0;top:0;width:300px;
+        background:var(--bg-panel);border:1px solid var(--border-cyan);">
+      <div style="display:flex;align-items:center;justify-content:space-between;
+          background:var(--bg-panel-header);border-bottom:1px solid var(--border-cyan);
+          padding:9px 12px;cursor:pointer;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="var(--accent-cyan)"><circle cx="12" cy="12" r="10"/></svg>
+          <span class="disp" style="color:var(--text-primary);font-size:12px;letter-spacing:2px;font-weight:700;">PRICE LOOKUP</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.2"><path d="M4 4 L20 4 M4 4 L4 20 M20 4 L20 20 M4 20 L20 20" opacity="0"/><path d="M6 12 A6 6 0 1 1 6.01 12" transform="rotate(45 12 12)"/></svg>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5"><path d="M6 9 L12 15 L18 9"/></svg>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><path d="M5 5 L19 19 M19 5 L5 19"/></svg>
+        </div>
+      </div>
+      <div style="padding:14px;">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px;">
+          <span class="disp" style="color:var(--accent-cyan);font-size:19px;font-weight:800;letter-spacing:1px;">LARANITE</span>
+          <span class="mono" style="color:var(--text-dim);font-size:10px;">RMC · ORE</span>
+        </div>
+
+        <div style="border:1px solid var(--border-flat);padding:9px 10px;margin-bottom:8px;">
+          <div class="mono" style="color:var(--text-muted);font-size:9px;letter-spacing:2px;margin-bottom:5px;">▲ BEST SELL</div>
+          <div style="display:flex;align-items:baseline;justify-content:space-between;">
+            <span class="mono" style="color:var(--accent-cyan);font-size:20px;font-weight:700;">18.42<span style="font-size:11px;color:var(--text-muted);"> aUEC/SCU</span></span>
+          </div>
+          <div class="mono" style="color:var(--text-muted);font-size:10px;margin-top:3px;">CRU-L1 · Pyro Gateway</div>
+        </div>
+
+        <div style="border:1px solid var(--border-flat);padding:9px 10px;margin-bottom:12px;">
+          <div class="mono" style="color:var(--text-muted);font-size:9px;letter-spacing:2px;margin-bottom:5px;">▼ BEST BUY</div>
+          <div style="display:flex;align-items:baseline;justify-content:space-between;">
+            <span class="mono" style="color:var(--text-primary);font-size:20px;font-weight:700;">11.05<span style="font-size:11px;color:var(--text-muted);"> aUEC/SCU</span></span>
+          </div>
+          <div class="mono" style="color:var(--text-muted);font-size:10px;margin-top:3px;">Area18 · ArcCorp</div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span class="mono" style="color:var(--text-dim);font-size:9px;letter-spacing:1px;">UPDATED 00:04:12 AGO</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2">
+            <path d="M4 12 A8 8 0 1 1 6 17.5"/><path d="M4 12 L4 6 M4 12 L9 12"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- Card 2: Session Log (COLLAPSED) ---- -->
+    <div class="glow-cyan" style="position:absolute;left:326px;top:0;width:280px;
+        background:var(--bg-panel);border:1px solid var(--border-cyan);">
+      <div style="display:flex;align-items:center;justify-content:space-between;
+          background:var(--bg-panel-header);padding:9px 12px;cursor:pointer;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="var(--accent-cyan)"><circle cx="12" cy="12" r="10"/></svg>
+          <span class="disp" style="color:var(--text-primary);font-size:12px;letter-spacing:2px;font-weight:700;">SESSION LOG</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="mono" style="color:var(--text-dim);font-size:9px;">4 EVENTS</span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5"><path d="M9 6 L15 12 L9 18"/></svg>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><path d="M5 5 L19 19 M19 5 L5 19"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- Card 3: Market Alerts (ERROR state) ---- -->
+    <div class="glow-amber" style="position:absolute;left:326px;top:46px;width:280px;
+        background:var(--bg-panel);border:1px solid var(--border-amber);">
+      <div style="display:flex;align-items:center;justify-content:space-between;
+          background:var(--accent-amber-dim);border-bottom:1px solid var(--border-amber);
+          padding:9px 12px;cursor:pointer;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="var(--accent-amber)"><circle cx="12" cy="12" r="10"/></svg>
+          <span class="disp" style="color:var(--text-primary);font-size:12px;letter-spacing:2px;font-weight:700;">MARKET ALERTS</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5"><path d="M6 9 L12 15 L18 9"/></svg>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><path d="M5 5 L19 19 M19 5 L5 19"/></svg>
+        </div>
+      </div>
+      <div style="padding:16px 14px;text-align:center;">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--accent-amber)" stroke-width="1.8" style="margin-bottom:8px;">
+          <path d="M12 3 L22 20 L2 20 Z" stroke-linejoin="round"/>
+          <path d="M12 9 L12 14"/>
+          <circle cx="12" cy="17" r="0.9" fill="var(--accent-amber)" stroke="none"/>
+        </svg>
+        <div class="mono" style="color:var(--text-primary);font-size:11px;margin-bottom:3px;">UEX API UNREACHABLE</div>
+        <div class="mono" style="color:var(--text-dim);font-size:9px;margin-bottom:12px;">Last success 00:14:02 ago</div>
+        <div class="mono" style="display:inline-block;border:1px solid var(--border-amber);color:var(--accent-amber);
+            padding:5px 14px;font-size:10px;letter-spacing:2px;cursor:pointer;">RETRY</div>
+      </div>
+    </div>
+
+    <!-- ---- Card picker / add-card control ---- -->
+    <div style="position:absolute;left:0;top:290px;width:214px;
+        background:var(--bg-panel);border:1px solid var(--border-flat);">
+      <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border-flat);">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2.4"><path d="M12 5 L12 19 M5 12 L19 12"/></svg>
+        <span class="disp" style="color:var(--text-muted);font-size:11px;letter-spacing:2px;font-weight:700;">ADD CARD</span>
+      </div>
+      <div class="mono" style="padding:4px 0;">
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;color:var(--text-dim);font-size:10px;">
+          <span style="width:5px;height:5px;background:var(--text-dim);"></span> Trade Route Optimizer
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;color:var(--text-dim);font-size:10px;">
+          <span style="width:5px;height:5px;background:var(--text-dim);"></span> Refinery Yields
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;color:var(--text-dim);font-size:10px;">
+          <span style="width:5px;height:5px;background:var(--text-dim);"></span> Vehicle Prices
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- Footer status strip ---- -->
+    <div style="position:absolute;left:0;bottom:0;width:606px;display:flex;justify-content:space-between;
+        border-top:1px solid var(--border-flat);padding-top:8px;">
+      <span class="mono" style="color:var(--text-dim);font-size:9px;letter-spacing:1px;">UEX API · CONNECTED</span>
+      <span class="mono" style="color:var(--text-dim);font-size:9px;letter-spacing:1px;">BUILD 0.1.0-dev</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

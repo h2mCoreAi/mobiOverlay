@@ -1,0 +1,70 @@
+name: Build and release Windows exe
+
+# Builds mobiOverlay.exe with PyInstaller from mobioverlay.spec (the same
+# spec file anyone can use to build it themselves — see BUILD.md) and
+# publishes it as a GitHub Release asset whenever a version tag is pushed.
+#
+# modules/ ships alongside the exe as plain, readable .py files rather than
+# being bundled into it — see docs/ARCHITECTURE.md ("Packaging") for why.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build exe
+        run: pyinstaller mobioverlay.spec --noconfirm
+
+      - name: Assemble release folder
+        shell: pwsh
+        run: |
+          $releaseDir = "release/mobiOverlay"
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          Copy-Item "dist/mobiOverlay.exe" "$releaseDir/mobiOverlay.exe"
+          Copy-Item "modules" "$releaseDir/modules" -Recurse
+          Get-ChildItem "$releaseDir/modules" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+
+      - name: Zip and checksum
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          $zipName = "mobiOverlay-$version-windows.zip"
+          Compress-Archive -Path "release/mobiOverlay/*" -DestinationPath $zipName
+          $hash = Get-FileHash $zipName -Algorithm SHA256
+          "$($hash.Hash)  $zipName" | Out-File "$zipName.sha256" -Encoding ascii
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            mobiOverlay-*-windows.zip
+            mobiOverlay-*-windows.zip.sha256
+          body: |
+            Automated build from source at this tag — built by this
+            workflow (`.github/workflows/release.yml`), not compiled
+            locally by a person. Check the Actions log for this run to
+            see exactly what went into it, and verify the download's
+            SHA256 against the attached `.sha256` file.
+
+            Prefer to build it yourself? See `BUILD.md` — same
+            `mobioverlay.spec` this workflow uses.

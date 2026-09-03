@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+config.json
+build/
+dist/
+# NOTE: mobioverlay.spec IS committed (reproducible build definition) —
+# do not add a blanket *.spec ignore here.
