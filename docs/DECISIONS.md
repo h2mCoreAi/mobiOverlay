@@ -86,3 +86,11 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   the exe the same way (same spec file) on a tag push and publishes it as
   a GitHub Release with a SHA256 checksum; `BUILD.md` documents the
   identical steps for anyone who'd rather build it themselves.
+
+- **2026-09-03 — Repo pushed to GitHub, public: github.com/h2mCoreAi/mobiOverlay.**
+  License: MIT (matches the user's prior ThrottleWatch project). Bundled
+  fonts (Orbitron, Share Tech Mono) stay separately licensed under SIL OFL —
+  see `host/assets/fonts/LICENSE.txt` — not superseded by the root MIT
+  LICENSE. No release tag pushed yet — user is still heavily testing;
+  `.github/workflows/release.yml` only fires on a `v*.*.*` tag, so nothing
+  auto-publishes until that's deliberately pushed.
