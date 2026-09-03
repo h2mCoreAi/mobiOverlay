@@ -122,3 +122,14 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   don't reveal since they capture by window handle, not screen region).
   Testing stayed entirely on the secondary monitor throughout — never
   touched the user's active game session on the primary display.
+
+- **2026-09-03 — Clicking anywhere in a card raises it to front.**
+  User-requested. Implemented as an application-wide event filter in
+  `CardContainer` (`QApplication.instance().installEventFilter(self)`)
+  rather than a `mousePressEvent` override on `Card` — a press on a child
+  widget (combo box, button, label) never bubbles up to the parent Card's
+  own `mousePressEvent`, so watching at the application level is the only
+  reliable way to catch a click anywhere inside a card, not just its
+  header. Smoke-tested via UI Automation (click doesn't crash the app);
+  full visual confirmation of the raise (two overlapping cards) needs a
+  human dragging one over the other, not yet done by this session.

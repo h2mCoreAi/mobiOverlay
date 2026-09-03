@@ -2,8 +2,8 @@
 to config, tracks which cards are stowed (hidden) so the tray can deploy
 them again, and shows the purple grid-snap preview while a card is dragged.
 """
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QWidget, QFrame
+from PySide6.QtCore import Qt, QEvent, Signal
+from PySide6.QtWidgets import QApplication, QWidget, QFrame
 
 from host import theme
 from host.card import Card, CARD_WIDTH
@@ -31,6 +31,27 @@ class CardContainer(QWidget):
         )
         self.snap_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.snap_overlay.hide()
+
+        # App-wide filter so clicking ANYWHERE inside a card (not just its
+        # header) raises it — a click on a child widget (combo box, button,
+        # label) never bubbles up to the Card's own mousePressEvent, so
+        # watching at the application level is the reliable way to catch it.
+        QApplication.instance().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonPress:
+            card = self._card_ancestor_of(obj)
+            if card is not None:
+                card.raise_()
+        return super().eventFilter(obj, event)
+
+    def _card_ancestor_of(self, obj) -> Card | None:
+        widget = obj if isinstance(obj, QWidget) else None
+        while widget is not None:
+            if isinstance(widget, Card):
+                return widget if widget.parentWidget() is self else None
+            widget = widget.parentWidget()
+        return None
 
     def add_card(self, card_id: str, title: str) -> Card:
         card = Card(card_id, title, self)
