@@ -78,8 +78,10 @@ class CardContainer(QWidget):
 
         card.set_collapsed(state.get("collapsed", False))
         initially_visible = state.get("visible", True)
-        card.setVisible(initially_visible)
-        card.show()
+        if initially_visible:
+            card.show()
+        else:
+            card.hide()
         self.cards[card_id] = card
         if not initially_visible:
             self._stowed.add(card_id)

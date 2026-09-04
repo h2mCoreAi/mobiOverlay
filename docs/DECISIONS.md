@@ -658,3 +658,165 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   `SNAP_BORDER`/`SNAP_FILL` (purple grid-snap) and `ACCENT_AMBER` (error/
   retry) alone — unrelated to this pass. Confirmed visually after
   relaunch.
+
+- **2026-09-04 — Named the `host/` package "mobiOverlay Core."** Docs/naming
+  only — no folder rename, no import changes. `host/` remains the actual
+  package path; "mobiOverlay Core" is the name used in docs and
+  conversation for what it contains (window, card container, config,
+  module loader, hotkey, HTTP client). Updated CLAUDE.md and
+  ARCHITECTURE.md's forward-facing descriptions; left historical
+  entries in this file and PROGRESS.md referring to "the host" as-is
+  since this log is append-only.
+
+- **2026-09-04 — v1.0-readiness review fixes, Critical items (C1-C4).**
+  A senior-dev-style review of mobiOverlay Core flagged 4 critical gaps
+  in module fault isolation before a public v1.0. Fixed:
+  - **C1** (no fault isolation for hung/blocking modules) — modules run
+    synchronously on the GUI thread by design (see "Module contract"
+    above); a true preemptive timeout would require a threading/process
+    redesign, out of scope here. Added a soft diagnostic watchdog instead
+    (`main.py`'s `_timed_call`): logs a warning naming the module and
+    call if `create_card()`/`refresh()` takes >2s, so a slow module is
+    visible in the log instead of just "the app feels laggy."
+  - **C2** (no contract validation) — `module_loader.py`'s new
+    `_validate_module_contract()` checks `module_id`/`display_name` are
+    non-empty strings and `create_card`/`refresh` are callable, at load
+    time, before the module is used anywhere else. `main.py`'s new
+    `safe_create_card()` also now guards `create_card()` (previously
+    unguarded — an exception there crashed the whole app before other
+    modules loaded) and validates it returns an actual `Card`.
+  - **C3** (duplicate module_id) — `discover_modules()` now tracks
+    claimed `module_id`s and skips (with a logged error naming both
+    folders) any module trying to reuse one already claimed.
+  - **C4** (`settings_schema` documented but never implemented) —
+    removed from the documented contract in ARCHITECTURE.md and
+    `module_base.py` rather than building it now; it wasn't used by
+    Core or any of the 3 existing modules, and a fictional required
+    field is worse than no field for a public module-authoring guide.
+
+- **2026-09-04 — Logistics Hub (OCR module) ships as an optional,
+  manual-install module; its deps are not bundled into the exe.**
+  `modules/logistics_hub/` (OCR-driven hauling mission board reader +
+  route optimizer) depends on `easyocr`, which pulls in PyTorch +
+  torchvision (~500MB+). Per the Packaging decision, `modules/` is
+  deliberately kept external/unfrozen so it's editable without a
+  rebuild — but that also means PyInstaller never bundles a module's
+  dependencies, only `host/`'s. A user who drops this module folder
+  next to the packaged exe without also running
+  `pip install -r modules/logistics_hub/requirements.txt` in a Python
+  environment will see the module's own clear "not installed" error
+  rather than a crash (see `OCR_AVAILABLE` guard in `module.py`).
+  Considered instead bundling this module's deps into the exe as an
+  exception to the external-modules rule — rejected for now: it would
+  bloat every user's download by hundreds of MB even if they never use
+  this module, just to save an optional module's users one pip command.
+  Documented as an opt-in, power-user module in release notes/README
+  instead. Revisit bundling (or a companion installer script) if this
+  module proves popular enough to justify the packaging investment.
+
+- **2026-09-04 — Superseded same-day: distribution is all-inclusive,
+  every module always bundled together.** The "optional, manual-install
+  module" framing above (same day, Logistics Hub's own deps) no longer
+  reflects how the project ships — user decided to keep the modular
+  *architecture* (folder-per-module stays valuable for adding/changing
+  features without touching Core) but not modular *distribution*.
+  Practical effect: `modules/logistics_hub/requirements.txt` (easyocr/
+  Pillow) should be treated as part of the app's real dependency set
+  going forward, not an opt-in extra — packaging work should fold it
+  into whatever the standard install path becomes, not keep it
+  separately documented as power-user-only.
+
+- **2026-09-04 — Logistics Hub built: OCR mission-board reader + UEX-
+  backed route planner.** `modules/logistics_hub/` — originally scaffolded
+  by Aider (DeepSeek V4 Flash, see below) then substantially hardened by
+  Claude across several real-contract test/fix rounds. Final design,
+  each piece earned from a real OCR failure, not designed upfront:
+  - **Contracts, not a flat stop list.** A contract holds `pickups: []`
+    and `dropoffs: []` (symmetric, either can have more than one — real
+    contracts use both "DROP OFF LOCATIONS (ANY ORDER)" and "PICK UP
+    LOCATIONS (ANY ORDER)" panel styles). Scanning accumulates contracts
+    (CLEAR to reset) rather than overwriting on every scan.
+  - **Location text is resolved against real UEX data**, not guessed
+    from strings: every capitalized 2-4-word phrase (plus a separate
+    pass for single hyphenated station codes like "HDMS-Edmond", which
+    the multi-word pattern can't see at all) is a *candidate*; only
+    phrases that match a real `terminals`/`space_stations`/`outposts`/
+    `cities` record survive. Letting the API be the filter turned out
+    far more robust than trying to regex-parse contract narrative text
+    correctly, since OCR corrupts any single mention but a real contract
+    repeats each place name several times across different sentences.
+  - **Cross-endpoint id collision was a real, silent-data-loss bug**:
+    `terminals`, `space_stations`, `outposts`, `cities` each have their
+    own independent id sequence (UEX `terminals` id 17 = "Bud's
+    Growery"; `space_stations` id 17 = a completely different real
+    place, "MIC-L1 Shallow Frontier Station"). Deduping by raw `id`
+    silently dropped one of every colliding pair — fixed by tagging
+    each row with its source endpoint at index-build time and keying
+    every dedup (`_build_contract`'s merge, the location picker, route
+    cost's "same terminal" check) on `(endpoint, id)` instead.
+  - **Pickup-vs-dropoff role** comes from nearby keywords ("Collect X
+    from Y" -> pickup; "Deliver...to Y" or a "DROP OFF LOCATIONS"/"PICK
+    UP LOCATIONS" section -> dropoff/pickup) with the section header
+    scoped to only apply to lines that actually look like a location row
+    (contain "at") — otherwise it kept bleeding into trailing footer/
+    signature text and misclassifying the contractor's own name as a
+    stop.
+  - **Commodities** ("Waste", "Silicon", ...) are extracted the same
+    way — "Collect X from Y"/"Deliver...of X to Y" — and attached per
+    pickup/drop-off, matched by substring against every name the
+    location is known by (resolved candidate text, nickname, full name).
+  - **Route planning**: nearest-neighbour, starting from a CURRENT
+    LOCATION picker (searchable combo over the same UEX location data,
+    labeled with both name and short code — e.g. "Shallow Frontier
+    Station (MIC-L1)" — since search-by-code silently found nothing
+    before this). Falls back to "start at the first stop" only if no
+    location has been picked. **Hard constraint, not a cost tiebreaker:**
+    a drop-off is ineligible until every pickup on its own contract has
+    been visited — cargo can't be delivered before it's collected.
+    Travel cost is currently a coarse same-terminal/same-body/same-
+    system/different-system tier, not real distance — see the Next
+    section, this is a known near-term follow-up (`terminals_distances`
+    / `orbits_distances` exist and were verified live against real
+    location pairs; the module just isn't using them yet).
+  - Bare-hyphenated-code candidates ("MIC-L1" alone) can resolve to an
+    unrelated shop that happens to share the exact same short-code
+    nickname as the station itself, producing a spurious duplicate stop
+    — fixed by suppressing the bare-code candidate specifically when a
+    fuller phrase immediately follows it on the same line (the common
+    case), rather than trying to merge look-alike results after the
+    fact (tried a signature-based merge first; it wrongly collapsed two
+    genuinely different stations that happened to share a planet, and
+    was reverted).
+
+- **2026-09-04 — Aider (DeepSeek V4 Flash) added as a secondary dev
+  tool for new-module work, with a hard boundary.** Configured via
+  `.aider.conf.yml` (`openai/deepseek-v4-flash`, DeepSeek's OpenAI-
+  compatible endpoint — LiteLLM's built-in `deepseek/` provider doesn't
+  know this model id) + a gitignored `.env` for the key. Used to
+  scaffold Logistics Hub's first pass. Explicit rule given to it and
+  worth keeping for any future use: **only create files under one new
+  module's folder — never edit `host/` or another module.** Observed
+  behavior worth remembering: it iterates against its own mistakes more
+  than a stronger model would (multiple fix-commits in a row on the same
+  file — pytesseract, then easyocr, then several follow-up fixes, all
+  same session) — review its diffs rather than trusting a single pass.
+
+- **2026-09-04 — Decided: a shared Location service belongs in Core
+  (`host/`), not as a module other modules depend on.** All three real
+  modules (`commodity_prices`, `trade_route_optimizer`, `logistics_hub`)
+  independently fetch `star_systems`/`terminals` and build their own
+  system/terminal pickers — duplicate API calls and, in Logistics Hub's
+  case, a lot of endpoint-safe-dedup logic that the other two modules
+  don't have and would benefit from. Considered making it a "location
+  module" other modules pull from — rejected: `module_loader.py` has no
+  mechanism for one module to depend on another (each is loaded
+  independently, no registry), so that would mean inventing inter-
+  module dependency wiring in Core anyway. If Core has to change either
+  way, do it directly as a shared service (same tier as `UexApiClient`)
+  instead of building a fake "module" that's actually Core-shaped.
+  Not implemented yet — planned as a phased rollout (Core service ->
+  migrate Logistics Hub -> migrate the other two -> swap Logistics
+  Hub's route cost onto real `terminals_distances`/`orbits_distances`
+  -> optionally share a "current location" across modules), each phase
+  its own tested checkpoint before starting the next. See PROGRESS.md
+  Next section.

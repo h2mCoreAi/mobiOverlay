@@ -1,6 +1,9 @@
 """The module contract every modules/<name>/module.py entry point implements.
 
-See docs/ARCHITECTURE.md for the full contract description.
+See docs/ARCHITECTURE.md for the full contract description. host/module_loader.py
+validates module_id/display_name/create_card/refresh at load time and rejects
+duplicate module_ids — a module that doesn't conform is skipped with a logged
+error rather than corrupting shared state or crashing the app.
 """
 from host.api_client import UexApiClient
 from host.config import Config

@@ -228,7 +228,7 @@ class _HotkeyField(QLineEdit):
         self.setReadOnly(True)
         self.setAlignment(Qt.AlignCenter)
         self._capturing = False
-        self._capture_handle = None  # keeps the capture's signal-holder QObject alive
+        self._capture_handles = []  # keeps in-flight capture signal-holder QObjects alive
         self._show_current()
 
     def _show_current(self):
@@ -244,13 +244,15 @@ class _HotkeyField(QLineEdit):
             return
         self._capturing = True
         self.setText("Press a key combo…")
-        self._capture_handle = self._win.capture_hotkey_combo(
-            self._on_captured, self._on_capture_error
+        handle = self._win.capture_hotkey_combo(
+            lambda combo: self._on_captured(handle, combo),
+            lambda message: self._on_capture_error(handle, message),
         )
+        self._capture_handles.append(handle)
 
-    def _on_captured(self, combo: str):
+    def _on_captured(self, handle, combo: str):
+        self._capture_handles.remove(handle)
         self._capturing = False
-        self._capture_handle = None
         if not combo or combo.lower() == "esc":
             self._show_current()  # Escape cancels rather than becoming the hotkey
             return
@@ -260,9 +262,9 @@ class _HotkeyField(QLineEdit):
         else:
             self._flash("Could not set hotkey")
 
-    def _on_capture_error(self, message: str):
+    def _on_capture_error(self, handle, message: str):
+        self._capture_handles.remove(handle)
         self._capturing = False
-        self._capture_handle = None
         self._flash("Capture failed — try again")
 
 

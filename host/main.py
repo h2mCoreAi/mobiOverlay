@@ -10,8 +10,11 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
+import time
+
 from host import theme
 from host.api_client import UexApiClient
+from host.card import Card
 from host.config import Config
 from host.main_window import MainWindow
 from host.module_loader import discover_modules
@@ -21,6 +24,12 @@ logger = logging.getLogger("mobioverlay")
 
 FONTS_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
 DEFAULT_REFRESH_SECONDS = 300
+# Modules run synchronously on the GUI thread (see docs/ARCHITECTURE.md) —
+# there's no preemptive timeout possible without a threading/process
+# redesign, so this is a soft, diagnostic-only watchdog: it logs a warning
+# after the fact so a slow module is visible in the log rather than just
+# manifesting as "the app feels laggy" with no lead.
+SLOW_CALL_WARN_SECONDS = 2.0
 
 
 def load_fonts():
@@ -30,15 +39,51 @@ def load_fonts():
             logger.warning("Failed to load bundled font: %s", font_file.name)
 
 
+def _timed_call(module, label, fn):
+    start = time.monotonic()
+    result = fn()
+    elapsed = time.monotonic() - start
+    if elapsed > SLOW_CALL_WARN_SECONDS:
+        logger.warning(
+            "Module '%s' %s took %.1fs — this blocks the whole UI thread "
+            "while it runs (see docs/ARCHITECTURE.md, module contract)",
+            getattr(module, "module_id", "?"), label, elapsed,
+        )
+    return result
+
+
 def wrap_refresh(module, card):
     def safe_refresh():
         try:
-            module.refresh()
+            _timed_call(module, "refresh()", module.refresh)
             card.clear_error()
         except Exception as exc:
             logger.exception("Module '%s' refresh failed", module.module_id)
             card.set_error(str(exc), retry_callback=safe_refresh)
     return safe_refresh
+
+
+def safe_create_card(module, parent):
+    """create_card() runs once at startup, before wrap_refresh's error
+    boundary exists for this module — an unguarded exception or a bad
+    return type here used to propagate straight out of main() and crash
+    the whole app before any other module got a chance to load."""
+    try:
+        card = _timed_call(module, "create_card()", lambda: module.create_card(parent))
+    except Exception:
+        logger.exception(
+            "Module '%s' create_card() raised — skipping this module",
+            getattr(module, "module_id", "?"),
+        )
+        return None
+    if not isinstance(card, Card):
+        logger.error(
+            "Module '%s' create_card() returned %r, expected a host.card.Card "
+            "— skipping this module",
+            getattr(module, "module_id", "?"), type(card).__name__,
+        )
+        return None
+    return card
 
 
 def main():
@@ -63,7 +108,9 @@ def main():
 
     timers = []  # keep references alive
     for module in modules:
-        card = module.create_card(window.card_container)
+        card = safe_create_card(module, window.card_container)
+        if card is None:
+            continue
         # Module just populated card.body; the card computed its size before
         # that (CardContainer has no layout manager, so nothing resizes it
         # automatically). Force the layout to recompute now.

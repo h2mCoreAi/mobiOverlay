@@ -35,7 +35,7 @@ def _vk_for_key_name(name: str) -> int | None:
     try:
         scan_code = keyboard.key_to_scan_codes(name)[0]
         vk = ctypes.windll.user32.MapVirtualKeyW(scan_code, MAPVK_VSC_TO_VK) or None
-    except (ValueError, IndexError, OSError):
+    except (ValueError, IndexError, OSError, KeyError):
         vk = None
     _vk_name_cache[name] = vk
     return vk

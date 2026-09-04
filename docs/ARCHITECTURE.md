@@ -14,21 +14,23 @@ mobiOverlay/
 ## Module contract
 
 Each module folder exposes an entry point (e.g. `modules/<name>/module.py`)
-with a single class the host can instantiate. That class must provide:
+with a single class mobiOverlay Core can instantiate. That class must provide:
 
-- `module_id: str` — unique, stable, used as the config namespace key
+- `module_id: str` — unique, stable, used as the config namespace key.
+  mobiOverlay Core validates this is a non-empty string at load time and
+  rejects a second module that claims an already-used id.
 - `display_name: str` — shown in the card's header and the stow tray
-- `settings_schema` — declares what config keys this module reads/writes
-  (merged into `config.json` under `modules.<module_id>`)
-- `create_card(parent) -> Card` — builds and returns this module's card widget
-- `refresh()` — fetch/update data on its own schedule; runs inside the host's
-  error boundary, so a failure here degrades only this module's card
+- `create_card(parent) -> Card` — builds and returns this module's card widget.
+  Must return an actual `host.card.Card` instance — Core validates the
+  return type and skips the module (with a logged error) otherwise.
+- `refresh()` — fetch/update data on its own schedule; runs inside mobiOverlay
+  Core's error boundary, so a failure here degrades only this module's card
 
-The host never reaches into a module's internals beyond this contract. Adding
-module #2 means adding a new folder under `modules/` — zero edits to `host/`
-or to any other module.
+mobiOverlay Core never reaches into a module's internals beyond this
+contract. Adding module #2 means adding a new folder under `modules/` —
+zero edits to `host/` or to any other module.
 
-## Host responsibilities
+## mobiOverlay Core responsibilities
 
 - Discover and load modules from `modules/` at startup; catch and isolate
   per-module import/init failures (log + show error card state, don't crash)
