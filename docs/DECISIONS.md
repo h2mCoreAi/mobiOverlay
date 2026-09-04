@@ -277,3 +277,29 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   standard, well-tested Qt behavior — left for the user to confirm
   directly rather than over-investing further in fighting the test
   tooling.
+
+- **2026-09-04 — Trade Route Optimizer: added a "Sell In" destination
+  filter and clearer buy/sell labeling.** User had to ask what a route
+  row actually meant (origin terminal = buy, each row's destination =
+  sell) — real signal the layout wasn't self-explanatory. Added "▲ BUY
+  HERE" above the origin picker and changed each row's destination text
+  from a bare "→ ..." arrow to "SELL AT ...". Also added the destination
+  filter itself: `commodities_routes` rows already carry
+  `destination_star_system_name` per row, so this is pure client-side
+  filtering (populate the dropdown from systems seen in the fetched
+  routes, filter+resort before slicing to the top 5) — identical pattern
+  to Commodity Prices' sell/buy filters, no new API call.
+  Verification note: confirmed the UI renders correctly (labels, filter
+  dropdown present) and confirmed the filter *logic* is exactly correct
+  by extracting it into a standalone script with sample data (no Qt
+  involved) — Pyro-only and Stanton-only both returned exactly the right
+  rows. Could NOT get UI Automation to actually change the destination
+  combo's selection to prove the live interaction end-to-end: tried
+  `SelectionItemPattern.Select()` on the popup item, `ValuePattern
+  .SetValue()`, and real keyboard nav (`{F4}{DOWN}{DOWN}{ENTER}` after
+  `SetForegroundWindow`) — all three reported success but the combo's
+  value never actually changed on readback, even within one atomic
+  script. That's a strong signature of a genuine Qt-accessibility-bridge
+  limitation for `QComboBox` popup *selection* specifically (buttons via
+  `InvokePattern` have been reliable all session) rather than an app bug
+  — logged as a general lesson, not just for this feature.

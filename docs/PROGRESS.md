@@ -193,6 +193,21 @@
   now editable with a filtering `QCompleter` (type to narrow 100+
   terminals, or still scroll the full list) — see DECISIONS.md for the
   `textActivated` vs `currentTextChanged` gotcha this required
+- Trade Route Optimizer: added a "Sell In" destination-system filter
+  (client-side, `commodities_routes` rows already carry
+  `destination_star_system_name`, same pattern as Commodity Prices'
+  filters) plus clearer buy/sell labeling ("▲ BUY HERE" above the origin
+  picker, "SELL AT ..." per row instead of a bare arrow) after the user
+  had to ask what a route row meant. Filter logic verified correct via a
+  standalone script with sample data; the live combo-selection
+  interaction itself couldn't be proven through UI Automation this
+  session — see DECISIONS.md, this looks like a genuine tooling
+  limitation (3 different automation methods all failed identically)
+- Text size ladder shifted up one tier per user direction: new Small =
+  old Normal (1.0), new Normal = old Large (1.15), new Large = old Extra
+  Large (1.3), and a genuinely new Extra Large (1.45) was added on top —
+  same +0.15 step throughout. Default `font_scale` moved from 1.0 to
+  1.15 to match the shift
 
 ## Next
 

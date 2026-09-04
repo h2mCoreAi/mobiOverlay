@@ -16,11 +16,20 @@ A card that shows the most profitable known trade routes from a chosen
 origin terminal, using UEX's pre-computed route data (not custom logic —
 `commodities_routes` already returns profit/ROI/score per route).
 
-- Input: star system → origin terminal (two-level picker), optional max
-  investment budget
+- Input: star system → origin terminal (two-level picker) = **where you
+  buy**, optional max investment budget, optional destination-system
+  filter ("Sell In") = **where you're willing to sell** — client-side
+  only, no extra API call, same pattern as Commodity Prices' filters
 - Output: top routes ranked by profit, each showing commodity, destination
   terminal + location, profit, ROI%
 - Manual refresh + auto-refresh on the module's own interval
+
+**Buy/sell relationship, spelled out** (added 2026-09-04 after the user
+had to ask what a route row actually meant): the origin terminal picker
+is always the buy side — every row's "SELL AT ..." is the different sell
+side for that one commodity. The card's own label ("▲ BUY HERE" above the
+picker, "SELL AT ..." on each row) is meant to make this legible without
+needing it explained.
 
 ## UEX endpoints used (verified live, 2026-09-03)
 
@@ -63,8 +72,12 @@ returns `missing_one_required_inputs`. This module always sends
   a refresh (and an "unknown terminal" error) per character typed instead
   of only on a committed selection
 - Optional investment budget field (numeric, blank = unlimited)
-- Top 5 routes by profit, each row: commodity, destination terminal +
-  system/planet, profit (aUEC), ROI%
+- "Sell In" destination-system filter (All Systems + systems seen in the
+  fetched routes) — filters and re-sorts client-side from the already-
+  fetched data, doesn't refetch
+- Top 5 routes by profit (after the destination filter), each row:
+  commodity, "SELL AT" + destination terminal + system/planet, profit
+  (aUEC), ROI%
 - Last-updated timestamp, manual refresh button
 - Error state: message + retry, same as Commodity Prices
 
@@ -74,6 +87,8 @@ returns `missing_one_required_inputs`. This module always sends
 - `origin_terminal`: last-selected terminal name, restored on relaunch
   (reset if not present in a newly-fetched terminal list for the system)
 - `investment_budget`: last-entered value, blank by default
+- `dest_system_filter`: last-selected "Sell In" system, default "All
+  Systems", reset if not present in a newly-fetched route set
 - `refresh_interval_seconds`: default 300s
 
 ## Done criteria

@@ -15,12 +15,20 @@ from host import theme
 from host.module_base import ModuleBase
 
 TOP_N_ROUTES = 5
+ALL_SYSTEMS = "All Systems"
 
 _COMBO_STYLE = f"""
     QComboBox {{
         background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
         border: 1px solid {theme.BORDER_FLAT}; padding: 4px 6px;
         font-family: "{theme.FONT_DISPLAY}"; font-weight: 700; font-size: {theme.fpx(12)}px;
+    }}
+"""
+_FILTER_COMBO_STYLE = f"""
+    QComboBox {{
+        background: {theme.BG_VOID}; color: {theme.TEXT_MUTED};
+        border: 1px solid {theme.BORDER_FLAT}; padding: 2px 4px;
+        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
     }}
 """
 _INVESTMENT_STYLE = f"""
@@ -47,10 +55,15 @@ class TradeRouteOptimizerModule(ModuleBase):
         super().__init__(api_client, config)
         self._systems: dict[str, int] = {}  # name -> id, available systems only
         self._terminals: dict[str, int] = {}  # name -> id, scoped to current system
+        self._last_rows: list[dict] = []
         self.request_refresh = None  # injected by host after wrapping refresh()
 
     def create_card(self, container):
         card = container.add_card(self.module_id, self.display_name)
+
+        buy_label = QLabel("▲ BUY HERE")
+        buy_label.setStyleSheet(_LABEL_SMALL)
+        card.body_layout.addWidget(buy_label)
 
         picker_row = QHBoxLayout()
         self.system_combo = QComboBox()
@@ -72,18 +85,26 @@ class TradeRouteOptimizerModule(ModuleBase):
         picker_row.addWidget(self.terminal_combo, 2)
         card.body_layout.addLayout(picker_row)
 
-        investment_row = QHBoxLayout()
+        filters_row = QHBoxLayout()
         investment_label = QLabel("MAX INVESTMENT")
         investment_label.setStyleSheet(_LABEL_SMALL)
-        investment_row.addWidget(investment_label)
+        filters_row.addWidget(investment_label)
         self.investment_input = QLineEdit()
         self.investment_input.setPlaceholderText("unlimited")
         self.investment_input.setValidator(QIntValidator(0, 999_999_999))
         self.investment_input.setStyleSheet(_INVESTMENT_STYLE)
         self.investment_input.setFixedWidth(100)
-        investment_row.addWidget(self.investment_input)
-        investment_row.addStretch()
-        card.body_layout.addLayout(investment_row)
+        filters_row.addWidget(self.investment_input)
+        filters_row.addStretch()
+        sell_in_label = QLabel("SELL IN")
+        sell_in_label.setStyleSheet(_LABEL_SMALL)
+        filters_row.addWidget(sell_in_label)
+        self.dest_system_combo = QComboBox()
+        self.dest_system_combo.setStyleSheet(_FILTER_COMBO_STYLE)
+        self.dest_system_combo.setFixedWidth(96)
+        self.dest_system_combo.addItem(ALL_SYSTEMS)
+        filters_row.addWidget(self.dest_system_combo)
+        card.body_layout.addLayout(filters_row)
 
         self._route_rows = []
         for _ in range(TOP_N_ROUTES):
@@ -112,6 +133,7 @@ class TradeRouteOptimizerModule(ModuleBase):
         # selection is actually committed (click, Enter, completer pick).
         self.terminal_combo.textActivated.connect(lambda _: self.request_refresh and self.request_refresh())
         self.investment_input.editingFinished.connect(lambda: self.request_refresh and self.request_refresh())
+        self.dest_system_combo.currentTextChanged.connect(self._on_dest_filter_changed)
 
         self.card = card
         return card
@@ -201,6 +223,11 @@ class TradeRouteOptimizerModule(ModuleBase):
         if self.request_refresh:
             self.request_refresh()
 
+    def _on_dest_filter_changed(self, _system: str):
+        self.settings["dest_system_filter"] = self.dest_system_combo.currentText()
+        self.config.set_module_settings(self.module_id, self.settings)
+        self._apply_dest_filter()
+
     def refresh(self):
         terminal_name = self.terminal_combo.currentText()
         if not terminal_name:
@@ -218,7 +245,32 @@ class TradeRouteOptimizerModule(ModuleBase):
         if not rows:
             raise ValueError(f"No profitable routes found from {terminal_name}")
 
-        rows.sort(key=lambda r: r.get("profit", 0), reverse=True)
+        self._last_rows = rows
+        self._repopulate_dest_filter(rows)
+        self._apply_dest_filter()
+
+        self.timestamp_label.setText("UPDATED " + time.strftime("%H:%M:%S"))
+        self.settings["origin_terminal"] = terminal_name
+        self.settings["investment_budget"] = investment_text
+        self.config.set_module_settings(self.module_id, self.settings)
+
+    def _repopulate_dest_filter(self, rows: list[dict]):
+        systems = sorted({r["destination_star_system_name"] for r in rows if r.get("destination_star_system_name")})
+        self.dest_system_combo.blockSignals(True)
+        self.dest_system_combo.clear()
+        self.dest_system_combo.addItem(ALL_SYSTEMS)
+        self.dest_system_combo.addItems(systems)
+        saved = self.settings.get("dest_system_filter", ALL_SYSTEMS)
+        self.dest_system_combo.setCurrentText(saved if saved in systems else ALL_SYSTEMS)
+        self.dest_system_combo.blockSignals(False)
+
+    def _apply_dest_filter(self):
+        dest_system = self.dest_system_combo.currentText()
+        rows = self._last_rows
+        if dest_system != ALL_SYSTEMS:
+            rows = [r for r in rows if r.get("destination_star_system_name") == dest_system]
+
+        rows = sorted(rows, key=lambda r: r.get("profit", 0), reverse=True)
         top_routes = rows[:TOP_N_ROUTES]
 
         # Rows always stay visible (even with placeholder text) rather than
@@ -232,19 +284,17 @@ class TradeRouteOptimizerModule(ModuleBase):
                 commodity_label.setText(r.get("commodity_name", "—"))
                 dest_place = r.get("destination_planet_name") or r.get("destination_star_system_name") or ""
                 dest_name = self._strip_admin_prefix(r.get("destination_terminal_name", ""))
-                dest_label.setText(f"→ {dest_name} · {dest_place}")
+                dest_label.setText(f"SELL AT {dest_name} · {dest_place}")
                 profit_label.setText(f"{r.get('profit', 0):,} aUEC")
                 roi_label.setText(f"{r.get('price_roi', 0):.1f}% ROI")
             else:
                 commodity_label.setText("—")
-                dest_label.setText("no route available")
+                dest_label.setText(
+                    "no route available" if dest_system == ALL_SYSTEMS
+                    else f"no route to {dest_system}"
+                )
                 profit_label.setText("")
                 roi_label.setText("")
-
-        self.timestamp_label.setText("UPDATED " + time.strftime("%H:%M:%S"))
-        self.settings["origin_terminal"] = terminal_name
-        self.settings["investment_budget"] = investment_text
-        self.config.set_module_settings(self.module_id, self.settings)
 
     @staticmethod
     def _strip_admin_prefix(name: str) -> str:

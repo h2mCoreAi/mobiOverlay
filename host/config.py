@@ -13,7 +13,7 @@ DEFAULT_CONFIG = {
     "ui": {
         "window_opacity": 0.92,
         "card_opacity": 0.94,
-        "font_scale": 1.0,
+        "font_scale": 1.15,  # matches the new "Normal" tier — see theme.py
         "always_on_top": True,
         "window_geometry": {},
     },

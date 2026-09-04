@@ -40,8 +40,12 @@ SNAP_FILL = "rgba(168, 85, 247, 0.18)"
 # Set once at startup from config (see set_font_scale in main.py) — changing
 # it requires a restart, since stylesheets are built once as plain strings
 # rather than re-computed live. Options shown in Settings.
-FONT_SCALE = 1.0
-FONT_SCALE_OPTIONS = {"Small": 0.85, "Normal": 1.0, "Large": 1.15, "Extra Large": 1.3}
+FONT_SCALE = 1.15
+# Shifted up one tier from the original ladder (was 0.85/1.0/1.15/1.3) —
+# 1440p made the old "Normal" hard to read. Old Normal is now Small, old
+# Large is now Normal, old Extra Large is now Large, and a genuinely new
+# Extra Large was added on top, keeping the same +0.15 step.
+FONT_SCALE_OPTIONS = {"Small": 1.0, "Normal": 1.15, "Large": 1.3, "Extra Large": 1.45}
 
 
 def set_font_scale(scale: float) -> None:
