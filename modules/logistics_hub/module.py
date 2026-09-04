@@ -496,6 +496,12 @@ class LogisticsHubModule(ModuleBase):
         clear_btn.setStyleSheet(self._button_style())
         clear_btn.clicked.connect(self._clear_contracts)
         action_row.addWidget(clear_btn)
+
+        copy_btn = QPushButton("COPY ROUTE")
+        copy_btn.setToolTip("Copies the suggested route (and full contract details) to the clipboard as plain text.")
+        copy_btn.setStyleSheet(self._button_style())
+        copy_btn.clicked.connect(self._copy_route_to_clipboard)
+        action_row.addWidget(copy_btn)
         layout.addLayout(action_row)
 
         # ---- optional auto-rescan toggle -----------------------------
@@ -661,6 +667,64 @@ class LogisticsHubModule(ModuleBase):
         self._route_order = []
         self._render_results()
         self._set_status("Contracts cleared.")
+
+    def _format_route_text(self) -> str:
+        """Plain-text export of the current contracts + suggested route —
+        primarily for debugging (so raw OCR text and resolution status are
+        included alongside the clean names, not just what the card shows),
+        but kept in the shipped app since it's also just a handy way to
+        get a route out of the overlay and into a notepad/Discord message."""
+        contracts = self.settings.get("contracts", [])
+        lines = [
+            f"Logistics Hub — Route Export ({time.strftime('%Y-%m-%d %H:%M:%S')})",
+        ]
+
+        start_terminal = self._current_location_terminal()
+        start_name = self._locations.display_name(start_terminal) if start_terminal else "(not set)"
+        lines.append(f"Starting location: {start_name}")
+        lines.append("")
+
+        lines.append(f"CONTRACTS ({len(contracts)})")
+        if not contracts:
+            lines.append("  (none)")
+        for idx, contract in enumerate(contracts, start=1):
+            reward = contract.get("reward")
+            reward_text = f" · {reward} aUEC" if reward else ""
+            lines.append(f"  {idx}. scanned {contract.get('scanned_at', '?')}{reward_text}")
+            for role_key, role_label in (("pickups", "PICKUP"), ("dropoffs", "DROPOFF")):
+                for entry in contract.get(role_key, []):
+                    terminal = entry.get("terminal")
+                    name = self._locations.display_name(terminal) if terminal else f"{entry.get('raw', '??')} [UNRESOLVED]"
+                    commodities = entry.get("commodities") or []
+                    cargo = f" ({'/'.join(commodities)})" if commodities else ""
+                    raw = entry.get("raw", "??")
+                    lines.append(f"     [{role_label}] {name}{cargo}  (OCR text: {raw!r})")
+        lines.append("")
+
+        lines.append("SUGGESTED VISITING ORDER")
+        if not self._route_order:
+            lines.append("  (none)")
+        for step, node in enumerate(self._route_order, start=1):
+            i, role, j = node
+            contract = contracts[i] if i < len(contracts) else None
+            if contract is None:
+                continue
+            key = "pickups" if role == "pickup" else "dropoffs"
+            items = contract.get(key, [])
+            entry = items[j] if j < len(items) else {}
+            terminal = entry.get("terminal")
+            name = self._locations.display_name(terminal) if terminal else f"{entry.get('raw', '??')} [UNRESOLVED]"
+            commodities = entry.get("commodities") or []
+            cargo = f" — {'/'.join(commodities)}" if commodities else ""
+            role_tag = "PICKUP" if role == "pickup" else "DROPOFF"
+            lines.append(f"  {step}. [{role_tag}] {name}{cargo}")
+
+        return "\n".join(lines)
+
+    def _copy_route_to_clipboard(self):
+        text = self._format_route_text()
+        QGuiApplication.clipboard().setText(text)
+        self._set_status("Route copied to clipboard.")
 
     def _safe_scan(self):
         # OCR (first call loads an easyocr model — can take several seconds
@@ -922,9 +986,19 @@ class LogisticsHubModule(ModuleBase):
         return self._node_entry(contracts, node).get("raw", "")
 
     def _plan_route(self, contracts: list[dict]) -> list[tuple[int, str, int]]:
-        """Nearest‑neighbour visiting order across every contract's pickup
-        and drop-off stops, using UEX-resolved terminal data where available
-        and falling back to a text-similarity guess otherwise.
+        """Visiting order across every contract's pickup and drop-off
+        stops: a nearest-neighbour greedy pass to build an initial route,
+        then a precedence-aware 2-opt pass to fix the greedy pass's classic
+        blind spot — it can't look ahead, so it happily visits a stop early
+        even when that forces an expensive backtrack later (confirmed on a
+        real 4-contract test: it revisited Port Tressler twice — once for
+        its own contract, then again after a detour to Crusader for a
+        different contract's pickup — when picking up that Crusader cargo
+        *first* and doing every microTech stop in one pass was strictly
+        shorter). 2-opt repeatedly tries reversing a sub-segment of the
+        route and keeps the reversal if it lowers total cost, which is
+        exactly the "should I have done these in the other order" check
+        greedy construction can't do on its own.
 
         Two things a pure "closest next stop" search would get wrong on its
         own, both handled explicitly here:
@@ -938,8 +1012,9 @@ class LogisticsHubModule(ModuleBase):
           picked up. Every drop-off node is ineligible to be chosen until
           *all* of its own contract's pickup nodes have already been
           visited — this is a hard constraint, not a cost tiebreaker, so
-          the greedy search will detour to a farther pickup rather than
-          visit a nearer but not-yet-loaded drop-off.
+          the greedy search (and the 2-opt pass afterward) will detour to
+          a farther pickup rather than visit a nearer but not-yet-loaded
+          drop-off, and 2-opt rejects any reversal that would break it.
         """
         nodes = self._stop_nodes(contracts)
         n = len(nodes)
@@ -954,8 +1029,8 @@ class LogisticsHubModule(ModuleBase):
             return role == "pickup" or pickups_done[i] >= pickups_needed[i]
 
         start_terminal = self._current_location_terminal()
-        current_terminal = start_terminal
-        current_raw = self._locations.display_name(start_terminal) if start_terminal else None
+        start_raw = self._locations.display_name(start_terminal) if start_terminal else None
+        current_terminal, current_raw = start_terminal, start_raw
 
         visited = [False] * n
         order: list[int] = []
@@ -987,7 +1062,69 @@ class LogisticsHubModule(ModuleBase):
             current_terminal = self._node_terminal(contracts, nodes[best])
             current_raw = self._node_raw(contracts, nodes[best])
 
-        return [nodes[i] for i in order]
+        route = [nodes[i] for i in order]
+        return self._two_opt(contracts, route, start_terminal, start_raw, pickups_needed)
+
+    def _route_cost(
+        self, contracts: list[dict], seq: list, start_terminal: dict | None, start_raw: str | None
+    ) -> float:
+        total = 0.0
+        prev_terminal, prev_raw = start_terminal, start_raw
+        for node in seq:
+            term = self._node_terminal(contracts, node)
+            raw = self._node_raw(contracts, node)
+            if prev_terminal and term:
+                total += self._terminal_cost(prev_terminal, term)
+            else:
+                total += COST_UNRESOLVED + self._text_cost(prev_raw or "", raw)
+            prev_terminal, prev_raw = term, raw
+        return total
+
+    @staticmethod
+    def _respects_precedence(contracts: list[dict], seq: list, pickups_needed: list[int]) -> bool:
+        pickups_done = [0] * len(contracts)
+        for node in seq:
+            i, role, _j = node
+            if role == "dropoff":
+                if pickups_done[i] < pickups_needed[i]:
+                    return False
+            else:
+                pickups_done[i] += 1
+        return True
+
+    def _two_opt(
+        self,
+        contracts: list[dict],
+        seq: list,
+        start_terminal: dict | None,
+        start_raw: str | None,
+        pickups_needed: list[int],
+    ) -> list:
+        """Standard 2-opt local search over a fixed-start path: repeatedly
+        reverse a sub-segment [i:j+1] and keep the reversal if it lowers
+        total route cost and doesn't put a drop-off before its own
+        contract's pickup. Runs until a full pass finds no improving move.
+        Cheap at the stop counts a real scan session produces (a handful
+        of contracts, rarely more than ~15-20 stops total) — O(n^2) per
+        pass, bounded number of passes since each accepted move strictly
+        lowers a bounded integer/float cost."""
+        best = list(seq)
+        best_cost = self._route_cost(contracts, best, start_terminal, start_raw)
+        n = len(best)
+
+        improved = True
+        while improved:
+            improved = False
+            for i in range(n - 1):
+                for j in range(i + 1, n):
+                    candidate = best[:i] + best[i:j + 1][::-1] + best[j + 1:]
+                    if not self._respects_precedence(contracts, candidate, pickups_needed):
+                        continue
+                    cost = self._route_cost(contracts, candidate, start_terminal, start_raw)
+                    if cost < best_cost - 1e-9:
+                        best, best_cost = candidate, cost
+                        improved = True
+        return best
 
     def _cost_to_node(self, contracts: list[dict], node, from_terminal: dict | None, from_raw: str | None) -> float:
         term_b = self._node_terminal(contracts, node)
