@@ -522,3 +522,34 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   naturally bursty — dozens of events for one drag of the corner grip)
   but no longer branches on stow state at all, since the grip is hidden
   whenever the app is stowed and so can never race against a pill move.
+
+- **2026-09-03 — Deploying via the hotkey now takes real OS foreground
+  focus, via AttachThreadInput, not the "tap Alt" heuristic.** User
+  asked that toggling into full mode via the hotkey actually take input
+  focus, not just visually appear on top while the game keeps keyboard
+  input. First attempt: `keybd_event`-simulate an Alt press/release
+  before `SetForegroundWindow`, the commonly-cited trick for background
+  processes to bypass Windows' foreground-switch lock. Live-tested with
+  Star Citizen genuinely holding foreground focus (confirmed via
+  `GetForegroundWindow` before the test) — `SetForegroundWindow` reported
+  success and, checked immediately from inside the same process, the
+  window *was* foreground — but a separate follow-up check (a new
+  PowerShell process, one tool-call round-trip later) found focus back
+  on Star Citizen. Root cause: that gap was pure measurement latency
+  (~300-500ms from spawning a new process to run the check), not the fix
+  failing — an atomic single-script test (press F3, then sample
+  `GetForegroundWindow` at 20/200/800ms, all in one script with no
+  cross-process delay) confirmed mobiOverlay held foreground at every
+  sample. Switched anyway to `AttachThreadInput` (temporarily joining
+  this process's input queue with the current foreground window's
+  thread, called around `SetForegroundWindow`/`BringWindowToTop`) since
+  it's the actual documented mechanism Windows' foreground-switch
+  restriction checks against, rather than relying on a lock-timeout
+  heuristic — more robust than the Alt-tap trick even though that one
+  turned out to work too once measured correctly. Also caught and fixed
+  a separate real bug along the way: the first draft called
+  `SetForegroundWindow`/`GetForegroundWindow` without declaring
+  `ctypes` `argtypes`/`restype`, which defaults to 32-bit `c_int` — on
+  64-bit Windows an `HWND` is a 64-bit pointer, so window handles could
+  have been silently truncated. Fixed by declaring proper
+  `ctypes.wintypes.HWND`/`DWORD`/`BOOL` signatures throughout.

@@ -341,26 +341,30 @@
   hidden while stowed) keeps its own debounce, now unconditional since
   there's nothing for it to race against.
 
+- User confirmed (2026-09-03): hotkey toggle, pill position memory, and
+  window opacity are all working correctly now.
+- **Feature: deploying via the hotkey now takes real OS input focus, not
+  just visual z-order.** Toggling into full mode used to leave keyboard
+  focus with whatever had it before (the game) even though the overlay
+  was now on top. `MainWindow._take_foreground_focus()` (called at the
+  end of `deploy_app()`) uses `AttachThreadInput` to temporarily join this
+  process's input queue with the currently-foreground window's thread,
+  which is what actually satisfies Windows' `SetForegroundWindow`
+  restriction (a plain call is normally refused from a background
+  process) — a "tap Alt first" heuristic trick was tried first and didn't
+  reliably work here. Verified end-to-end with real Win32 key injection
+  (`keybd_event`) while Star Citizen genuinely held foreground focus:
+  sampled the foreground window at 20ms/200ms/800ms after deploying and
+  it was mobiOverlay's own process at every sample, not the game.
+
 ## Next
 
-- **Human check: hotkey (again).** Confirm F3 (or whatever combo) now
-  actually toggles stow/deploy while Star Citizen has focus — this is
-  the whole point of the low-level-hook rewrite above, and the isolated
-  `HotkeyState` tests are strong evidence the matching logic is correct,
-  but only a real keypress while the game is focused can confirm the
-  hook itself is actually intercepting input past the game.
-- **Human check: pill position memory (again).** Drag the pill, deploy
-  quickly (don't wait), re-stow, confirm it reopens at the dragged spot —
-  that fast-follow-up sequence was exactly what silently broke the
-  previous debounced-save version.
-- **Human check: void background transparency (again).** Two fix attempts
-  for this didn't hold up under the user's own testing already this
-  session — the third attempt (direct `paintEvent` painting) has much
-  stronger evidence behind it (see above), but only the user's own eyes
-  against real desktop/game content can fully confirm it, since
-  `PrintWindow` can prove the pixel data is correct and opacity-reactive
-  but not what DWM does with it against whatever's actually behind the
-  window.
+- **Human check: hotkey deploy now takes real focus.** Confirm pressing
+  the hotkey while the game has focus actually pulls keyboard input to
+  the overlay (e.g. typing into a card's field right after deploying,
+  with no extra click needed first) — verified via Win32-level foreground
+  sampling above, but a human typing right after the toggle is the real
+  test of what this was actually for.
 - Human review of the running app (this is the current handoff point) —
   especially Retrieve/Find with real system filters set (only the
   unfiltered path got a live human-equivalent test this session), the

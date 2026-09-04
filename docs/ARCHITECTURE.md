@@ -70,11 +70,18 @@ The same Stow/Deploy vocabulary applies to the whole app, not just
 individual cards: the title bar's minimize button (`▬`) shrinks the
 entire window down to a small pill (just the wordmark + close button,
 still always-on-top), and clicking that pill restores it to its exact
-previous position/size. See `MainWindow.stow_app`/`deploy_app` in
-`host/main_window.py`. A system-wide hotkey (`host/hotkey.py`, Win32
-`RegisterHotKey` via `ctypes` — plain Qt shortcuts only fire while the
-app has focus, useless for toggling while the game does) can trigger the
-same stow/deploy toggle from Settings, meant for use while playing.
+previous position/size — the pill's own position is remembered
+independently too, so dragging it around survives re-stowing (see
+`save_current_position()`). See `MainWindow.stow_app`/`deploy_app` in
+`host/main_window.py`. A system-wide hotkey (`host/hotkey.py`, a
+low-level keyboard hook — plain Qt shortcuts and even Win32
+`RegisterHotKey` only reliably fire while mobiOverlay itself has focus,
+useless for toggling while the game does) can trigger the same
+stow/deploy toggle from Settings, meant for use while playing. Deploying
+via the hotkey also pulls real OS input focus onto the window
+(`MainWindow._take_foreground_focus()`, `AttachThreadInput` +
+`SetForegroundWindow`) rather than only appearing on top while the game
+keeps keyboard focus.
 
 ## Global hotkey (host/hotkey.py)
 

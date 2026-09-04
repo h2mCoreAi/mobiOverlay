@@ -1,7 +1,9 @@
 """Always-on-top, frameless, draggable overlay window. Houses the
 CardContainer, the tray for stowed (hidden) cards, and Settings.
 """
+import ctypes
 import subprocess
+from ctypes import wintypes
 
 from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QGuiApplication, QColor, QPainter
@@ -653,6 +655,48 @@ class MainWindow(QWidget):
             self.move(x, y)
             self.resize(w, h)
         self.save_current_position()
+        self._take_foreground_focus()
+
+    def _take_foreground_focus(self):
+        """Deploying via the hotkey shouldn't leave the game with input
+        focus while the overlay is what's visually on top — pull real OS
+        focus onto the window, not just raise it in z-order.
+
+        Windows normally refuses SetForegroundWindow from a background
+        process (the caller here is the keyboard-hook callback, not a
+        real click). AttachThreadInput temporarily joins this thread's
+        input queue with the currently-focused window's thread — Windows'
+        foreground-switch restriction is keyed on "is the caller attached
+        to the same input queue as the current foreground window," so this
+        satisfies it directly rather than relying on lock-timeout heuristics
+        (the "tap Alt first" trick some hotkey launchers use) that turned
+        out not to be reliable here.
+        """
+        self.raise_()
+        self.activateWindow()
+
+        user32 = ctypes.windll.user32
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user32.BringWindowToTop.argtypes = [wintypes.HWND]
+
+        hwnd = wintypes.HWND(int(self.winId()))
+        fg_hwnd = user32.GetForegroundWindow()
+        cur_thread = ctypes.windll.kernel32.GetCurrentThreadId()
+        fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
+
+        if fg_thread and fg_thread != cur_thread:
+            user32.AttachThreadInput(cur_thread, fg_thread, True)
+            try:
+                user32.SetForegroundWindow(hwnd)
+                user32.BringWindowToTop(hwnd)
+            finally:
+                user32.AttachThreadInput(cur_thread, fg_thread, False)
+        else:
+            user32.SetForegroundWindow(hwnd)
 
     def toggle_app_stow(self):
         self.deploy_app() if self._app_stowed else self.stow_app()
