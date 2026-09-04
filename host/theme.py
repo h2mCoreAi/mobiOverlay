@@ -11,9 +11,9 @@ BG_PANEL_HEADER = "#101a1e"
 BORDER_FLAT = "#1c2b2d"
 
 # Corner radius applied to every bordered box (cards, buttons, panels,
-# combos, rows...) — small on purpose, softening the edges without losing
-# the blocky sci-fi HUD look.
-RADIUS = 4
+# combos, rows...) and to the main window's own outer shape (including
+# the stowed pill — same constant, same radius everywhere on purpose).
+RADIUS = 8
 
 # Primary accent (cyan)
 ACCENT_CYAN = "#2de1d0"

@@ -596,3 +596,22 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   pseudo-state rules that only override color (Qt keeps the base rule's
   radius across states on the same widget). Confirmed visually after
   relaunch.
+
+- **2026-09-04 — The radius pass above missed the window's own true outer
+  shape, including the pill.** User asked directly whether the pill got a
+  radius. It hadn't: `MainWindow.paintEvent()` painted the void background
+  with a plain `fillRect` (sharp corners), and that rect *is* the window's
+  actual outer edge in both deployed and stowed-to-pill mode — the
+  previous pass's `border-radius` only rounded the title bar's own QSS
+  border, an inset element sitting inside that sharp-cornered void, not
+  the window boundary itself. Fixed by painting a `QPainterPath` rounded
+  rect instead of a plain rect, using the same `theme.RADIUS` constant —
+  since `paintEvent` is shared by both deployed and pill states, this
+  rounds both identically for free, nothing to keep in sync separately.
+  Had to clear the whole rect to transparent first before filling the
+  rounded path — `fillPath` alone only touches pixels inside the shape,
+  so without the clear the four corners cut off by the rounding would
+  keep whatever stale/garbage pixels were already in the translucent
+  backing store instead of being genuinely see-through. Also bumped
+  `theme.RADIUS` from 4 to 8 per the user's "increase it" ask. Confirmed
+  visually on both the pill and the deployed window after relaunch.

@@ -5,8 +5,8 @@ import ctypes
 import subprocess
 from ctypes import wintypes
 
-from PySide6.QtCore import Qt, QPoint, QTimer
-from PySide6.QtGui import QGuiApplication, QColor, QPainter
+from PySide6.QtCore import Qt, QPoint, QRectF, QTimer
+from PySide6.QtGui import QGuiApplication, QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QSizeGrip, QSizePolicy, QLineEdit
@@ -727,11 +727,22 @@ class MainWindow(QWidget):
         # CompositionMode_Source writes the RGBA pixels directly instead of
         # blending onto whatever's already in the (possibly garbage, for a
         # freshly-resized translucent surface) backing store — required for
-        # the alpha value itself to be trustworthy.
+        # the alpha value itself to be trustworthy. Clear the whole rect
+        # first (fully transparent), since fillPath below only touches
+        # pixels inside the rounded shape — without this, the four corners
+        # cut off by the rounding would keep whatever garbage/stale pixels
+        # were already in the backing store instead of being see-through.
         painter.setCompositionMode(QPainter.CompositionMode_Source)
+        painter.fillRect(self.rect(), Qt.transparent)
         color = QColor(theme.BG_VOID)
         color.setAlphaF(self._void_opacity)
-        painter.fillRect(self.rect(), color)
+        path = QPainterPath()
+        # This is the window's own true outer edge — both deployed and
+        # stowed-to-a-pill use this same MainWindow/paintEvent, so the
+        # pill gets the exact same corner radius as everything else for
+        # free, not a separate value to keep in sync.
+        path.addRoundedRect(QRectF(self.rect()), theme.RADIUS, theme.RADIUS)
+        painter.fillPath(path, color)
         painter.end()
         super().paintEvent(event)
 
