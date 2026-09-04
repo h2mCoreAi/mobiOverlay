@@ -28,7 +28,7 @@ class CardContainer(QWidget):
 
         self.snap_overlay = QFrame(self)
         self.snap_overlay.setStyleSheet(
-            f"background: {theme.SNAP_FILL}; border: 1px solid {theme.SNAP_BORDER};"
+            f"background: {theme.SNAP_FILL}; border: 1px solid {theme.SNAP_BORDER}; border-radius: {theme.RADIUS}px;"
         )
         self.snap_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.snap_overlay.hide()

@@ -28,6 +28,7 @@ QWidget#titleBar {{
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #0f1a1d, stop:1 #0a1214);
     border: 1px solid {theme.BORDER_CYAN};
+    border-radius: {theme.RADIUS}px;
 }}
 QLabel#wordmark {{
     font-family: "{theme.FONT_DISPLAY}";
@@ -46,6 +47,7 @@ QPushButton#cardIconBtn {{
     background: transparent;
     color: {theme.TEXT_MUTED};
     border: none;
+    border-radius: {theme.RADIUS}px;
     font-size: {theme.fpx(11)}px;
 }}
 QPushButton#cardIconBtn:hover {{
@@ -55,6 +57,7 @@ QPushButton#retryBtn {{
     background: transparent;
     color: {theme.ACCENT_AMBER};
     border: 1px solid {theme.BORDER_AMBER};
+    border-radius: {theme.RADIUS}px;
     font-family: "{theme.FONT_MONO}";
     font-size: {theme.fpx(10)}px;
     letter-spacing: 2px;
@@ -141,7 +144,7 @@ class _TrayPanel(QWidget):
         super().__init__(main_window, Qt.Popup)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"""
-            _TrayPanel {{ background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_CYAN}; }}
+            _TrayPanel {{ background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; }}
         """)
         self._win = main_window
         self.setFixedWidth(210)
@@ -271,7 +274,7 @@ class _SettingsPanel(QWidget):
         super().__init__(main_window, Qt.Popup)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"""
-            _SettingsPanel {{ background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_CYAN}; }}
+            _SettingsPanel {{ background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; }}
         """)
         self._win = main_window
         self.setFixedWidth(230)
@@ -318,7 +321,7 @@ class _SettingsPanel(QWidget):
             btn.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent; color: {theme.TEXT_MUTED};
-                    border: 1px solid {theme.BORDER_FLAT}; padding: 4px 6px;
+                    border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
                     font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
                 }}
                 QPushButton:checked {{
@@ -338,7 +341,7 @@ class _SettingsPanel(QWidget):
         relaunch_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {theme.ACCENT_CYAN};
-                border: 1px solid {theme.BORDER_CYAN}; padding: 6px 0;
+                border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; padding: 6px 0;
                 font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px; letter-spacing: 1px;
             }}
             QPushButton:hover {{ background: {theme.ACCENT_CYAN_DIM}; }}
@@ -356,7 +359,7 @@ class _SettingsPanel(QWidget):
         hotkey_field.setStyleSheet(f"""
             QLineEdit {{
                 background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-                border: 1px solid {theme.BORDER_FLAT}; padding: 4px 6px;
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
                 font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px;
             }}
         """)
@@ -365,7 +368,7 @@ class _SettingsPanel(QWidget):
         clear_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {theme.TEXT_MUTED};
-                border: 1px solid {theme.BORDER_FLAT}; padding: 4px 8px;
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 8px;
                 font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
             }}
         """)
@@ -408,7 +411,7 @@ class _TitleBar(QWidget):
 
         _button_style = f"""
             font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px; letter-spacing: 1px;
-            padding: 3px 8px; border: 1px solid {theme.BORDER_FLAT};
+            padding: 3px 8px; border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
         """
 
         self.collapse_all_btn = QPushButton("▾ ALL")

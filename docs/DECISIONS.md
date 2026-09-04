@@ -584,3 +584,15 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   future UEX endpoint call using a `*_name` filter param — this API
   doesn't appear to support exact-match filtering, so assume substring
   matching unless proven otherwise.
+
+- **2026-09-04 — Small border-radius added everywhere, `theme.RADIUS = 4`.**
+  User wanted the 90° corners softened globally, not just on one widget.
+  Added a single shared constant and applied `border-radius:
+  {theme.RADIUS}px` next to every `border:` declaration across
+  `host/main_window.py`, `host/card.py`, `host/card_container.py`, and
+  all three module files — cards, buttons, combos, line edits, the tray/
+  settings popups, the title bar. Skipped `border: none` rules with no
+  background fill (nothing to round) and `:checked`/`:disabled`
+  pseudo-state rules that only override color (Qt keeps the base rule's
+  radius across states on the same widget). Confirmed visually after
+  relaunch.

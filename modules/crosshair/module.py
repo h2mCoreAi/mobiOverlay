@@ -59,7 +59,7 @@ class _CrosshairOverlay(QWidget):
 _TOGGLE_BTN_STYLE = f"""
     QPushButton {{
         background: transparent; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_CYAN}; padding: 6px 0;
+        border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; padding: 6px 0;
         font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;
     }}
     QPushButton:hover {{ background: {theme.ACCENT_CYAN_DIM}; }}
@@ -67,7 +67,7 @@ _TOGGLE_BTN_STYLE = f"""
 _NUDGE_BTN_STYLE = f"""
     QPushButton {{
         background: transparent; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_CYAN}; font-size: {theme.fpx(13)}px;
+        border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; font-size: {theme.fpx(13)}px;
     }}
     QPushButton:hover {{ background: {theme.ACCENT_CYAN_DIM}; }}
 """

@@ -20,25 +20,25 @@ ALL_SYSTEMS = "All Systems"
 _COMBO_STYLE = f"""
     QComboBox {{
         background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_FLAT}; padding: 4px 6px;
+        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
         font-family: "{theme.FONT_DISPLAY}"; font-weight: 700; font-size: {theme.fpx(12)}px;
     }}
 """
 _FILTER_COMBO_STYLE = f"""
     QComboBox {{
         background: {theme.BG_VOID}; color: {theme.TEXT_MUTED};
-        border: 1px solid {theme.BORDER_FLAT}; padding: 2px 4px;
+        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 2px 4px;
         font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
     }}
 """
 _INVESTMENT_STYLE = f"""
     QLineEdit {{
         background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
-        border: 1px solid {theme.BORDER_FLAT}; padding: 4px 6px;
+        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
         font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(11)}px;
     }}
 """
-_ROUTE_ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; padding: 7px 9px;"
+_ROUTE_ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 7px 9px;"
 _COMMODITY_STYLE = f'color: {theme.ACCENT_CYAN}; font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(13)}px;'
 _DEST_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
 _PROFIT_STYLE = f'color: {theme.TEXT_PRIMARY}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(14)}px; font-weight: bold;'

@@ -243,6 +243,7 @@ class Card(QFrame):
             Card {{
                 background: {background};
                 border: 1px solid {color};
+                border-radius: {theme.RADIUS}px;
             }}
         """)
 
