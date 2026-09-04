@@ -381,9 +381,21 @@
   Verified against real API data before and after the fix (mixed-in
   Diamond Laminate rows removed, top Diamond sell price correctly 7,800
   at HUR-L1) and confirmed visually in the running app.
+- **New module: Crosshair** (`modules/crosshair/`) — a standalone reticle
+  overlay, not from the UEX backlog. See `docs/modules/crosshair.md` for
+  the full design and what's verified vs. not. Draws a fixed "+" dead-
+  center on the primary display (separate top-level widget from the
+  card, click-through, no UEX API involved) with a card holding
+  Show/Hide + 1px-increment nudge/reset controls.
 
 ## Next
 
+- **Human check: crosshair module.** Confirm it actually shows up
+  correctly over Star Citizen (not just confirmed centered/rendered
+  against the desktop) and that it's genuinely click-through — doesn't
+  ever intercept a mouse click meant for aiming. Also worth trying the
+  nudge buttons for real (automation confirmed the underlying logic and
+  persistence work, but a human clicking is the real test).
 - **Human check: hotkey deploy now takes real focus.** Confirm pressing
   the hotkey while the game has focus actually pulls keyboard input to
   the overlay (e.g. typing into a card's field right after deploying,
