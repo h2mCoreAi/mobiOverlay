@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QComboBox, QLabel, QHBoxLayout, QVBoxLayout, QWidg
 
 from host import theme
 from host.api_client import UexRateLimitError
+from host.locations import LocationService
 from host.module_base import ModuleBase
 
 ALL_SYSTEMS = "All Systems"
@@ -59,6 +60,7 @@ class CommodityPricesModule(ModuleBase):
 
     def __init__(self, api_client, config):
         super().__init__(api_client, config)
+        self._locations = LocationService(api_client)
         self._commodities: list[str] = []
         self._last_rows: list[dict] = []
         self._terminal_nicknames: dict[int, str] = {}
@@ -191,12 +193,12 @@ class CommodityPricesModule(ModuleBase):
         # commodities_prices itself, so fetch it once here and look terminals
         # up by id_terminal instead. Same field trade_route_optimizer's
         # origin-terminal picker already uses, for consistency.
-        try:
-            data = self.api.get("terminals", {"type": "commodity"})
-        except Exception:
-            data = []
+        rows = [
+            row for row in self._locations.all_locations()
+            if row.get("_endpoint") == "terminals" and row.get("type") == "commodity"
+        ]
         self._terminal_nicknames = {
-            row["id"]: row.get("nickname") or row["name"] for row in data if row.get("id")
+            row["id"]: self._locations.display_name(row) for row in rows if row.get("id")
         }
 
     def _on_sell_filter_changed(self, _system: str):

@@ -1,8 +1,9 @@
 # Progress
 
-## Status: Location-service plan — Phases 1-3 done (shared service,
-## Logistics Hub migrated, real-distance routing) + extensive live
-## hardening; Phases 4-5 (migrate other 2 modules, shared current
+## Status: Location-service plan — Phases 1-4 done (shared service,
+## Logistics Hub migrated, real-distance routing, Trade Route
+## Optimizer/Commodity Prices migrated) + extensive live
+## hardening; Phase 5 (shared current
 ## location) not started
 
 ## Done
@@ -462,7 +463,7 @@
 
 ## Next
 
-- **Phased Core Location service** — Phases 1-3 done (see Done above and
+- **Phased Core Location service** — Phases 1-4 done (see Done above and
   DECISIONS.md for rationale/detail); Phase 3's swap moved up ahead of
   Phase 4 per a later reprioritization:
   1. ✅ Shared service in `host/`, verified standalone.
@@ -470,9 +471,17 @@
   3. ✅ Swap Logistics Hub's route cost onto real
      `terminals_distances`/`orbits_distances`, queried lazily — plus an
      extended live-test-driven hardening pass on top (see Done above).
-  4. **Not started.** Migrate Trade Route Optimizer and Commodity Prices
-     onto the shared service (simpler location needs, lower risk than
-     Logistics Hub was).
+  4. ✅ Migrate Trade Route Optimizer and Commodity Prices onto the
+     shared service — origin-system/terminal pickers (Trade Route
+     Optimizer) and the terminal-nickname lookup (Commodity Prices) now
+     read from `LocationService.available_systems()`/`all_locations()`
+     instead of each module's own `star_systems`/`terminals` calls.
+     Verified live against the real UEX API (backend smoke script, not
+     the Qt UI — see workflow conventions). Each module keeps its own
+     picker UI and any endpoint-specific logic the shared service
+     doesn't cover (`commodities_routes`' destination-name prefix-strip
+     stays hand-rolled — that endpoint has no `id_terminal` to resolve
+     through the service).
   5. **Not started.** Share a "current location" concept across modules
      — Logistics Hub already has one; Trade Route Optimizer/Commodity
      Prices could default their system filters from it.

@@ -834,3 +834,30 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   the itemized list: hint-priority bugs resurfacing at a second merge
   point, short-nickname false positives, ambiguity disambiguation,
   duplicate-contract detection). Phases 4-5 not started.
+
+- **2026-09-04 — Location-service Phase 4 complete: Trade Route
+  Optimizer and Commodity Prices migrated onto `host/locations.py`.**
+  Both modules' system/terminal fetching now goes through
+  `LocationService` instead of their own `star_systems`/`terminals`
+  calls:
+  - Trade Route Optimizer: `_populate_systems` uses
+    `available_systems()`; `_populate_terminals` filters
+    `all_locations()` to `_endpoint == "terminals"`, the chosen
+    `id_star_system`, `type == "commodity"`, `is_available_live`, and
+    displays via `LocationService.display_name()` (same nickname/short-
+    code disambiguation Logistics Hub already benefits from).
+  - Commodity Prices: `_populate_terminal_nicknames` builds its
+    `id_terminal -> display name` map the same way, from
+    `all_locations()` filtered to commodity terminals, instead of its
+    own unscoped `terminals?type=commodity` call.
+  - `commodities_routes`' destination-terminal naming (Trade Route
+    Optimizer) intentionally stays a hand-rolled `Admin -` prefix strip
+    — that endpoint returns no `id_terminal` for the destination, so
+    there's no id to resolve through the shared service; not a gap in
+    the migration, a real endpoint limitation already documented in
+    the module's own doc.
+  - Verified against the real UEX API via a backend smoke script
+    (available systems, Stanton commodity-terminal filtering/counts,
+    a live `commodities_prices` and `commodities_routes` call cross-
+    checked against the new nickname map) — not through the Qt UI.
+  Phase 5 (shared current-location concept) is next and last.

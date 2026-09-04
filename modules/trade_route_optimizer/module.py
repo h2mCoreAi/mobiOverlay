@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from host import theme
+from host.locations import LocationService
 from host.module_base import ModuleBase
 
 TOP_N_ROUTES = 5
@@ -53,6 +54,7 @@ class TradeRouteOptimizerModule(ModuleBase):
 
     def __init__(self, api_client, config):
         super().__init__(api_client, config)
+        self._locations = LocationService(api_client)
         self._systems: dict[str, int] = {}  # name -> id, available systems only
         self._terminals: dict[str, int] = {}  # name -> id, scoped to current system
         self._last_rows: list[dict] = []
@@ -171,13 +173,8 @@ class TradeRouteOptimizerModule(ModuleBase):
         return box, commodity, dest, profit, roi
 
     def _populate_systems(self):
-        try:
-            data = self.api.get("star_systems")
-        except Exception:
-            data = []
-        self._systems = {
-            row["name"]: row["id"] for row in data if row.get("is_available") and row.get("name")
-        }
+        systems = self._locations.available_systems()
+        self._systems = {row["name"]: row["id"] for row in systems if row.get("name")}
         names = sorted(self._systems.keys())
         self.system_combo.blockSignals(True)
         self.system_combo.addItems(names)
@@ -197,18 +194,15 @@ class TradeRouteOptimizerModule(ModuleBase):
         system_id = self._systems.get(system_name)
         if system_id is None:
             return
-        try:
-            data = self.api.get("terminals", {"id_star_system": system_id, "type": "commodity"})
-        except Exception:
-            data = []
-        # UEX's raw terminal "name" is often prefixed with the in-game kiosk
-        # label, e.g. "Admin - Baijini Point" (real data, not a bug — that's
-        # literally what the terminal is called) — "nickname" gives the
-        # clean location name instead ("Baijini Point", "ARC-L1").
-        terminals = {
-            (row.get("nickname") or row["name"]): row["id"] for row in data
-            if row.get("is_available_live") and row.get("name")
-        }
+        rows = [
+            row for row in self._locations.all_locations()
+            if row.get("_endpoint") == "terminals"
+            and row.get("id_star_system") == system_id
+            and row.get("type") == "commodity"
+            and row.get("is_available_live")
+            and row.get("id") is not None
+        ]
+        terminals = {self._locations.display_name(row): row["id"] for row in rows}
         names = sorted(terminals.keys())
         self._terminals = terminals
 
