@@ -3,8 +3,8 @@ CardContainer, the tray for stowed (hidden) cards, and Settings.
 """
 import subprocess
 
-from PySide6.QtCore import Qt, QPoint, QTimer, QKeyCombination
-from PySide6.QtGui import QGuiApplication, QKeySequence, QColor, QPainter
+from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtGui import QGuiApplication, QColor, QPainter
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QSizeGrip, QSizePolicy, QLineEdit
@@ -202,12 +202,19 @@ class _SettingsRow(QWidget):
 
 class _HotkeyField(QLineEdit):
     """Click, then press a key combo to record it as the global Stow/Deploy
-    hotkey — works even while another app (the game) has focus, since it's
-    a real OS-level hotkey (host/hotkey.py), not a Qt shortcut.
+    hotkey — works even while another app (the game) has focus. Capture is
+    handled by host/hotkey.py's GlobalHotkey.capture_combo(), which uses
+    the `keyboard` library's low-level global hook (the same mechanism
+    ThrottleWatch uses) rather than Qt key events — a Qt.Popup-hosted field
+    like this one doesn't reliably receive OS keyboard focus for
+    SendKeys-style testing, and more importantly the previous Win32
+    RegisterHotKey approach this used to be built on didn't fire at all
+    while a fullscreen game had focus (see docs/DECISIONS.md).
 
-    Must include at least one modifier (Ctrl/Alt/Shift/Win): a bare key
-    would hijack that key system-wide, including while playing. Escape
-    cancels without changing anything.
+    A bare key (no modifier) is allowed — this hook doesn't "steal" the
+    key system-wide the way RegisterHotKey would (suppress=False), it
+    only listens, so a bare F3 hotkey doesn't stop F3 also reaching the
+    game normally.
     """
 
     def __init__(self, main_window: "MainWindow"):
@@ -215,7 +222,8 @@ class _HotkeyField(QLineEdit):
         self._win = main_window
         self.setReadOnly(True)
         self.setAlignment(Qt.AlignCenter)
-        self._listening = False
+        self._capturing = False
+        self._capture_handle = None  # keeps the capture's signal-holder QObject alive
         self._show_current()
 
     def _show_current(self):
@@ -227,49 +235,30 @@ class _HotkeyField(QLineEdit):
         QTimer.singleShot(1600, self._show_current)
 
     def mousePressEvent(self, event):
-        self._listening = True
-        self.setText("Press a key combo… (Esc cancels)")
-
-    def keyPressEvent(self, event):
-        if not self._listening:
+        if self._capturing:
             return
-        key = event.key()
-        if key == Qt.Key_Escape:
-            self._listening = False
-            self._show_current()
-            return
-        if key in (Qt.Key_Control, Qt.Key_Shift, Qt.Key_Alt, Qt.Key_Meta, Qt.Key_unknown):
-            return  # a bare modifier isn't a complete combo yet — keep listening
+        self._capturing = True
+        self.setText("Press a key combo…")
+        self._capture_handle = self._win.capture_hotkey_combo(
+            self._on_captured, self._on_capture_error
+        )
 
-        self._listening = False
-        mod = hotkey_mod.qt_modifiers_to_mod(event.modifiers())
-        vk = hotkey_mod.qt_key_to_vk(key)
-
-        # Bare letters/digits/space/etc. would hijack normal typing if
-        # registered without a modifier — but function keys and navigation
-        # keys (F1-F12, Insert, arrows, ...) never produce a character
-        # during normal typing, so those are fine standalone (this is also
-        # what let the user's F3-alone case through instead of being
-        # wrongly rejected).
-        if mod == 0 and hotkey_mod.key_requires_modifier(key):
-            self._flash("Needs Ctrl / Alt / Shift / Win too")
+    def _on_captured(self, combo: str):
+        self._capturing = False
+        self._capture_handle = None
+        if not combo or combo.lower() == "esc":
+            self._show_current()  # Escape cancels rather than becoming the hotkey
             return
-        if vk is None:
-            self._flash("Unsupported key — try another")
-            return
-
-        # PySide6/Qt6 uses new-style enums: event.modifiers() returns a
-        # Qt.KeyboardModifier flag object that int() can't coerce directly
-        # (raises TypeError) — QKeyCombination is the Qt6-correct way to
-        # pair a modifier flag with a key for QKeySequence. QKeyCombination
-        # also insists on an actual Qt.Key enum member, not the plain int
-        # event.key() returns — wrap it or this throws too.
-        display = QKeySequence(QKeyCombination(event.modifiers(), Qt.Key(key))).toString()
-        if self._win.set_stow_hotkey(mod, vk, display):
+        display = "+".join(part.title() for part in combo.split("+"))
+        if self._win.set_stow_hotkey(combo, display):
             self._show_current()
         else:
-            err = self._win.last_hotkey_error()
-            self._flash(f"Already in use (Win32 error {err})" if err else "Could not register hotkey")
+            self._flash("Could not set hotkey")
+
+    def _on_capture_error(self, message: str):
+        self._capturing = False
+        self._capture_handle = None
+        self._flash("Capture failed — try again")
 
 
 class _SettingsPanel(QWidget):
@@ -478,10 +467,19 @@ class _TitleBar(QWidget):
             self._win.move(event.globalPosition().toPoint() - self._drag_offset)
 
     def mouseReleaseEvent(self, event):
-        if self._drag_offset is not None and self._win.is_app_stowed():
+        if self._drag_offset is not None:
             moved = (event.globalPosition().toPoint() - self._press_pos).manhattanLength()
-            if moved < 5:
-                self._win.deploy_app()
+            if self._win.is_app_stowed():
+                if moved < 5:
+                    self._win.deploy_app()
+                else:
+                    # A real drag, not a click-to-deploy — save the pill's
+                    # new spot immediately, at the exact moment the drag
+                    # ends, rather than on a debounce timer that a quick
+                    # follow-up deploy could race and overwrite.
+                    self._win.save_current_position()
+            elif moved >= 5:
+                self._win.save_current_position()
         self._drag_offset = None
 
 
@@ -558,14 +556,11 @@ class MainWindow(QWidget):
         self._geometry_tracking_ready = True
 
         # Global (system-wide) Stow/Deploy hotkey — works even while the
-        # game has focus. installNativeEventFilter doesn't keep the filter
-        # alive on its own, so self._hotkey is the thing keeping it around.
+        # game has focus, via a low-level keyboard hook (see hotkey.py).
         self._hotkey = hotkey_mod.GlobalHotkey()
-        QApplication.instance().installNativeEventFilter(self._hotkey)
-        saved_mod = config.data["ui"].get("hotkey_mod")
-        saved_vk = config.data["ui"].get("hotkey_vk")
-        if saved_mod is not None and saved_vk is not None:
-            self._hotkey.set_hotkey(saved_mod, saved_vk, self.toggle_app_stow)
+        saved_combo = config.data["ui"].get("hotkey_combo")
+        if saved_combo:
+            self._hotkey.set_hotkey(saved_combo, self.toggle_app_stow)
 
     def toggle_collapse_all(self):
         self._all_collapsed = not self._all_collapsed
@@ -577,20 +572,39 @@ class MainWindow(QWidget):
 
     def moveEvent(self, event):
         super().moveEvent(event)
-        self._queue_geometry_save()
+        # Position is saved precisely at the natural end of a move — a
+        # drag release in the title bar (_TitleBar.mouseReleaseEvent), or
+        # the end of stow_app()/deploy_app()'s own programmatic
+        # repositioning below — not here. A debounced save keyed off raw
+        # move events was tried first and had a real bug: the shared timer
+        # only checks is_app_stowed() when it finally fires, so a quick
+        # drag-the-pill-then-deploy sequence could restart the same timer
+        # from the deploy's own move before the pill's save ever fired,
+        # silently dropping the pill's dragged position entirely.
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._queue_geometry_save()
-
-    def _queue_geometry_save(self):
-        # Debounced: a drag fires dozens of these a second, and only the
-        # final position is worth writing to disk.
-        if not self._geometry_tracking_ready:
+        # Resizing only happens deployed (the grip is hidden while
+        # stowed), so this can safely always target pre_stow_geometry —
+        # no risk of the moveEvent race above, since there's no
+        # size-changing gesture on the pill to race against.
+        if not self._geometry_tracking_ready or self._app_stowed:
             return
         self._geometry_save_timer.start(400)
 
     def _save_tracked_geometry(self):
+        self._pre_stow_geometry = (self.x(), self.y(), self.width(), self.height())
+        self.config.data["ui"]["pre_stow_geometry"] = {
+            "x": self.x(), "y": self.y(), "width": self.width(), "height": self.height(),
+        }
+        self.config.save()
+
+    def save_current_position(self):
+        """Immediate (non-debounced) position save — called right when a
+        move actually finishes: a drag release in the title bar, or the
+        end of stow_app()/deploy_app()'s own repositioning. Whatever ends
+        up on screen is exactly what gets persisted, with no window for a
+        fast follow-up action to race and overwrite it first."""
         if self._app_stowed:
             self._pill_geometry = (self.x(), self.y())
             self.config.data["ui"]["pill_geometry"] = {"x": self.x(), "y": self.y()}
@@ -638,28 +652,27 @@ class MainWindow(QWidget):
             x, y, w, h = self._pre_stow_geometry
             self.move(x, y)
             self.resize(w, h)
+        self.save_current_position()
 
     def toggle_app_stow(self):
         self.deploy_app() if self._app_stowed else self.stow_app()
 
-    def set_stow_hotkey(self, mod: int, vk: int, display: str) -> bool:
-        ok = self._hotkey.set_hotkey(mod, vk, self.toggle_app_stow)
+    def capture_hotkey_combo(self, on_captured, on_error=None):
+        return self._hotkey.capture_combo(on_captured, on_error)
+
+    def set_stow_hotkey(self, combo: str, display: str) -> bool:
+        ok = self._hotkey.set_hotkey(combo, self.toggle_app_stow)
         if ok:
-            self.config.data["ui"]["hotkey_mod"] = mod
-            self.config.data["ui"]["hotkey_vk"] = vk
+            self.config.data["ui"]["hotkey_combo"] = combo
             self.config.data["ui"]["hotkey_display"] = display
             self.config.save()
         return ok
 
     def clear_stow_hotkey(self):
         self._hotkey.clear()
-        self.config.data["ui"]["hotkey_mod"] = None
-        self.config.data["ui"]["hotkey_vk"] = None
+        self.config.data["ui"]["hotkey_combo"] = ""
         self.config.data["ui"]["hotkey_display"] = ""
         self.config.save()
-
-    def last_hotkey_error(self) -> int | None:
-        return self._hotkey.last_error
 
     def paintEvent(self, event):
         painter = QPainter(self)

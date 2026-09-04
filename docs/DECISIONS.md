@@ -449,3 +449,76 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   with it against the desktop) — needs the user's own eyes as the final
   check, same as before, but now with much stronger evidence the
   mechanism itself is doing the right thing.
+
+- **2026-09-03 — Replaced RegisterHotKey with a low-level keyboard hook
+  (the `keyboard` library), because RegisterHotKey doesn't fire while
+  Star Citizen has focus.** The hotkey field's capture bug (int vs
+  Qt.Key) was fixed and confirmed working — but the user then reported
+  the hotkey still didn't actually toggle stow/deploy while the game was
+  focused, even with a correctly-captured combo. `RegisterHotKey` posts
+  `WM_HOTKEY` through the normal window message queue; a fullscreen or
+  exclusive-input game can block that queue from ever reaching a
+  background process's hotkey registration. Told to look at how
+  ThrottleWatch (a separate, already-shipping Star Citizen overlay by
+  the same author, at `D:\Documents\Mitch\Star Citizen\ThrottleWatch\
+  throttle_watch.py`) handles this — its hotkey reliably works with the
+  game focused. It uses the `keyboard` Python library, which installs a
+  low-level global keyboard hook (`WH_KEYBOARD_LL` via
+  `SetWindowsHookEx`) that intercepts the actual keyboard input stream
+  below the window message queue entirely, so which window currently has
+  focus is irrelevant to whether the hook sees the keystroke.
+  Ported ThrottleWatch's `HotkeyState` design directly rather than
+  reinventing it: raw key down/up events (not `keyboard.add_hotkey`,
+  whose shared cross-hotkey pressed-keys dict can get a modifier stuck
+  "held" forever if a single key-up event is ever lost — e.g. a UAC
+  prompt stealing focus mid-combo, which happens easily alt-tabbing out
+  of a fullscreen game) plus a `GetAsyncKeyState`-based `reconcile()`
+  watchdog that self-heals exactly that stuck-state case. Also ported the
+  capture mechanism — `keyboard.read_hotkey()` in a background thread —
+  replacing the Qt-keyPressEvent-based capture entirely, which
+  incidentally also resolves the Qt.Popup-keyboard-focus unreliability
+  documented earlier for that field, since this capture path doesn't
+  depend on Qt focus routing at all.
+  `keyboard.hook()`'s callback runs on the `keyboard` library's own
+  dispatch thread, not the Qt/GUI thread — `GlobalHotkey` is a `QObject`
+  with a `Signal`, and emitting a Qt signal from a non-GUI thread is the
+  standard, correct way to marshal a callback that touches Qt widgets
+  back onto the GUI thread (Qt auto-queues cross-thread signal delivery).
+  This plays the same role ThrottleWatch's `self.root.after(0, ...)`
+  plays for marshaling onto the Tk thread.
+  Verified `HotkeyState`'s combo-matching logic directly with synthetic
+  key events (not the live hook, which needs a human's real keyboard):
+  bare `f3` fires on down and correctly re-fires on a fresh press after
+  release, a multi-key combo (`ctrl+alt+p`) correctly waits for every
+  modifier to be down before firing, and `clear()` correctly stops
+  dispatch. New dependency: `keyboard>=0.13` (already vendored/used by
+  ThrottleWatch, confirmed installed in this environment).
+  Config schema changed: `hotkey_mod`/`hotkey_vk` (Win32 concepts)
+  replaced by a single `hotkey_combo` string (the `keyboard` library's
+  own canonical form, e.g. `"f3"` or `"ctrl+alt+p"`) — simpler, and
+  matches what `keyboard.read_hotkey()` already returns with no
+  translation needed. Old keys left as harmless orphans in existing
+  users' `config.json` rather than actively migrated/deleted.
+
+- **2026-09-03 — Fixed a real race in pill-position persistence: a
+  shared debounce timer read stow-state at fire time, not per-event.**
+  The pill-position-memory feature (shipped earlier this session) used
+  one `QTimer` restarted on every `moveEvent`, which after a 400ms quiet
+  period would save either `pill_geometry` or `pre_stow_geometry`
+  depending on `self._app_stowed` *at that moment*. This breaks the
+  instant two different-state moves happen within the same 400ms window:
+  drag the pill, then deploy shortly after (an entirely natural thing to
+  do — most people don't pause half a second after dragging something
+  before clicking it) restarts the same timer from the deploy's own
+  `move()`/`resize()` calls, so when it finally fires it reads
+  `self._app_stowed == False` and saves `pre_stow_geometry` — the pill's
+  just-dragged position is never written to disk at all, silently.
+  Fixed by removing the debounce for moves entirely and instead saving
+  position immediately, synchronously, at the exact moments a move
+  actually finishes: `_TitleBar.mouseReleaseEvent` (covers both pill and
+  deployed-window dragging — the same handler drives both, distinguished
+  by `is_app_stowed()`) and the end of `stow_app()`/`deploy_app()`'s own
+  programmatic repositioning. `resizeEvent` keeps a debounce (resizing is
+  naturally bursty — dozens of events for one drag of the corner grip)
+  but no longer branches on stow state at all, since the grip is hidden
+  whenever the app is stowed and so can never race against a pill move.

@@ -1,119 +1,208 @@
-"""System-wide (global) hotkey support via the Win32 RegisterHotKey API.
+"""System-wide (global) hotkey support via a low-level keyboard hook.
 
 Plain Qt shortcuts (QShortcut) only fire while the app itself has focus —
 useless for "toggle the overlay while I'm alt-tabbed into the game," which
-is the whole point of this feature. RegisterHotKey posts a WM_HOTKEY
-message to this process's queue regardless of which window is focused;
-a QAbstractNativeEventFilter is how Qt's event loop lets us see it.
+is the whole point of this feature. The Win32 RegisterHotKey/WM_HOTKEY API
+was tried first and reliably failed to fire while Star Citizen had focus —
+RegisterHotKey delivers its message through the normal window message
+queue, which fullscreen/exclusive-input games can block. ThrottleWatch (a
+separate, already-shipping SC overlay by the same author) never has that
+problem because it uses the `keyboard` library's low-level global hook
+(WH_KEYBOARD_LL via SetWindowsHookEx) instead — that hooks the actual
+keyboard input stream below the window message queue, so it isn't affected
+by which window Windows currently considers focused. This module ports
+that proven approach (see ThrottleWatch's HotkeyState for the original).
 """
 import ctypes
-from ctypes import wintypes
+import threading
 
-from PySide6.QtCore import QAbstractNativeEventFilter
-from PySide6.QtCore import Qt
+import keyboard
+from PySide6.QtCore import QObject, QTimer, Signal
 
-MOD_ALT = 0x0001
-MOD_CONTROL = 0x0002
-MOD_SHIFT = 0x0004
-MOD_WIN = 0x0008
-WM_HOTKEY = 0x0312
+MAPVK_VSC_TO_VK = 1
+ctypes.windll.user32.GetAsyncKeyState.restype = ctypes.c_short
+ctypes.windll.user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
 
-_HOTKEY_ID = 1  # only one global hotkey exists right now (Stow/Deploy)
-
-# Qt.Key -> Windows virtual-key code. Covers the keys someone would
-# realistically pick for a hotkey; anything else is reported as unsupported
-# by the capture field rather than silently registering the wrong key.
-_QT_TO_VK: dict[int, int] = {}
-for _i in range(Qt.Key_A, Qt.Key_Z + 1):
-    _QT_TO_VK[_i] = _i  # Qt.Key_A..Z (0x41-0x5A) are numerically identical to VK_A..Z
-for _i in range(Qt.Key_0, Qt.Key_9 + 1):
-    _QT_TO_VK[_i] = _i  # same story for the digit keys
-_QT_TO_VK.update({
-    Qt.Key_F1: 0x70, Qt.Key_F2: 0x71, Qt.Key_F3: 0x72, Qt.Key_F4: 0x73,
-    Qt.Key_F5: 0x74, Qt.Key_F6: 0x75, Qt.Key_F7: 0x76, Qt.Key_F8: 0x77,
-    Qt.Key_F9: 0x78, Qt.Key_F10: 0x79, Qt.Key_F11: 0x7A, Qt.Key_F12: 0x7B,
-    Qt.Key_Insert: 0x2D, Qt.Key_Delete: 0x2E,
-    Qt.Key_Home: 0x24, Qt.Key_End: 0x23,
-    Qt.Key_PageUp: 0x21, Qt.Key_PageDown: 0x22,
-    Qt.Key_Left: 0x25, Qt.Key_Up: 0x26, Qt.Key_Right: 0x27, Qt.Key_Down: 0x28,
-    Qt.Key_Space: 0x20, Qt.Key_Tab: 0x09, Qt.Key_Backspace: 0x08,
-    Qt.Key_QuoteLeft: 0xC0,  # backtick / tilde key
-    Qt.Key_Minus: 0xBD, Qt.Key_Equal: 0xBB,
-    Qt.Key_BracketLeft: 0xDB, Qt.Key_BracketRight: 0xDD,
-})
+_vk_name_cache: dict[str, int | None] = {}
 
 
-# Keys that are safe to register with NO modifier at all — none of these
-# produce a character during normal typing (in the overlay or in-game), so
-# there's no risk of accidentally hijacking ordinary keyboard input. Every
-# other key (letters, digits, space, punctuation, ...) requires at least
-# one modifier, or it'd steal that key system-wide, including in the game.
-_BARE_KEY_SAFE = {
-    Qt.Key_F1, Qt.Key_F2, Qt.Key_F3, Qt.Key_F4, Qt.Key_F5, Qt.Key_F6,
-    Qt.Key_F7, Qt.Key_F8, Qt.Key_F9, Qt.Key_F10, Qt.Key_F11, Qt.Key_F12,
-    Qt.Key_Insert, Qt.Key_Delete, Qt.Key_Home, Qt.Key_End,
-    Qt.Key_PageUp, Qt.Key_PageDown,
-    Qt.Key_Left, Qt.Key_Up, Qt.Key_Right, Qt.Key_Down,
-}
+def _vk_for_key_name(name: str) -> int | None:
+    """Maps a keyboard-library key name (e.g. "ctrl", "f3") to a Windows
+    virtual-key code, for the physical-state watchdog below."""
+    if name in _vk_name_cache:
+        return _vk_name_cache[name]
+    vk = None
+    try:
+        scan_code = keyboard.key_to_scan_codes(name)[0]
+        vk = ctypes.windll.user32.MapVirtualKeyW(scan_code, MAPVK_VSC_TO_VK) or None
+    except (ValueError, IndexError, OSError):
+        vk = None
+    _vk_name_cache[name] = vk
+    return vk
 
 
-def qt_key_to_vk(qt_key: int) -> int | None:
-    return _QT_TO_VK.get(qt_key)
+def _key_is_physically_down(vk: int) -> bool:
+    return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
 
 
-def key_requires_modifier(qt_key: int) -> bool:
-    return qt_key not in _BARE_KEY_SAFE
+class HotkeyState:
+    """Tracks one global hotkey combo from raw key down/up events fed to it
+    by a single shared keyboard.hook(), instead of keyboard.add_hotkey/
+    remove_hotkey.
 
-
-def qt_modifiers_to_mod(modifiers) -> int:
-    mod = 0
-    if modifiers & Qt.ControlModifier:
-        mod |= MOD_CONTROL
-    if modifiers & Qt.ShiftModifier:
-        mod |= MOD_SHIFT
-    if modifiers & Qt.AltModifier:
-        mod |= MOD_ALT
-    if modifiers & Qt.MetaModifier:
-        mod |= MOD_WIN
-    return mod
-
-
-class GlobalHotkey(QAbstractNativeEventFilter):
-    """Registers one system-wide hotkey and calls a callback when it's
-    pressed. Install once via
-    `QApplication.instance().installNativeEventFilter(instance)` and keep
-    a reference alive for the app's lifetime — Qt doesn't keep filters
-    alive on its own.
+    That higher-level API matches combos against a dict of currently-pressed
+    keys shared globally across every hotkey in the process. If a single
+    key-up event is ever lost — e.g. a UAC prompt steals focus while a
+    modifier is held, which happens easily when alt-tabbing out of a
+    fullscreen game — a stray scan code gets stuck "pressed" there forever,
+    and the hotkey never matches again until the process restarts. Tracking
+    state as plain attributes here, plus the reconcile() watchdog below,
+    sidesteps that.
     """
 
     def __init__(self):
-        super().__init__()
-        self._callback = None
-        self._registered = False
-        self.last_error: int | None = None
+        self.combo: tuple[str, ...] = ()
+        self.callback = None
+        self.pressed: set[str] = set()
+        self.held = False
 
-    def set_hotkey(self, mod: int, vk: int, callback) -> bool:
-        """Registers (mod, vk) as the global hotkey. Returns False if the
-        combo is already claimed by another application — the caller
-        should tell the user, not assume success."""
-        self.clear()
-        ok = bool(ctypes.windll.user32.RegisterHotKey(None, _HOTKEY_ID, mod, vk))
-        if ok:
-            self._callback = callback
-            self._registered = True
-        else:
-            self.last_error = ctypes.windll.kernel32.GetLastError()
-        return ok
+    def configure(self, hotkey: str, callback):
+        if not hotkey:
+            return
+        self.combo = tuple(p.strip().lower() for p in hotkey.split("+") if p.strip())
+        self.callback = callback
+        self.pressed.clear()
+        self.held = False
 
     def clear(self):
-        if self._registered:
-            ctypes.windll.user32.UnregisterHotKey(None, _HOTKEY_ID)
-            self._registered = False
+        self.combo = ()
+        self.callback = None
+        self.pressed.clear()
+        self.held = False
+
+    def handle_event(self, name: str, event_type: str):
+        combo = self.combo
+        if not combo:
+            return
+        trigger_key = combo[-1]
+        modifiers = combo[:-1]
+
+        if event_type == "down":
+            self.pressed.add(name)
+            if name != trigger_key or not all(m in self.pressed for m in modifiers):
+                return
+            if self.held:
+                # Windows key-repeat re-fires "down" while the key stays
+                # held; ignore repeats.
+                return
+            self.held = True
+            if self.callback is not None:
+                self.callback()
+        elif event_type == "up":
+            self.pressed.discard(name)
+            if name == trigger_key or name in modifiers:
+                self.held = False
+
+    def reconcile(self):
+        """Watchdog: clears stuck state if the OS says the relevant keys
+        aren't actually held anymore, self-healing from a key-up event that
+        never reached the hook (see class docstring)."""
+        if not self.combo or (not self.pressed and not self.held):
+            return
+        for name in list(self.pressed):
+            vk = _vk_for_key_name(name)
+            if vk is not None and not _key_is_physically_down(vk):
+                self.pressed.discard(name)
+        if self.held:
+            vk = _vk_for_key_name(self.combo[-1])
+            if vk is not None and not _key_is_physically_down(vk):
+                self.held = False
+
+
+class GlobalHotkey(QObject):
+    """Owns the one persistent low-level keyboard hook for the app's
+    lifetime and dispatches matching key events to a single HotkeyState
+    (Stow/Deploy — the only global hotkey mobiOverlay has right now).
+
+    keyboard.hook()'s callback runs on the keyboard library's own dispatch
+    thread, never the Qt/GUI thread — emitting a Qt signal from there is
+    the standard thread-safe way to marshal back onto the GUI thread
+    (Qt auto-queues a cross-thread signal to the receiver's thread), the
+    same role ThrottleWatch's `self.root.after(0, ...)` plays for Tk.
+    """
+
+    # Emitted from the keyboard-hook thread; Qt auto-queues delivery to
+    # whatever thread the connected slot lives on (the GUI thread), which
+    # is what makes it safe for the slot to touch Qt widgets at all.
+    triggered = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self._state = HotkeyState()
+        self._callback = None
+        self.triggered.connect(self._dispatch)
+
+        self._reconcile_timer = QTimer(self)
+        self._reconcile_timer.timeout.connect(self._state.reconcile)
+        self._reconcile_timer.start(1000)
+
+        try:
+            self._hook = keyboard.hook(self._on_key_event, suppress=False)
+        except Exception:
+            # No admin rights, or the hook install otherwise failed —
+            # the hotkey silently won't fire; the Settings UI still works,
+            # it just never gets a callback.
+            self._hook = None
+
+    def _on_key_event(self, event):
+        # Runs on keyboard's dispatch thread. A broad except here matters:
+        # keyboard's dispatch loop has no exception handling of its own, so
+        # an uncaught error here would silently kill hotkey delivery for
+        # the rest of the process's life, not just this one event.
+        try:
+            name = (event.name or "").lower()
+            self._state.handle_event(name, event.event_type)
+        except Exception:
+            pass
+
+    def _dispatch(self):
+        # Runs on the GUI thread (queued via the cross-thread signal
+        # emit in HotkeyState.handle_event -> self.triggered.emit below).
+        if self._callback is not None:
+            self._callback()
+
+    def set_hotkey(self, combo: str, callback) -> bool:
+        self._callback = callback
+        self._state.configure(combo, self.triggered.emit)
+        return True
+
+    def clear(self):
+        self._state.clear()
         self._callback = None
 
-    def nativeEventFilter(self, eventType, message):
-        if eventType == b"windows_generic_MSG" and self._callback is not None:
-            msg = wintypes.MSG.from_address(int(message))
-            if msg.message == WM_HOTKEY and msg.wParam == _HOTKEY_ID:
-                self._callback()
-        return False, 0
+    def capture_combo(self, on_captured, on_error=None):
+        """Blocks (on a background thread) until the user presses and
+        releases a key combo, then reports it back via `on_captured` —
+        called on the GUI thread through the same signal-based marshaling
+        as the hotkey callback itself. Mirrors ThrottleWatch's
+        keyboard.read_hotkey()-in-a-thread capture pattern exactly, since
+        that's the one already proven to work reliably here."""
+        signal_holder = _CaptureResult()
+        signal_holder.captured.connect(on_captured)
+        if on_error is not None:
+            signal_holder.failed.connect(on_error)
+
+        def worker():
+            try:
+                combo = keyboard.read_hotkey(suppress=False)
+                signal_holder.captured.emit(combo)
+            except Exception as exc:
+                signal_holder.failed.emit(str(exc))
+
+        threading.Thread(target=worker, daemon=True).start()
+        return signal_holder  # caller must keep a reference alive until it fires
+
+
+class _CaptureResult(QObject):
+    captured = Signal(str)
+    failed = Signal(str)

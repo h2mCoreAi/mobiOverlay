@@ -307,18 +307,52 @@
   `(6, 9, 11)` at 100% and `(2, 4, 4)` at 40% (matching premultiplied-
   alpha scaling almost exactly) under the new paintEvent approach. See
   DECISIONS.md for the full trail.
+- User confirmed the hotkey *field* now correctly captures and displays a
+  combo — but the hotkey didn't actually *toggle* stow/deploy while Star
+  Citizen had focus. Root cause: `RegisterHotKey`/`WM_HOTKEY` delivers
+  through the normal window message queue, which the game (fullscreen/
+  exclusive input) can block. **Rewrote `host/hotkey.py` to use the
+  `keyboard` library's low-level global keyboard hook
+  (`WH_KEYBOARD_LL`/`SetWindowsHookEx`) instead** — the same mechanism
+  ThrottleWatch (a separate, already-shipping SC overlay by the same
+  author) uses, where this exact problem never comes up. Ported
+  ThrottleWatch's `HotkeyState` (combo tracking + a `GetAsyncKeyState`
+  reconcile watchdog for stuck modifiers) directly. Capture also switched
+  from Qt key events to `keyboard.read_hotkey()` in a background thread
+  (ThrottleWatch's proven capture pattern), which sidesteps the
+  Qt.Popup-keyboard-focus unreliability the old capture had — see
+  ARCHITECTURE.md's "Global hotkey" section for the full design. Verified
+  the combo-matching logic (`HotkeyState`) directly with synthetic events:
+  bare F3 fires and re-fires correctly on repeated press/release,
+  multi-key combos correctly wait for every modifier before firing, and
+  `clear()` correctly stops dispatch. New dependency: `keyboard>=0.13`
+  (added to requirements.txt).
+- **Bug fix: pill position wasn't actually being remembered.** The
+  debounced `moveEvent`-driven save (added when this feature first
+  shipped) checked `is_app_stowed()` only when its shared timer finally
+  fired, not per-event — dragging the pill and then deploying shortly
+  after (well within the 400ms debounce window) restarted the same timer
+  from the deploy's own move, so it fired checking the now-deployed
+  state and silently never saved the pill's dragged position at all.
+  Replaced with an immediate (non-debounced) save at the exact moment a
+  drag actually ends (`_TitleBar.mouseReleaseEvent`) and at the end of
+  `stow_app()`/`deploy_app()`'s own repositioning — no more shared timer,
+  no more race. Resize (which only happens deployed, via the grip that's
+  hidden while stowed) keeps its own debounce, now unconditional since
+  there's nothing for it to race against.
 
 ## Next
 
-- **Human check: hotkey field.** Click it, press a combo (including a
-  bare F3), confirm the display updates and the hotkey actually toggles
-  stow/deploy while the game has focus. The crash that was silently
-  eating every keystroke (now confirmed fixed twice over — the second
-  time by exercising the real handler with synthetic key events, not
-  just the previously-broken isolated line test) should be resolved, but
-  live capture-into-the-popup-field itself was never confirmed by
-  automation across this whole project — only a human click can close
-  this out.
+- **Human check: hotkey (again).** Confirm F3 (or whatever combo) now
+  actually toggles stow/deploy while Star Citizen has focus — this is
+  the whole point of the low-level-hook rewrite above, and the isolated
+  `HotkeyState` tests are strong evidence the matching logic is correct,
+  but only a real keypress while the game is focused can confirm the
+  hook itself is actually intercepting input past the game.
+- **Human check: pill position memory (again).** Drag the pill, deploy
+  quickly (don't wait), re-stow, confirm it reopens at the dragged spot —
+  that fast-follow-up sequence was exactly what silently broke the
+  previous debounced-save version.
 - **Human check: void background transparency (again).** Two fix attempts
   for this didn't hold up under the user's own testing already this
   session — the third attempt (direct `paintEvent` painting) has much

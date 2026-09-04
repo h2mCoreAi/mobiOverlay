@@ -78,21 +78,46 @@ same stow/deploy toggle from Settings, meant for use while playing.
 
 ## Global hotkey (host/hotkey.py)
 
-`GlobalHotkey` wraps `RegisterHotKey`/`UnregisterHotKey` and installs a
-`QAbstractNativeEventFilter` to catch the resulting `WM_HOTKEY` message
-regardless of which window has OS focus. Only one hotkey exists right now
-(Stow/Deploy the whole app) — `_HOTKEY_ID = 1` in `hotkey.py`. Most keys
-require at least one modifier (Ctrl/Alt/Shift/Win) — a bare key is
-rejected before `RegisterHotKey` is ever called, since that would hijack
-the key system-wide (including inside the game) — but function/navigation
-keys (F1-F12, Insert, Delete, Home, End, Page Up/Down, arrows) never
-produce a character during normal typing, so `key_requires_modifier()`
-exempts that whole class and lets them be set bare. The capture UI
-(`_HotkeyField` in `main_window.py`) is click-to-arm: click the field,
-press the combo, Escape cancels. Building the display string uses
-`QKeySequence(QKeyCombination(modifiers, key))` — PySide6/Qt6's
-`event.modifiers()` returns a `Qt.KeyboardModifier` flag object that
-plain `int()` cannot coerce (see DECISIONS.md, 2026-09-03).
+Uses the `keyboard` library's low-level global keyboard hook
+(`WH_KEYBOARD_LL` via `SetWindowsHookEx`, installed once for the app's
+life in `GlobalHotkey.__init__`), not Win32 `RegisterHotKey`/`WM_HOTKEY`.
+`RegisterHotKey` was tried first and reliably failed to fire while Star
+Citizen had focus — it delivers through the normal window message queue,
+which a fullscreen/exclusive-input game can block. A low-level hook
+intercepts the actual keyboard input stream below that queue, so it isn't
+affected by which window Windows currently considers focused. This mirrors
+ThrottleWatch (a separate, already-shipping SC overlay by the same
+author), which never has this problem for exactly that reason — see
+`throttle_watch.py`'s `HotkeyState` for the original this was ported from.
+
+`HotkeyState` tracks one combo's pressed/held state from raw key up/down
+events fed to it by the single shared hook (not `keyboard.add_hotkey`,
+whose shared cross-hotkey pressed-keys dict is vulnerable to a permanently
+stuck-down modifier if a single key-up event is ever lost — e.g. a UAC
+prompt stealing focus mid-combo). A `reconcile()` watchdog (`GlobalHotkey`
+runs it once/second via `QTimer`) self-heals stuck state by checking
+`GetAsyncKeyState` against what the hook thinks is still held. Only one
+hotkey exists right now (Stow/Deploy the whole app).
+
+Because `keyboard.hook()`'s callback runs on the `keyboard` library's own
+dispatch thread, never the Qt/GUI thread, `GlobalHotkey` is a `QObject`
+with a `triggered` `Signal()` — emitting it from that thread is the
+standard thread-safe way to marshal the actual callback (which touches Qt
+widgets) back onto the GUI thread; Qt auto-queues a cross-thread signal
+emission to whatever thread its connected slot lives on. This plays the
+same role ThrottleWatch's `self.root.after(0, ...)` plays for Tk.
+
+The capture UI (`_HotkeyField` in `main_window.py`) is click-to-arm: click
+the field, press and release any combo (including a bare key, since this
+hook only listens — `suppress=False` — rather than exclusively claiming
+the key the way `RegisterHotKey` did). Capture itself is
+`GlobalHotkey.capture_combo()`, which spawns a daemon thread calling
+`keyboard.read_hotkey(suppress=False)` (blocks until a full press+release)
+and reports the result back via another `Signal`, the same proven pattern
+ThrottleWatch's Settings dialog uses. Escape is treated as cancel rather
+than becoming the hotkey. Config stores the raw `keyboard`-library combo
+string directly (`hotkey_combo`, e.g. `"f3"` or `"ctrl+alt+p"`) plus a
+prettified `hotkey_display` for the UI.
 
 ## Packaging
 
