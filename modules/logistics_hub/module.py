@@ -300,6 +300,14 @@ class LogisticsHubModule(ModuleBase):
         if self._status_label is not None:
             self._status_label.setText(msg)
 
+    def _clear_error_state(self):
+        """Make sure the card body (with the SELECT REGION button) is visible
+        even if the host previously put this card into its error state due to
+        a missing capture region."""
+        card = getattr(self, "_card_widget", None)
+        if card is not None:
+            card.clear_error()
+
     def _select_region(self):
         screen = QGuiApplication.screenAt(QCursor.pos())
         if screen is None:
@@ -348,7 +356,9 @@ class LogisticsHubModule(ModuleBase):
         recommended visiting order."""
         region = self.settings.get("region")
         if not region:
-            raise ValueError("No capture region set — use SELECT REGION on the card first.")
+            self._set_status("No capture region set — use SELECT REGION on the card first.")
+            self._clear_error_state()
+            return
         if not OCR_AVAILABLE:
             raise RuntimeError(
                 "pytesseract/PIL not installed. Run:\n"
