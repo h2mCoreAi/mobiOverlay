@@ -248,3 +248,32 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   `self.close()`, not relying on last-window-closed detection at all.
   Re-verified clean afterward: old PID fully exits, exactly one new PID
   ends up running, its window is the real visible one.
+
+- **2026-09-03 — Trade Route Optimizer: "Admin -" terminal names fixed;
+  terminal picker made searchable.** User asked why so many terminals
+  showed as "Admin" — checked the raw API response directly rather than
+  guessing: `name` really is `"Admin - Baijini Point"` (that's genuinely
+  the in-game kiosk's name, not a UEX data error), but `nickname` gives
+  the clean location name (`"Baijini Point"`, `"ARC-L1"`). Switched the
+  terminal picker to `nickname`. `commodities_routes` (used for the route
+  list itself) has no equivalent nickname field for destinations, so
+  those fall back to stripping the `"Admin - "` prefix by hand.
+  Also made the terminal combo editable with a filtering `QCompleter`
+  (`Qt.MatchContains`) per explicit request — type to narrow a 100+ item
+  list, or still scroll the full dropdown. Had to switch its signal
+  connection from `currentTextChanged` to `textActivated`: an editable
+  combo's `currentTextChanged` fires on every keystroke, which would
+  trigger a refresh (and an "unknown terminal" error) per character
+  typed rather than only on a real, committed selection.
+  Verification note: confirmed both the display-name fix (screenshot) and
+  that the field genuinely accepts keyboard input (real keystrokes did
+  change its content), but couldn't cleanly demonstrate the completer's
+  filtered dropdown popup itself through UI Automation in this session —
+  `SendKeys` timing produced garbled input (`"arcbbbbb..."`) rather than
+  clean text, and `ValuePattern.SetValue` doesn't reliably trigger Qt's
+  real keystroke-driven signals (same class of issue as the earlier
+  combo-selection problem). The underlying pattern
+  (`QCompleter` + `MatchContains` on an editable `QComboBox`) is
+  standard, well-tested Qt behavior — left for the user to confirm
+  directly rather than over-investing further in fighting the test
+  tooling.

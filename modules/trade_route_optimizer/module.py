@@ -7,7 +7,8 @@ import time
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import (
-    QComboBox, QLabel, QHBoxLayout, QVBoxLayout, QWidget, QPushButton, QLineEdit
+    QComboBox, QCompleter, QLabel, QHBoxLayout, QVBoxLayout, QWidget,
+    QPushButton, QLineEdit
 )
 
 from host import theme
@@ -58,6 +59,16 @@ class TradeRouteOptimizerModule(ModuleBase):
 
         self.terminal_combo = QComboBox()
         self.terminal_combo.setStyleSheet(_COMBO_STYLE)
+        # Editable + a filtering completer: type to narrow the list (a
+        # system can have 100+ terminals), or just open the dropdown and
+        # scroll like before — both work on the same combo.
+        self.terminal_combo.setEditable(True)
+        self.terminal_combo.setInsertPolicy(QComboBox.NoInsert)
+        terminal_completer = QCompleter(self.terminal_combo.model(), self.terminal_combo)
+        terminal_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        terminal_completer.setFilterMode(Qt.MatchContains)
+        terminal_completer.setCompletionMode(QCompleter.PopupCompletion)
+        self.terminal_combo.setCompleter(terminal_completer)
         picker_row.addWidget(self.terminal_combo, 2)
         card.body_layout.addLayout(picker_row)
 
@@ -94,7 +105,12 @@ class TradeRouteOptimizerModule(ModuleBase):
 
         self._populate_systems()
         self.system_combo.currentTextChanged.connect(self._on_system_changed)
-        self.terminal_combo.currentTextChanged.connect(lambda _: self.request_refresh and self.request_refresh())
+        # textActivated (not currentTextChanged): the terminal combo is now
+        # editable, so currentTextChanged fires on every keystroke — that
+        # would trigger a refresh (and an "unknown terminal" error) on each
+        # partial character typed. textActivated only fires once a
+        # selection is actually committed (click, Enter, completer pick).
+        self.terminal_combo.textActivated.connect(lambda _: self.request_refresh and self.request_refresh())
         self.investment_input.editingFinished.connect(lambda: self.request_refresh and self.request_refresh())
 
         self.card = card
@@ -163,8 +179,12 @@ class TradeRouteOptimizerModule(ModuleBase):
             data = self.api.get("terminals", {"id_star_system": system_id, "type": "commodity"})
         except Exception:
             data = []
+        # UEX's raw terminal "name" is often prefixed with the in-game kiosk
+        # label, e.g. "Admin - Baijini Point" (real data, not a bug — that's
+        # literally what the terminal is called) — "nickname" gives the
+        # clean location name instead ("Baijini Point", "ARC-L1").
         terminals = {
-            row["name"]: row["id"] for row in data
+            (row.get("nickname") or row["name"]): row["id"] for row in data
             if row.get("is_available_live") and row.get("name")
         }
         names = sorted(terminals.keys())
@@ -211,7 +231,8 @@ class TradeRouteOptimizerModule(ModuleBase):
                 r = top_routes[i]
                 commodity_label.setText(r.get("commodity_name", "—"))
                 dest_place = r.get("destination_planet_name") or r.get("destination_star_system_name") or ""
-                dest_label.setText(f"→ {r.get('destination_terminal_name', '')} · {dest_place}")
+                dest_name = self._strip_admin_prefix(r.get("destination_terminal_name", ""))
+                dest_label.setText(f"→ {dest_name} · {dest_place}")
                 profit_label.setText(f"{r.get('profit', 0):,} aUEC")
                 roi_label.setText(f"{r.get('price_roi', 0):.1f}% ROI")
             else:
@@ -224,6 +245,14 @@ class TradeRouteOptimizerModule(ModuleBase):
         self.settings["origin_terminal"] = terminal_name
         self.settings["investment_budget"] = investment_text
         self.config.set_module_settings(self.module_id, self.settings)
+
+    @staticmethod
+    def _strip_admin_prefix(name: str) -> str:
+        """commodities_routes has no 'nickname' field for destinations
+        (unlike the terminals endpoint used for the picker), so fall back
+        to trimming the same 'Admin - ' in-game kiosk-label prefix by hand."""
+        prefix = "Admin - "
+        return name[len(prefix):] if name.startswith(prefix) else name
 
 
 MODULE_CLASS = TradeRouteOptimizerModule

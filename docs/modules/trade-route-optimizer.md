@@ -29,14 +29,23 @@ origin terminal, using UEX's pre-computed route data (not custom logic —
   unavailable/unimplemented systems in the picker
 - `terminals?id_star_system=<id>&type=commodity` — origin terminal picker,
   scoped to the chosen system (117 terminals for Stanton alone; must be
-  system-scoped, not a flat list)
+  system-scoped, not a flat list). **Use the `nickname` field for display,
+  not `name`** — `name` is often prefixed with the terminal's in-game
+  kiosk label, e.g. `"Admin - Baijini Point"` (real data, not a bug — an
+  Admin kiosk really is what that terminal's called in-game — but not
+  what you want in a picker). `nickname` gives the clean location name
+  (`"Baijini Point"`, `"ARC-L1"`). Confirmed 2026-09-03 after the user
+  flagged the raw "Admin -" names as confusing.
 - `commodities_routes?id_terminal_origin=<id>[&investment=<amt>]` — returns
   routes for ALL commodities sellable from that terminal, not just one.
   Confirmed real response includes (per row): `commodity_name`, `profit`,
   `price_roi`, `distance`, `score`, `origin_terminal_name`,
   `destination_terminal_name`, `destination_star_system_name`,
   `destination_planet_name`. Sort/filter client-side from this one response
-  — no separate call per commodity needed.
+  — no separate call per commodity needed. **No `nickname` field here** —
+  destination display falls back to stripping the `"Admin - "` prefix by
+  hand (`_strip_admin_prefix`) since the cleaner field simply isn't in
+  this endpoint's response.
 
 `commodities_routes` requires at least one of `id_terminal_origin`,
 `id_planet_origin`, `id_orbit_origin`, or `id_commodity` — an empty query
@@ -46,7 +55,13 @@ returns `missing_one_required_inputs`. This module always sends
 ## Card contents
 
 - System dropdown (Stanton/Pyro/Nyx only)
-- Origin terminal dropdown (repopulated when system changes)
+- Origin terminal dropdown (repopulated when system changes) — editable
+  with a filtering `QCompleter` (`Qt.MatchContains`, case-insensitive), so
+  typing narrows the list instead of only scrolling a 100+ item dropdown.
+  Connected to `textActivated`, not `currentTextChanged` — the latter
+  fires on every keystroke once a combo is editable, which would trigger
+  a refresh (and an "unknown terminal" error) per character typed instead
+  of only on a committed selection
 - Optional investment budget field (numeric, blank = unlimited)
 - Top 5 routes by profit, each row: commodity, destination terminal +
   system/planet, profit (aUEC), ROI%

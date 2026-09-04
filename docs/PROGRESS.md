@@ -186,13 +186,22 @@
   instead of a vague "next launch" — real-time font scaling was
   considered and explicitly dropped per user direction (too heavy a
   refactor for the value)
+- Trade Route Optimizer: fixed "Admin -" terminal names (user caught this
+  too) by switching the picker to UEX's `nickname` field instead of the
+  raw `name`; route-list destinations get the prefix stripped by hand
+  since `commodities_routes` has no nickname field. Terminal picker is
+  now editable with a filtering `QCompleter` (type to narrow 100+
+  terminals, or still scroll the full list) — see DECISIONS.md for the
+  `textActivated` vs `currentTextChanged` gotcha this required
 
 ## Next
 
 - Human review of the running app (this is the current handoff point) —
   especially Retrieve/Find with real system filters set (only the
   unfiltered path got a live human-equivalent test this session), the
-  Force Update confirm flow, and Relaunch
+  Force Update confirm flow, Relaunch, and the terminal search-as-you-type
+  (typing itself was confirmed to reach the field; the actual filtered
+  popup wasn't cleanly confirmed through automation this session)
 - Grid-snap drag and per-card resize handle are code-reviewed and
   screenshot-confirmed to render, but not yet mouse-drag-tested by a human
 - Confirm UEX bearer token is genuinely optional for the long term (GET
