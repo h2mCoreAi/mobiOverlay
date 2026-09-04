@@ -1,7 +1,9 @@
 # Progress
 
-## Status: Logistics Hub (4th module) built and verified against 4 real
-## contracts; shared Core Location service planned (phased, not started)
+## Status: Location-service plan — Phases 1-3 done (shared service,
+## Logistics Hub migrated, real-distance routing) + extensive live
+## hardening; Phases 4-5 (migrate other 2 modules, shared current
+## location) not started
 
 ## Done
 
@@ -423,35 +425,66 @@
   improvement, not yet implemented. Also spot-checked several resolved
   locations (HDMS-Edmond/Thedus/Hadley, Bueno Ravine) against the
   Star Citizen Wiki — all correct (right planet, right system).
+- **Core Location service built** (`host/locations.py`) and **Logistics
+  Hub migrated onto it** — one shared, endpoint-safe, disk-cached
+  (7-day refresh) location index instead of Logistics Hub's own copy;
+  ~135 lines of private resolution logic removed. See DECISIONS.md,
+  2026-09-04, for the full endpoint-collision bug this fixed
+  (`terminals`/`space_stations`/`outposts`/`cities` have independent id
+  sequences — a bare numeric id was silently colliding two unrelated
+  real places).
+- **Real-distance routing** — `LocationService.distance()` (terminal-
+  to-terminal via `terminals_distances`, orbit-to-orbit via
+  `orbits_distances` otherwise, both queried lazily and cached
+  per-session) replaced Logistics Hub's coarse 4-tier cost heuristic.
+  Verified 2-opt found a genuinely cheaper route (328 vs. 358) than a
+  manually "intuitive" guess once real numbers were available —
+  real data disagreeing with human intuition about clustering was
+  exactly the point of this phase.
+- **Extensive live-test-driven hardening on Logistics Hub**, many
+  rounds of real captured contracts reviewed (console + COPY ROUTE
+  export together each time): a 2-opt route-improvement pass on top of
+  greedy nearest-neighbour; a hint-priority bug that resurfaced at a
+  second, deeper merge point than the first fix caught; a short-
+  nickname false-positive substring match ("DROP OFF" ~ Port Olisar's
+  "PO"); bare "PICK UP"/"DROP OFF" section headers; two independent
+  ambiguity-disambiguation signals (same-line trailing digit/code
+  capture, and preferring a location already confirmed elsewhere in
+  the same contract); commodity extraction tracking every raw OCR
+  spelling that resolved to a place, not just the winning one; an
+  honest "cargo unknown" label instead of a silent blank, and instead
+  of ever showing a commodity name as if it were an unresolved
+  location; a period-as-reward-separator OCR variant; and duplicate-
+  contract detection (same reward + any shared resolved location,
+  loosened from an exact full-set match after real OCR noise broke
+  that) with a themed CONFIRM/DENY popup instead of silently tripling
+  the route. Full history in DECISIONS.md.
 
 ## Next
 
-- **Phased Core Location service** (decided, not started — see
-  DECISIONS.md for the full rationale on why this belongs in Core, not
-  a module):
-  1. Build the shared service in `host/` alone; verify standalone
-     against live UEX data before touching any module.
-  2. Migrate Logistics Hub onto it (it has the most sophisticated
-     location logic today — good first real test); re-verify all 4
-     real contracts still resolve correctly.
-  3. Migrate Trade Route Optimizer and Commodity Prices onto it
-     (simpler location needs, lower risk).
-  4. Swap Logistics Hub's route-cost heuristic for real
-     `terminals_distances`/`orbits_distances` data, now sitting on the
-     shared service.
-  5. (Optional, do last) Share a "current location" concept across
-     modules — Logistics Hub already has one; Trade Route
-     Optimizer/Commodity Prices could default their system filters
-     from it.
+- **Phased Core Location service** — Phases 1-3 done (see Done above and
+  DECISIONS.md for rationale/detail); Phase 3's swap moved up ahead of
+  Phase 4 per a later reprioritization:
+  1. ✅ Shared service in `host/`, verified standalone.
+  2. ✅ Migrate Logistics Hub onto it.
+  3. ✅ Swap Logistics Hub's route cost onto real
+     `terminals_distances`/`orbits_distances`, queried lazily — plus an
+     extended live-test-driven hardening pass on top (see Done above).
+  4. **Not started.** Migrate Trade Route Optimizer and Commodity Prices
+     onto the shared service (simpler location needs, lower risk than
+     Logistics Hub was).
+  5. **Not started.** Share a "current location" concept across modules
+     — Logistics Hub already has one; Trade Route Optimizer/Commodity
+     Prices could default their system filters from it.
   Each phase is its own tested checkpoint before starting the next —
   not a single big-bang change.
-- **Human check: Logistics Hub end-to-end in the real app.** Everything
-  above was verified via direct backend calls against the live UEX API
-  and real captured OCR text, not by driving the actual running app —
-  worth a human pass: SELECT REGION, SCAN CONTRACT on a real mission
-  panel, confirm the card renders correctly (not just that the
-  underlying data is right), and try the CURRENT LOCATION picker's
-  search live.
+- Logistics Hub has now had extensive human-in-the-loop live testing
+  (many real captured contracts, console + COPY ROUTE export reviewed
+  together each round) — the SELECT REGION/SCAN CONTRACT/CURRENT
+  LOCATION flow itself is confirmed working in the real running app,
+  not just via backend calls. Still worth periodic real-world spot
+  checks as new contract shapes turn up, same as any OCR-dependent
+  feature.
 - Packaging: `modules/logistics_hub/requirements.txt` (easyocr,
   ~500MB+ with PyTorch) needs folding into the standard install/build
   path now that distribution is all-inclusive (see DECISIONS.md,

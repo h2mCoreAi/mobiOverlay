@@ -820,3 +820,17 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   -> optionally share a "current location" across modules), each phase
   its own tested checkpoint before starting the next. See PROGRESS.md
   Next section.
+
+- **2026-09-04 — Location-service phases 1-3 complete; reordered the
+  remaining plan.** Built `host/locations.py` (Phase 1), migrated
+  Logistics Hub onto it (Phase 2), then moved the real-distance route-
+  cost swap ahead of migrating the other two modules — new order:
+  Phase 3 = real distance data (done), Phase 4 = migrate Trade Route
+  Optimizer/Commodity Prices, Phase 5 = shared current-location
+  concept. Phase 3 turned into a much longer live-test-driven
+  hardening pass than expected — every fix was verified against real
+  captured Star Citizen contracts, several rounds catching genuine
+  regressions from earlier fixes (see PROGRESS.md's Done section for
+  the itemized list: hint-priority bugs resurfacing at a second merge
+  point, short-nickname false positives, ambiguity disambiguation,
+  duplicate-contract detection). Phases 4-5 not started.
