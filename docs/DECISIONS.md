@@ -388,3 +388,34 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   unused until now), both updated via debounced `moveEvent`/`resizeEvent`
   handlers on `MainWindow` (400ms after the last move, so a drag doesn't
   hammer disk I/O) rather than only at the moment of stow/deploy.
+
+- **2026-09-03 — Both hotkey and transparency fixes above shipped broken;
+  root causes were different from what they looked like.** Caught by the
+  user re-testing the live app rather than by this session's own
+  verification, which is the actual failure worth learning from:
+  - The hotkey "fix" (`QKeyCombination(event.modifiers(), key)`) still
+    threw `TypeError` on every keystroke — `QKeyCombination` needs an
+    actual `Qt.Key` enum for its key argument, and `event.key()` returns
+    a plain `int` in PySide6. The isolated test written to confirm the
+    first fix used `Qt.Key_F3` directly, which is already the right
+    type, so the test couldn't have caught this even in principle — it
+    wasn't testing the real code path. Fixed with `Qt.Key(key)`, and this
+    time verified by importing the actual `_HotkeyField` class and firing
+    real `QKeyEvent`s at its real `keyPressEvent` end-to-end, which is
+    the only version of this check that could have caught either bug.
+  - The transparency fix (`WA_TranslucentBackground` + rgba background)
+    was missing `Qt.WA_StyledBackground`, without which a plain `QWidget`
+    doesn't paint a QSS `background` property at all — so the window was
+    permanently fully transparent no matter the slider, not "decoupled
+    from card opacity" as intended. This one had no isolated test at all
+    the first time; a synthetic-widget check written afterward to
+    understand it turned out to be unreliable too (`QWidget.grab()`
+    reports alpha=0 for `WA_TranslucentBackground` widgets even when they
+    render correctly on real screen via DWM), so the real signal was
+    reading `PrintWindow` screenshots of the actual running app, not a
+    synthetic reproduction.
+  - Lesson: for anything routing through PySide6/Qt6's new-style enums,
+    "isolated test passes" only means something if the test uses the
+    exact runtime types the real code path produces (e.g. `event.key()`
+    is `int`, not `Qt.Key`) — reproducing the shape of the call, not just
+    its intent, is what makes a regression test meaningful here.

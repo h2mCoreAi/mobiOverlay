@@ -261,8 +261,10 @@ class _HotkeyField(QLineEdit):
         # PySide6/Qt6 uses new-style enums: event.modifiers() returns a
         # Qt.KeyboardModifier flag object that int() can't coerce directly
         # (raises TypeError) — QKeyCombination is the Qt6-correct way to
-        # pair a modifier flag with a key for QKeySequence.
-        display = QKeySequence(QKeyCombination(event.modifiers(), key)).toString()
+        # pair a modifier flag with a key for QKeySequence. QKeyCombination
+        # also insists on an actual Qt.Key enum member, not the plain int
+        # event.key() returns — wrap it or this throws too.
+        display = QKeySequence(QKeyCombination(event.modifiers(), Qt.Key(key))).toString()
         if self._win.set_stow_hotkey(mod, vk, display):
             self._show_current()
         else:
@@ -494,6 +496,12 @@ class MainWindow(QWidget):
         # background at their own alpha (see Card.set_card_opacity) on top
         # of whatever the void behind them is doing.
         self.setAttribute(Qt.WA_TranslucentBackground, True)
+        # A plain QWidget ignores a QSS "background" property entirely
+        # unless WA_StyledBackground is also set — without this, the void
+        # background rule below never actually paints, and combined with
+        # WA_TranslucentBackground that means permanently fully transparent
+        # (alpha 0) no matter what the opacity slider is set to.
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self._base_stylesheet = _build_stylesheet()
         self.setStyleSheet(self._base_stylesheet)
 

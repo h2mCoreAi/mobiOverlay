@@ -275,18 +275,44 @@
   against the desktop/game behind it (PrintWindow captures a window's own
   render, not what's genuinely behind it) — worth a human glance.
 
+- **Bug fix (2026-09-03, second pass): the hotkey fix from the first pass
+  was itself broken.** `QKeyCombination(event.modifiers(), key)` still
+  raised `TypeError` on every keypress — `QKeyCombination` requires an
+  actual `Qt.Key` enum member for its second argument, not the plain
+  `int` that `event.key()` returns in PySide6. The first pass's isolated
+  test used `Qt.Key_F3` directly (already the right type) so it didn't
+  catch this. Fixed with `Qt.Key(key)`. This time verified by calling the
+  real `_HotkeyField.keyPressEvent` end-to-end with synthetic `QKeyEvent`s
+  (bare F3 and Ctrl+Shift+M), confirming it now reaches `set_stow_hotkey`
+  with the correct `(mod, vk, display)` for both — not just testing the
+  crashing line in isolation like before.
+- **Bug fix (2026-09-03, second pass): window opacity slider was stuck at
+  0 (fully transparent) no matter what it was set to.** The
+  `WA_TranslucentBackground` change from the first pass never added
+  `Qt.WA_StyledBackground` — a plain `QWidget` (which `MainWindow` is)
+  silently ignores a QSS `background` property entirely without that
+  attribute, so the void background rule never painted at all, leaving
+  it permanently transparent regardless of the slider. `_SettingsPanel`/
+  `_TrayPanel` elsewhere in the same file already had this attribute set
+  correctly — `MainWindow` was the one place it was missing. Fixed.
+
 ## Next
 
 - **Human check: hotkey field.** Click it, press a combo (including a
   bare F3), confirm the display updates and the hotkey actually toggles
-  stow/deploy while the game has focus. The display-string crash that
-  was silently eating every keystroke is now fixed and isolated-tested,
-  but live capture-into-the-popup-field itself was never confirmed by
+  stow/deploy while the game has focus. The crash that was silently
+  eating every keystroke (now confirmed fixed twice over — the second
+  time by exercising the real handler with synthetic key events, not
+  just the previously-broken isolated line test) should be resolved, but
+  live capture-into-the-popup-field itself was never confirmed by
   automation across this whole project — only a human click can close
   this out.
 - **Human check: void background transparency.** Confirm the empty space
-  around cards actually looks see-through to whatever's behind the
-  window at low `WINDOW OPACITY`, independent of card opacity.
+  around cards now actually looks see-through to whatever's behind the
+  window at low `WINDOW OPACITY`, independent of card opacity — the
+  "stuck at 0" bug should be fixed, but `PrintWindow`-based screenshots
+  can't distinguish "correctly transparent" from "still broken" since
+  they only capture the window's own render, not the desktop behind it.
 - Human review of the running app (this is the current handoff point) —
   especially Retrieve/Find with real system filters set (only the
   unfiltered path got a live human-equivalent test this session), the
