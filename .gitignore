@@ -9,3 +9,4 @@ dist/
 # do not add a blanket *.spec ignore here.
 .aider*
 .env
+locations_cache.json

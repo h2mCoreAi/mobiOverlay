@@ -21,10 +21,11 @@ download (it pulls in PyTorch and torchvision), so it may take a few
 seconds on first use.
 
 Route optimization: OCR'd location text is resolved against the shared
-UEX API's ``terminals``/``space_stations``/``outposts``/``cities`` data
-(the same ``self.api`` every module gets from ``ModuleBase`` — see
-host/api_client.py) to find the real terminal/planet/system a location
-name refers to, then a nearest‑neighbour visiting order is planned using
+Core location service (``host/locations.py`` — every module gets its own
+``LocationService`` instance, backed by a session-cached, disk-persisted
+index over UEX's ``terminals``/``space_stations``/``outposts``/``cities``
+data) to find the real terminal/planet/system a location name refers to,
+then a nearest‑neighbour visiting order is planned using
 a hierarchy-aware travel cost (same terminal < same body < same system <
 different system) instead of guessing from raw text similarity alone. A
 location that can't be resolved against UEX data falls back to a
@@ -63,6 +64,7 @@ from PySide6.QtWidgets import (
 )
 
 from host import theme
+from host.locations import LocationService
 from host.module_base import ModuleBase
 
 import logging
@@ -384,9 +386,11 @@ class LogisticsHubModule(ModuleBase):
         self._timer = None
         self._card_widget = None
         self._reader = None
-        # In-memory only — rebuilt each session via the UEX API, not persisted
-        # to config.json (terminal data changes over time; always want fresh).
-        self._terminal_index: dict[str, dict] | None = None
+        # Shared Core service (host/locations.py) — one place resolving/
+        # caching UEX location data for every module, not this module's
+        # own copy. See docs/DECISIONS.md, 2026-09-04, for why this lives
+        # in Core rather than as a "location module" other modules depend on.
+        self._locations = LocationService(api_client)
         self._location_choices: dict[str, dict] = {}  # display name -> terminal row, for the picker
         # A "node" is one stop to visit: (contract_index, "pickup"/"dropoff",
         # index within that role's list) — a contract can have several
@@ -590,42 +594,19 @@ class LogisticsHubModule(ModuleBase):
         self._refresh_region_label()
         self._set_status("Region saved.")
 
-    @staticmethod
-    def _search_label(terminal: dict) -> str:
-        """Combo item text: the readable name plus its short code in
-        parentheses when it has one ("Shallow Frontier Station (MIC-L1)").
-        `_display_name` alone drops the code for anything but a trade
-        terminal — which broke searching by the code a player actually
-        sees in-game (typing "MIC-L1" found nothing, since the display
-        text never contained it). QCompleter's MatchContains filters on
-        this exact item text, so both the name and the code need to live
-        in the same string for either to be searchable.
-        """
-        display = LogisticsHubModule._display_name(terminal)
-        nickname = terminal.get("nickname") or ""
-        looks_like_code = bool(nickname) and " " not in nickname and nickname == nickname.upper()
-        if looks_like_code and nickname.lower() != display.lower():
-            return f"{display} ({nickname})"
-        return display
-
     def _populate_location_combo(self):
-        """Fill the current-location picker from the same UEX location index
-        used to resolve OCR'd contract text (terminals + space_stations +
-        outposts + cities across every system) — synchronous, same pattern
+        """Fill the current-location picker from the shared Core location
+        service (host/locations.py) — synchronous, same pattern
         trade_route_optimizer uses to populate its system/terminal combos
         in create_card(). Restores the last-saved location, if any."""
-        self._ensure_terminal_index()
-        by_id: dict = {}
-        for row in (self._terminal_index or {}).values():
-            by_id.setdefault(self._terminal_key(row), row)
-
         self._location_choices = {}
-        for row in by_id.values():
-            label = self._search_label(row)
+        for row in self._locations.all_locations():
+            label = self._locations.search_label(row)
             if label in self._location_choices and self._location_choices[label] is not row:
                 # Two distinct locations produced the same label (rare, but
                 # possible across systems) — disambiguate rather than
-                # silently dropping one from the picker.
+                # silently dropping one from the picker. This is a picker-UI
+                # concern, not something the shared service decides for us.
                 system = row.get("star_system_name")
                 if system:
                     label = f"{label} [{system}]"
@@ -788,137 +769,14 @@ class LogisticsHubModule(ModuleBase):
         return "\n".join(result)
 
     # ------------------------------------------------------------------
-    # UEX API-backed location resolution
+    # Location resolution now lives in the shared Core service
+    # (host/locations.py, self._locations) — a mission's drop-off is very
+    # often a pure delivery point (a space station/outpost/city) with no
+    # commodity trading kiosk at all, and different location endpoints
+    # have colliding raw ids for unrelated real places, both handled
+    # there once for every module instead of per-module. See
+    # docs/DECISIONS.md, 2026-09-04, for the full history.
     # ------------------------------------------------------------------
-    # A mission's drop-off is very often a pure delivery point (a space
-    # station, outpost, or city landing zone) with no commodity trading
-    # kiosk at all — e.g. "Long Forest Station" only ever shows up under
-    # UEX's `space_stations` endpoint, never `terminals`. Indexing only
-    # `terminals` (as trade_route_optimizer does, where that's the whole
-    # point) silently failed to resolve every real drop-off in testing.
-    #
-    # `terminals` goes first because its nicknames tend to be the fuller,
-    # friendlier name ("Port Tressler", "HDMS-Edmond") vs. the structural
-    # endpoints' terser ones ("Tressler", "Edmond") for the very same real
-    # place — `_ensure_terminal_index` keeps whichever row claims a given
-    # nickname/name first. The flip side (a bare code like "MIC-L1"
-    # sometimes matching an unrelated shop at that station instead of the
-    # station itself) is handled separately in `_build_contract` by
-    # merging same-location entries, not by reordering this list — that
-    # was tried and made the common case worse to fix a rarer one.
-    _LOCATION_ENDPOINTS = ("terminals", "space_stations", "outposts", "cities")
-
-    def _ensure_terminal_index(self):
-        """Build (once per session) a name → location-record lookup covering
-        every available star system across all of `_LOCATION_ENDPOINTS`, via
-        the same shared UexApiClient every module gets from ModuleBase (see
-        host/api_client.py). Failures on any one endpoint just skip it —
-        locations from the others still resolve — rather than blocking the
-        whole scan."""
-        if self._terminal_index is not None:
-            return
-        index: dict[str, dict] = {}
-        try:
-            systems = self.api.get("star_systems")
-        except Exception:
-            logger.warning("logistics_hub: could not fetch star_systems from UEX API", exc_info=True)
-            self._terminal_index = index
-            return
-
-        for system in systems:
-            if not system.get("is_available") or not system.get("id"):
-                continue
-            for endpoint in self._LOCATION_ENDPOINTS:
-                try:
-                    rows = self.api.get(endpoint, {"id_star_system": system["id"]})
-                except Exception:
-                    logger.warning(
-                        "logistics_hub: could not fetch %s for system %s",
-                        endpoint, system.get("name"), exc_info=True,
-                    )
-                    continue
-                for row in rows:
-                    # `terminals`/`space_stations`/`outposts`/`cities` each
-                    # have their own independent id sequence — UEX's
-                    # `terminals` id 17 ("Bud's Growery") and
-                    # `space_stations` id 17 ("MIC-L1 Shallow Frontier
-                    # Station") are two completely unrelated real places
-                    # that just happen to share a raw number. Tagging the
-                    # source endpoint here lets every later id-based dedup
-                    # (`_build_contract`, the location picker) key on
-                    # (endpoint, id) instead of silently colliding two
-                    # different locations into one and losing the other —
-                    # exactly what was happening to MIC-L1 before this.
-                    row["_endpoint"] = endpoint
-                    for key in ("nickname", "name"):
-                        label = row.get(key)
-                        if label:
-                            index.setdefault(self._normalize(label), row)
-
-        self._terminal_index = index
-        logger.info("logistics_hub: resolved %d location names from UEX API", len(index))
-
-    @staticmethod
-    def _normalize(text: str) -> str:
-        return re.sub(r"[^a-z0-9]+", "", text.lower())
-
-    @staticmethod
-    def _terminal_key(terminal: dict):
-        """A dedup key that's actually unique across all four location
-        endpoints — see the `_endpoint` tagging note in
-        `_ensure_terminal_index`. Falls back to the record's identity if
-        it somehow has no id (shouldn't happen for real UEX rows)."""
-        term_id = terminal.get("id")
-        if term_id is None:
-            return id(terminal)
-        return (terminal.get("_endpoint"), term_id)
-
-    @staticmethod
-    def _display_name(terminal: dict) -> str:
-        """Human-readable label for a resolved UEX location record.
-
-        `nickname` is sometimes the whole friendly name already ("Port
-        Tressler", "Terra Mills") and sometimes just a terse lagrange-point
-        code ("MIC-L2", with the actual readable label — "MIC-L2 Long
-        Forest Station" — living in `name`, prefixed by that same code).
-        Stripping the nickname-as-prefix from `name` is right for the
-        second case but wrong for the first: "Terra Mills" stripped from
-        "Terra Mills Hydrofarm" leaves "Hydrofarm", which is *less*
-        recognizable than the nickname itself. Distinguish them cheaply —
-        a genuine short code is uppercase with no spaces; anything with a
-        space or lowercase letters is a real name, not a code, so use it
-        as-is rather than trying to "clean" it.
-        """
-        name = terminal.get("name") or ""
-        nickname = terminal.get("nickname") or ""
-        looks_like_code = bool(nickname) and " " not in nickname and nickname == nickname.upper()
-        if nickname and not looks_like_code:
-            return nickname
-        # terminals separately prefix "Admin - " onto their own `name`
-        # (the same in-game kiosk-label prefix trade_route_optimizer
-        # strips) — clear that too before falling back to it.
-        cleaned = re.sub(r"^Admin - ", "", name)
-        if nickname and cleaned.startswith(nickname + " "):
-            cleaned = cleaned[len(nickname) + 1:]
-        return cleaned or nickname or name or "?"
-
-    def _resolve_location(self, text: str) -> dict | None:
-        """Best-effort match of one OCR'd location string against the UEX
-        terminal index. Exact normalized match first, then a substring match
-        in either direction (OCR text is often a superset/subset of the real
-        terminal name, e.g. extra icon glyphs or truncation)."""
-        self._ensure_terminal_index()
-        if not self._terminal_index:
-            return None
-        norm = self._normalize(text)
-        if not norm:
-            return None
-        if norm in self._terminal_index:
-            return self._terminal_index[norm]
-        for key, row in self._terminal_index.items():
-            if key and (key in norm or norm in key):
-                return row
-        return None
 
     def _build_contract(self, raw_text: str) -> dict | None:
         """Build one contract from a scan's OCR text: pull every plausible
@@ -945,10 +803,10 @@ class LogisticsHubModule(ModuleBase):
         resolved_by_key: dict = {}
         order: list = []
         for text, hint in candidates:
-            terminal = self._resolve_location(text)
+            terminal = self._locations.resolve(text)
             if terminal is None:
                 continue
-            key = self._terminal_key(terminal)
+            key = self._locations.terminal_key(terminal)
             if key not in resolved_by_key:
                 resolved_by_key[key] = [text, terminal, hint]
                 order.append(key)
@@ -1097,7 +955,7 @@ class LogisticsHubModule(ModuleBase):
 
         start_terminal = self._current_location_terminal()
         current_terminal = start_terminal
-        current_raw = self._display_name(start_terminal) if start_terminal else None
+        current_raw = self._locations.display_name(start_terminal) if start_terminal else None
 
         visited = [False] * n
         order: list[int] = []
@@ -1138,7 +996,7 @@ class LogisticsHubModule(ModuleBase):
         return COST_UNRESOLVED + self._text_cost(from_raw or "", self._node_raw(contracts, node))
 
     def _terminal_cost(self, a: dict, b: dict) -> float:
-        if self._terminal_key(a) == self._terminal_key(b):
+        if self._locations.terminal_key(a) == self._locations.terminal_key(b):
             return COST_SAME_TERMINAL
         body_keys = ("planet_name", "moon_name", "space_station_name", "city_name", "outpost_name")
         if any(a.get(k) and a.get(k) == b.get(k) for k in body_keys):
@@ -1199,7 +1057,7 @@ class LogisticsHubModule(ModuleBase):
                 entry = items[j] if j < len(items) else {}
                 terminal = entry.get("terminal")
                 raw = entry.get("raw", "??")
-                label_text = self._display_name(terminal) if terminal else None
+                label_text = self._locations.display_name(terminal) if terminal else None
                 display = label_text or f"{raw} (unresolved)"
                 role_tag = "PICKUP" if role == "pickup" else "DROPOFF"
                 commodities = entry.get("commodities") or []
@@ -1233,8 +1091,8 @@ class LogisticsHubModule(ModuleBase):
         return " / ".join(names) if names else "??"
 
     def _contract_row(self, contract: dict) -> QWidget:
-        pickups_text = self._entry_names(contract.get("pickups", []), self._display_name)
-        dropoffs_text = self._entry_names(contract.get("dropoffs", []), self._display_name)
+        pickups_text = self._entry_names(contract.get("pickups", []), self._locations.display_name)
+        dropoffs_text = self._entry_names(contract.get("dropoffs", []), self._locations.display_name)
         reward = contract.get("reward")
         reward_text = f"  ·  {reward} aUEC" if reward else ""
 
