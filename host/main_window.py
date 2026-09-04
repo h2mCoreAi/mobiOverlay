@@ -26,7 +26,7 @@ def _build_stylesheet() -> str:
     return f"""
 QWidget#titleBar {{
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #0f1a1d, stop:1 #0a1214);
+        stop:0 #182029, stop:1 #0d131a);
     border: 1px solid {theme.BORDER_CYAN};
     border-radius: {theme.RADIUS}px;
 }}

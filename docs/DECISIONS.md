@@ -632,3 +632,29 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   `theme.BG_PANEL_HEADER` already existed for exactly this in `theme.py`
   (from the original approved design mockup) but had never actually been
   wired up anywhere until now. Confirmed visually after relaunch.
+
+- **2026-09-04 — Shifted the whole color palette from teal-black to
+  MobiGlas's actual blue-gray, sampled from the live screenshot pixel by
+  pixel, not eyeballed.** User asked for the app to look like it's part
+  of the game's own UI. Used PIL to sample real pixel colors from
+  specific regions of the MobiGlas screenshot (panel body, panel border,
+  body text, deep-space background) rather than guessing from the
+  earlier visual inspection. Findings: `BG_VOID` (deep space background)
+  already matched almost exactly (sampled `#03080d` vs. our `#06090b`) —
+  no change needed there. Everything else was off: MobiGlas panel bodies
+  sample as a lighter blue-gray (`#202832`) than our near-black teal
+  (`#0d1417`); its border/chrome glow is a pale ice-blue (`#87bee6`
+  family), not the teal-cyan (`#2de1d0`) this app used everywhere; body
+  text carries a blue-white tint (`#e4e7f3`), not teal-white. Note:
+  MobiGlas *does* also use a bright mint-teal (`#57f3d0`, close to this
+  app's old accent) but only for a secondary "tracked/active" status
+  indicator, not as the dominant chrome color — keeping our primary
+  accent teal would have kept the app looking like a HUD sitting next to
+  MobiGlas rather than part of it. Updated `BG_PANEL`, `BG_PANEL_HEADER`,
+  `BORDER_FLAT`, `ACCENT_CYAN`/`ACCENT_CYAN_DIM`/`BORDER_CYAN`,
+  `TEXT_PRIMARY`/`TEXT_MUTED`/`TEXT_DIM` in `theme.py`, plus the title
+  bar's hardcoded gradient in `main_window.py` (the only color anywhere
+  in the codebase not already routed through `theme.py`). Left
+  `SNAP_BORDER`/`SNAP_FILL` (purple grid-snap) and `ACCENT_AMBER` (error/
+  retry) alone — unrelated to this pass. Confirmed visually after
+  relaunch.
