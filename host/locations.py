@@ -48,6 +48,13 @@ class LocationService:
         self._name_index: dict[str, dict] | None = None  # normalized name -> row
         self._locations: list[dict] | None = None  # deduped, one entry per real place
         self._systems: list[dict] | None = None
+        # Distance lookups are queried lazily, one pair (or one system-pair
+        # table) at a time, and cached only in memory for this session —
+        # never bulk-prefetched (see `distance()`/`_orbit_distance_table()`
+        # below), since pre-pulling every possible pair across ~70 systems
+        # would mean querying data almost never used.
+        self._distance_cache: dict[tuple, float | None] = {}
+        self._orbit_tables: dict[tuple, dict | None] = {}
 
     # ------------------------------------------------------------------
     # Loading / caching
@@ -280,3 +287,99 @@ class LocationService:
 
     def available_systems(self) -> list[dict]:
         return [s for s in self.systems() if s.get("is_available")]
+
+    # ------------------------------------------------------------------
+    # Real travel distance (Phase 3 of the location-service plan — see
+    # docs/DECISIONS.md) — queried lazily per pair/system-pair, never
+    # bulk-prefetched, and cached only for this session (not the 7-day
+    # disk cache the location index itself uses, since callers ask for
+    # specific pairs on demand, not "give me everything").
+    # ------------------------------------------------------------------
+    def distance(self, a: dict, b: dict) -> float | None:
+        """Real travel distance between two locations, or None if it
+        genuinely can't be determined (missing orbit/system data on either
+        record, or the UEX API call itself failed) — callers should have a
+        fallback for that case, this never estimates.
+
+        Uses `terminals_distances` (point-to-point) when both locations
+        are `terminals`-endpoint records — the only case with that
+        granularity — since collapsing everything to orbit-level would
+        make two different terminals on the *same* planet look equally
+        close, throwing away real precision. Otherwise falls back to
+        `orbits_distances` (planet/orbit-level, but works for any location
+        and covers cross-system pairs too) via each record's `id_orbit`.
+        """
+        key_a, key_b = self.terminal_key(a), self.terminal_key(b)
+        if key_a == key_b:
+            return 0.0
+
+        cache_key = (key_a, key_b)
+        if cache_key in self._distance_cache:
+            return self._distance_cache[cache_key]
+        reverse_key = (key_b, key_a)
+        if reverse_key in self._distance_cache:
+            value = self._distance_cache[reverse_key]
+            self._distance_cache[cache_key] = value
+            return value
+
+        value = self._fetch_distance(a, b)
+        self._distance_cache[cache_key] = value
+        return value
+
+    def _fetch_distance(self, a: dict, b: dict) -> float | None:
+        if (
+            a.get("_endpoint") == "terminals" and b.get("_endpoint") == "terminals"
+            and a.get("id") is not None and b.get("id") is not None
+        ):
+            try:
+                resp = self.api.get(
+                    "terminals_distances",
+                    {"id_terminal_origin": a["id"], "id_terminal_destination": b["id"]},
+                )
+            except Exception:
+                logger.warning("locations: terminals_distances lookup failed", exc_info=True)
+                resp = None
+            if isinstance(resp, dict) and resp.get("distance") is not None:
+                try:
+                    return float(resp["distance"])
+                except (TypeError, ValueError):
+                    pass
+
+        sys_a, sys_b = a.get("id_star_system"), b.get("id_star_system")
+        orbit_a, orbit_b = a.get("id_orbit"), b.get("id_orbit")
+        if not (sys_a and sys_b and orbit_a and orbit_b):
+            return None
+        table = self._orbit_distance_table(sys_a, sys_b)
+        if not table:
+            return None
+        return table.get((orbit_a, orbit_b), table.get((orbit_b, orbit_a)))
+
+    def _orbit_distance_table(self, sys_a, sys_b) -> dict | None:
+        """One `orbits_distances` call covers *every* orbit pair between
+        two systems (or within one, if sys_a == sys_b) — cached per
+        system-pair so a whole session's worth of cross-body cost lookups
+        for the same couple of systems costs one real API call, not one
+        per pair."""
+        key = tuple(sorted((sys_a, sys_b)))
+        if key in self._orbit_tables:
+            return self._orbit_tables[key]
+        try:
+            rows = self.api.get(
+                "orbits_distances",
+                {"id_star_system_origin": sys_a, "id_star_system_destination": sys_b},
+            )
+        except Exception:
+            logger.warning("locations: orbits_distances lookup failed", exc_info=True)
+            self._orbit_tables[key] = None
+            return None
+        table: dict = {}
+        for row in rows:
+            oa, ob, dist = row.get("id_orbit_origin"), row.get("id_orbit_destination"), row.get("distance")
+            if oa is None or ob is None or dist is None:
+                continue
+            try:
+                table[(oa, ob)] = float(dist)
+            except (TypeError, ValueError):
+                continue
+        self._orbit_tables[key] = table
+        return table

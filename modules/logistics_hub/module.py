@@ -25,12 +25,19 @@ Core location service (``host/locations.py`` — every module gets its own
 ``LocationService`` instance, backed by a session-cached, disk-persisted
 index over UEX's ``terminals``/``space_stations``/``outposts``/``cities``
 data) to find the real terminal/planet/system a location name refers to,
-then a nearest‑neighbour visiting order is planned using
-a hierarchy-aware travel cost (same terminal < same body < same system <
-different system) instead of guessing from raw text similarity alone. A
-location that can't be resolved against UEX data falls back to a
-text-similarity heuristic so the module still produces *something*
-usable, clearly marked as unresolved.
+then a nearest-neighbour + 2-opt visiting order is planned using **real
+UEX travel distance** (``LocationService.distance()`` — point-to-point
+via ``terminals_distances`` when both stops are trade terminals, orbit-
+to-orbit via ``orbits_distances`` otherwise, queried lazily and cached
+per-session, never bulk-prefetched) rather than a guessed hierarchy tier.
+A pair with no determinable real distance (missing orbit/system data, or
+the distance endpoints themselves failing) falls back to a coarse same-
+terminal/body/system/different-system tier scaled into the same rough
+numeric range, so a fallback edge doesn't look artificially cheap next to
+a real-distance one in the same route. A location that can't be resolved
+against UEX data at all falls back further, to a text-similarity
+heuristic, so the module still produces *something* usable, clearly
+marked as unresolved.
 
 The route always starts from the CURRENT LOCATION picker's selection (a
 searchable combo over the same location data), not an arbitrary contract's
@@ -88,11 +95,18 @@ except ImportError:
 
 AUTO_RESCAN_MS = 5 * 60 * 1000  # 5 minutes, off by default
 
-# Hierarchy-aware travel cost when both endpoints resolved against UEX data.
+# Real UEX distance (LocationService.distance(), see host/locations.py) is
+# the primary travel cost between two resolved locations now — genuine
+# point-to-point/orbit-to-orbit numbers, not a guess. These are only the
+# *fallback* tiers for when a real distance can't be determined (missing
+# orbit/system data, or the UEX distance endpoints themselves failed) —
+# scaled to roughly the same numeric range real distances live in (tens to
+# low hundreds, per live UEX data) so a fallback-tier edge doesn't look
+# artificially cheap next to a real-distance edge in the same route.
 COST_SAME_TERMINAL = 0
-COST_SAME_BODY = 1       # same planet/moon/space station/city/outpost
-COST_SAME_SYSTEM = 2
-COST_DIFFERENT_SYSTEM = 5
+COST_SAME_BODY = 5        # same planet/moon/space station/city/outpost
+COST_SAME_SYSTEM = 50
+COST_DIFFERENT_SYSTEM = 200
 COST_UNRESOLVED = 3       # at least one side has no API match — text-heuristic territory
 
 
@@ -115,11 +129,12 @@ def _extract_commodities(raw_text: str, location_raw: str, role: str) -> list[st
     """What cargo is actually changing hands at one pickup/drop-off — the
     thing the module never surfaced at all before, even though every real
     contract line spells it out ("Collect Silicon from...", "Deliver...of
-    Waste to..."). A location only needs to appear *somewhere* on the same
-    line as the commodity mention for it to count — doesn't need to be the
-    exact candidate string that resolved it (OCR line-wraps and station
-    codes mean the two rarely match exactly), just a substring match after
-    stripping non-alphanumerics from both sides.
+    Waste to..."). A location only needs to appear *somewhere* on the
+    commodity-mention line or the one right after it (OCR line-wraps the
+    location name past the line break more often than not) for it to
+    count — doesn't need to be the exact candidate string that resolved it
+    (OCR errors and station codes mean the two rarely match exactly), just
+    a substring match after stripping non-alphanumerics from both sides.
 
     A single location can have more than one commodity moving through it
     (contract 3: Long Forest Station -> Waste on one scan, Scrap on a
@@ -132,13 +147,23 @@ def _extract_commodities(raw_text: str, location_raw: str, role: str) -> list[st
         return []
     pattern = _PICKUP_COMMODITY_RE if role == "pickup" else _DROPOFF_COMMODITY_RE
 
+    lines = raw_text.splitlines()
     found: list[str] = []
     seen: set[str] = set()
-    for line in raw_text.splitlines():
+    for i, line in enumerate(lines):
         m = pattern.search(line)
         if not m:
             continue
-        loc_part = re.sub(r"[^a-z0-9]", "", m.group(2).lower())
+        # The location name after "from"/"to" often continues onto the
+        # very next line — OCR line-wrap splits "MIC-LI Shallow Frontier"
+        # from "Station:" — so a match on this line's tail alone can be
+        # truncated right before the part that would actually confirm it's
+        # this location. Widen the search window by one line so a
+        # truncated tail doesn't silently drop the commodity.
+        window = m.group(2)
+        if i + 1 < len(lines):
+            window += " " + lines[i + 1]
+        loc_part = re.sub(r"[^a-z0-9]", "", window.lower())
         if loc_key not in loc_part:
             continue
         commodity = re.sub(r"[.:_,;]+$", "", m.group(1)).strip()
@@ -147,6 +172,22 @@ def _extract_commodities(raw_text: str, location_raw: str, role: str) -> list[st
             seen.add(key)
             found.append(commodity)
     return found
+
+
+# A pickup/dropoff always has *some* cargo in a real contract — a blank
+# commodity field is never a genuine "nothing to carry" result, only a
+# parsing gap (e.g. OCR splits a location name across lines with unrelated
+# text interleaved in between, wider than `_extract_commodities` can
+# safely bridge without risking cross-attaching the wrong location's
+# cargo — see docs/DECISIONS.md, 2026-09-04). Silently showing nothing
+# looked like the module had simply confirmed there was no cargo, when
+# it actually just couldn't find it — say so explicitly instead, in
+# every place a commodity list gets displayed or exported.
+_CARGO_UNKNOWN = "cargo unknown — check raw OCR text"
+
+
+def _cargo_label(commodities: list[str] | None) -> str:
+    return "/".join(commodities) if commodities else _CARGO_UNKNOWN
 
 
 def _all_commodity_names(raw_text: str) -> set[str]:
@@ -177,9 +218,11 @@ def _extract_reward(raw_text: str) -> str | None:
     # aUEC amounts are comma-grouped ("50,250") — that's a much more
     # reliable signal than the word "reward" itself, since OCR frequently
     # mangles the reward icon glyph next to it into stray characters
-    # ("4 50,250" for what's actually "▲ 50,250" in-game).
-    m = re.search(r"(\d{1,3}(?:,\d{3})+)", raw_text)
-    return m.group(1) if m else None
+    # ("4 50,250" for what's actually "▲ 50,250" in-game). OCR occasionally
+    # misreads the comma as a period ("63.250" instead of "63,250") —
+    # confirmed real, so accept either as the thousands separator.
+    m = re.search(r"(\d{1,3}(?:[,.]\d{3})+)", raw_text)
+    return m.group(1).replace(".", ",") if m else None
 
 
 # Real contract panels are full of chrome/flavor text around the actual
@@ -218,7 +261,7 @@ _PICKUP_HINT_RE = re.compile(r"\bcollect\b|\bpick(?:ed|ing)?\s*up\b", re.I)
 _DROPOFF_HINT_RE = re.compile(r"\bdeliver(?:ed)?\b.*\bto\b", re.I)
 
 
-def _candidate_phrases(raw_text: str) -> list[tuple[str, str]]:
+def _candidate_phrases(raw_text: str) -> list[tuple[str, str, int]]:
     """Extract plausible location-name phrases (2-4 capitalized words) from
     every line of the OCR text, tagged with a role hint ("pickup",
     "dropoff", or "neutral") based on nearby keywords / whether the line
@@ -236,7 +279,31 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str]]:
     candidate is already confirmed real by the API — it never invents a
     location that isn't a genuine phrase match.
     """
-    candidates: list[tuple[str, str]] = []
+    # Hint sources aren't equally trustworthy — a keyword on the phrase's
+    # *own* line is direct evidence; one inherited via backward lookback is
+    # a proximity guess that can attach to the wrong nearby phrase (see
+    # below); a section header is weaker still. Track a priority alongside
+    # each candidate's hint so a *later*, more-trustworthy mention can
+    # still override an *earlier*, less-trustworthy one for the same
+    # phrase — plain "was it neutral before" wasn't enough. Confirmed real:
+    # a run-on sentence ("A freight elevator at Long Forest Station ... has
+    # cargo delivered to Endless Odyssey Station...") put "Long Forest
+    # Station" on a line with no keyword of its own; lookback found the
+    # *preceding* "Deliver...to Endless Odyssey" line and wrongly hinted it
+    # "dropoff" — then the correct later "Collect Silicon from ...Long
+    # Forest Station" mention (a real own-line pickup keyword) couldn't
+    # override it because the existing hint wasn't "neutral" anymore.
+    HINT_PRIORITY = {"neutral": 0, "section": 1, "lookback": 2, "own_line": 3}
+    # (phrase, hint, priority) — the priority travels all the way out to
+    # `_build_contract`'s own resolved-terminal merge now too, not just the
+    # text-keyed merge here, since the same override bug can recur at that
+    # later stage: two *differently-worded* candidates ("Shallow Frontier
+    # Station" from one line, "Shallow Frontier" from another) can each
+    # resolve to the *same real terminal* while carrying different hints —
+    # confirmed real, a lookback-mishinted "dropoff" mention blocked a
+    # later, correct, higher-priority "pickup" mention of the same place
+    # because they never shared a dedup key here at all.
+    candidates: list[tuple[str, str, int]] = []
     seen: dict[str, int] = {}  # normalized phrase -> index in candidates
     section_hint = None  # None, "pickup", or "dropoff" — set by a section header
 
@@ -269,6 +336,7 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str]]:
 
         if keyword_hints[line_idx] is not None:
             hint = keyword_hints[line_idx]
+            hint_source = "own_line"
         else:
             # No keyword on this exact line — check the last couple of
             # lines for one before falling back to section/neutral. Nearest
@@ -280,6 +348,7 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str]]:
                     break
                 if keyword_hints[idx] is not None:
                     hint = keyword_hints[idx]
+                    hint_source = "lookback"
                     break
             if hint is None:
                 if section_hint is not None and re.search(r"\bat\b", line, re.I):
@@ -291,27 +360,42 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str]]:
                     # (contractor name, "Jr. Logistics Coordinator", the
                     # company name, ABANDON/SHARE/TRACK buttons) never does.
                     hint = section_hint
+                    hint_source = "section"
                 else:
                     hint = "neutral"
+                    hint_source = "neutral"
+        priority = HINT_PRIORITY[hint_source]
 
-        def add_candidate(phrase: str, phrase_hint: str) -> None:
+        def add_candidate(phrase: str, phrase_hint: str, phrase_priority: int) -> None:
             key = phrase.lower()
             if key in _PHRASE_STOPWORDS or len(phrase) < 5:
                 return
             if key in seen:
                 idx = seen[key]
-                # A later, more specific hint (pickup/dropoff) upgrades an
-                # earlier "neutral" tag for the same phrase.
-                if candidates[idx][1] == "neutral" and phrase_hint != "neutral":
-                    candidates[idx] = (candidates[idx][0], phrase_hint)
+                # A higher-priority hint (see HINT_PRIORITY above) always
+                # wins for the same phrase, regardless of which mention
+                # came first in the text.
+                if phrase_priority > candidates[idx][2]:
+                    candidates[idx] = (candidates[idx][0], phrase_hint, phrase_priority)
                 return
             seen[key] = len(candidates)
-            candidates.append((phrase, phrase_hint))
+            candidates.append((phrase, phrase_hint, phrase_priority))
 
-        for m in re.finditer(r"[A-Z][a-zA-Z']+(?:\s+[A-Z][a-zA-Z']+){1,3}", line):
+        for m in re.finditer(
+            r"[A-Z][a-zA-Z']+(?:\s+[A-Z][a-zA-Z']+){1,3}(?:\s+(?=\S*\d)[A-Za-z0-9-]+)?", line
+        ):
             words = m.group(0).split()
             phrase = " ".join(words)
-            add_candidate(phrase, hint)
+            add_candidate(phrase, hint, priority)
+            # Real UEX names for near-identical sibling locations often
+            # differ only by a trailing number ("ArcCorp Mining Area 045"
+            # vs "...061") — the word-only pattern above can't capture a
+            # digit at all, so a real, present disambiguating suffix was
+            # being silently dropped even when OCR read it perfectly
+            # clean on the same line. The optional trailing group above
+            # picks it up when present (requires at least one digit in
+            # that trailing token, so it doesn't also start swallowing
+            # unrelated words like "at"/"above" that follow a real name).
             # A leading word that's very short (≤3 chars — "Lz", "Ll", "LI",
             # "L2"...) is almost always a station-code fragment the capital-
             # word regex swept up because a hyphen ("MIC-L1") broke it away
@@ -322,7 +406,7 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str]]:
             # with that leading fragment stripped; if it's wrong, resolution
             # just returns None and it's discarded, no harm done.
             if len(words) >= 3 and len(words[0]) <= 3:
-                add_candidate(" ".join(words[1:]), hint)
+                add_candidate(" ".join(words[1:]), hint, priority)
 
         # Many real UEX outposts/terminals are named as a single hyphenated
         # token — "HDMS-Edmond", "HDMS-Thedus" — with no second
@@ -353,7 +437,7 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str]]:
             # nothing more descriptive follows on the line.
             if re.match(r"\s+[A-Z]", line[m.end():]):
                 continue
-            add_candidate(m.group(0), hint)
+            add_candidate(m.group(0), hint, priority)
 
     return candidates
 
@@ -442,6 +526,61 @@ class _RegionSelector(QWidget):
         self.deleteLater()
 
 
+class _DuplicatePopup(QWidget):
+    """Small themed confirm/deny prompt — same Qt.Popup pattern as
+    host/main_window.py's Settings/Tray panels (closes on an outside
+    click), used here instead of a plain QMessageBox to match the rest of
+    the app's HUD styling."""
+
+    def __init__(self, parent_widget, on_confirm, on_deny):
+        super().__init__(parent_widget, Qt.Popup)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            _DuplicatePopup {{
+                background: {theme.BG_PANEL}; border: 1px solid {theme.ACCENT_AMBER};
+                border-radius: {theme.RADIUS}px;
+            }}
+        """)
+        self._on_confirm = on_confirm
+        self._on_deny = on_deny
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
+
+        label = QLabel("Duplicate detected. Add?")
+        label.setStyleSheet(
+            f"color: {theme.TEXT_PRIMARY}; font-family: {theme.FONT_DISPLAY}; "
+            f"font-weight: 700; font-size: {theme.fpx(11)}px;"
+        )
+        layout.addWidget(label)
+
+        btn_row = QHBoxLayout()
+        confirm_btn = QPushButton("CONFIRM")
+        deny_btn = QPushButton("DENY")
+        btn_style = (
+            f"background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN}; "
+            f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
+            f"padding: 4px 10px; font-family: {theme.FONT_DISPLAY}; font-weight: 700; "
+            f"font-size: {theme.fpx(10)}px;"
+        )
+        confirm_btn.setStyleSheet(btn_style)
+        deny_btn.setStyleSheet(btn_style)
+        confirm_btn.clicked.connect(self._confirm)
+        deny_btn.clicked.connect(self._deny)
+        btn_row.addWidget(confirm_btn)
+        btn_row.addWidget(deny_btn)
+        layout.addLayout(btn_row)
+
+    def _confirm(self):
+        self._on_confirm()
+        self.close()
+
+    def _deny(self):
+        self._on_deny()
+        self.close()
+
+
 class LogisticsHubModule(ModuleBase):
     module_id = "logistics_hub"
     display_name = "Logistics Hub"
@@ -458,6 +597,7 @@ class LogisticsHubModule(ModuleBase):
         # in Core rather than as a "location module" other modules depend on.
         self._locations = LocationService(api_client)
         self._location_choices: dict[str, dict] = {}  # display name -> terminal row, for the picker
+        self._pending_duplicate: dict | None = None  # scanned but held back, awaiting confirm
         # A "node" is one stop to visit: (contract_index, "pickup"/"dropoff",
         # index within that role's list) — a contract can have several
         # pickups or several drop-offs (real panels use both DROP OFF
@@ -731,6 +871,7 @@ class LogisticsHubModule(ModuleBase):
         self.settings["contracts"] = []
         self._save_settings()
         self._route_order = []
+        self._pending_duplicate = None
         self._render_results()
         self._set_status("Contracts cleared.")
 
@@ -761,8 +902,7 @@ class LogisticsHubModule(ModuleBase):
                 for entry in contract.get(role_key, []):
                     terminal = entry.get("terminal")
                     name = self._locations.display_name(terminal) if terminal else f"{entry.get('raw', '??')} [UNRESOLVED]"
-                    commodities = entry.get("commodities") or []
-                    cargo = f" ({'/'.join(commodities)})" if commodities else ""
+                    cargo = f" ({_cargo_label(entry.get('commodities'))})"
                     raw = entry.get("raw", "??")
                     lines.append(f"     [{role_label}] {name}{cargo}  (OCR text: {raw!r})")
             for note in contract.get("ambiguous", []):
@@ -777,6 +917,8 @@ class LogisticsHubModule(ModuleBase):
         lines.append("SUGGESTED VISITING ORDER")
         if not self._route_order:
             lines.append("  (none)")
+        total_cost = 0.0
+        prev_terminal, prev_raw = start_terminal, start_name
         for step, node in enumerate(self._route_order, start=1):
             i, role, j = node
             contract = contracts[i] if i < len(contracts) else None
@@ -787,10 +929,24 @@ class LogisticsHubModule(ModuleBase):
             entry = items[j] if j < len(items) else {}
             terminal = entry.get("terminal")
             name = self._locations.display_name(terminal) if terminal else f"{entry.get('raw', '??')} [UNRESOLVED]"
-            commodities = entry.get("commodities") or []
-            cargo = f" — {'/'.join(commodities)}" if commodities else ""
+            cargo = f" — {_cargo_label(entry.get('commodities'))}"
             role_tag = "PICKUP" if role == "pickup" else "DROPOFF"
-            lines.append(f"  {step}. [{role_tag}] {name}{cargo}")
+
+            # Per-edge cost, and whether it's a real UEX distance or a
+            # fallback estimate — lets a live test actually verify a route
+            # that "looks" wrong (e.g. revisiting a stop) against real
+            # numbers instead of just eyeballing the stop order.
+            if prev_terminal and terminal:
+                edge_cost = self._terminal_cost(prev_terminal, terminal)
+                real = self._locations.distance(prev_terminal, terminal) is not None
+                source = "same stop" if edge_cost == COST_SAME_TERMINAL else ("real dist" if real else "est.")
+            else:
+                edge_cost = COST_UNRESOLVED + self._text_cost(prev_raw or "", entry.get("raw", ""))
+                source = "text-match est."
+            total_cost += edge_cost
+            lines.append(f"  {step}. [{role_tag}] {name}{cargo}  [+{edge_cost:.0f} {source}, running {total_cost:.0f}]")
+
+            prev_terminal, prev_raw = terminal, name
 
         return "\n".join(lines)
 
@@ -856,14 +1012,69 @@ class LogisticsHubModule(ModuleBase):
             raise ValueError("No usable text could be OCR'd — try adjusting the region or brightness.")
 
         contracts = self.settings.setdefault("contracts", [])
+        if any(self._is_likely_duplicate(c, contract) for c in contracts):
+            self._pending_duplicate = contract
+            self._show_duplicate_popup()
+            self._set_status("Duplicate detected — confirm or deny.")
+            return
+
+        self._add_contract(contract)
+
+    def _add_contract(self, contract: dict):
+        contracts = self.settings.setdefault("contracts", [])
         contracts.append(contract)
         self._save_settings()
-
         self._route_order = self._plan_route(contracts)
         self._render_results()
         self._set_status(
             f"Added contract ({len(contracts)} total) at {time.strftime('%H:%M:%S')}"
         )
+
+    @classmethod
+    def _is_likely_duplicate(cls, a: dict, b: dict) -> bool:
+        """Same reward, scanned again — but OCR noise varies scan to scan,
+        so two captures of the *same real contract* can each resolve a
+        slightly different set of pickups (one scan lost HDMS-Perlman,
+        another lost Shubin, on two otherwise-identical scans of the same
+        contract — confirmed real). Requiring the *entire* location set to
+        match exactly missed that case entirely. Reward equality is
+        already a strong signal on its own (two different real contracts
+        rarely pay the exact same amount) — only need *some* resolved
+        location in common on top of that, not a perfect set match."""
+        if a.get("reward") != b.get("reward") or not a.get("reward"):
+            return False
+        a_locs = cls._location_keys(a)
+        b_locs = cls._location_keys(b)
+        return bool(a_locs & b_locs)
+
+    @staticmethod
+    def _location_keys(contract: dict) -> frozenset:
+        return frozenset(
+            LogisticsHubModule._locations_terminal_key_or_raw(e)
+            for e in contract.get("pickups", []) + contract.get("dropoffs", [])
+        )
+
+    @staticmethod
+    def _locations_terminal_key_or_raw(entry: dict):
+        terminal = entry.get("terminal")
+        if terminal:
+            return LocationService.terminal_key(terminal)
+        return entry.get("raw", "").lower()
+
+    def _show_duplicate_popup(self):
+        popup = _DuplicatePopup(self._card_widget, self._on_duplicate_confirm, self._on_duplicate_deny)
+        anchor = self._scan_btn.mapToGlobal(self._scan_btn.rect().bottomLeft())
+        popup.move(anchor)
+        popup.show()
+
+    def _on_duplicate_confirm(self):
+        if self._pending_duplicate is not None:
+            self._add_contract(self._pending_duplicate)
+        self._pending_duplicate = None
+
+    def _on_duplicate_deny(self):
+        self._pending_duplicate = None
+        self._set_status("Duplicate not added.")
 
     # ------------------------------------------------------------------
     # Screen capture / OCR
@@ -915,6 +1126,47 @@ class LogisticsHubModule(ModuleBase):
     # docs/DECISIONS.md, 2026-09-04, for the full history.
     # ------------------------------------------------------------------
 
+    def _disambiguate_by_suffix(self, text: str, matches: list[dict], raw_text: str) -> dict | None:
+        """When a bare phrase matches several distinct real places that
+        differ only by a trailing code/number ("ArcCorp Mining Area" ->
+        045/048/056/061/141), the *contract text itself* often does
+        contain the disambiguating suffix somewhere — just not attached to
+        this exact candidate string (a different mention, a line away, or
+        the phrase regex genuinely can't include a digit). Rather than
+        guess, check each candidate's own distinguishing suffix (its
+        normalized name/nickname with the ambiguous phrase's own prefix
+        stripped) against every line of the raw text individually — line-
+        by-line, not the whole text concatenated, so two unrelated digits
+        that happen to sit at a line boundary can't coincidentally form a
+        false match. Only resolves if the suffix is long enough to be
+        meaningful and exactly one candidate's suffix is actually found;
+        any other outcome (zero or multiple matches) stays ambiguous.
+        """
+        phrase_norm = self._locations.normalize(text)
+        lines_norm = [self._locations.normalize(line) for line in raw_text.splitlines()]
+
+        found: dict | None = None
+        found_count = 0
+        for candidate in matches:
+            suffix = None
+            for key in ("name", "nickname"):
+                label = candidate.get(key)
+                if not label:
+                    continue
+                label_norm = self._locations.normalize(label)
+                if label_norm.startswith(phrase_norm) and len(label_norm) > len(phrase_norm):
+                    suffix = label_norm[len(phrase_norm):]
+                    break
+            if not suffix or len(suffix) < 2:
+                continue
+            if any(suffix in line for line in lines_norm):
+                found_count += 1
+                found = candidate
+                if found_count > 1:
+                    return None
+
+        return found if found_count == 1 else None
+
     def _build_contract(self, raw_text: str) -> dict | None:
         """Build one contract from a scan's OCR text: pull every plausible
         location phrase, resolve each against real UEX terminal data, and
@@ -925,7 +1177,7 @@ class LogisticsHubModule(ModuleBase):
         LOCATIONS (ANY ORDER)). Falls back to raw, unresolved candidate
         phrases if nothing resolved at all, so a scan still produces
         something reviewable instead of silently failing."""
-        candidates = _candidate_phrases(raw_text)  # list of (phrase, hint)
+        candidates = _candidate_phrases(raw_text)  # list of (phrase, hint, priority)
         reward = _extract_reward(raw_text)
 
         # Resolve every candidate against real UEX data, deduped by
@@ -949,45 +1201,102 @@ class LogisticsHubModule(ModuleBase):
         # would just be noise here).
         ambiguous_notes: list[str] = []
         noted: set[str] = set()
-        for text, hint in candidates:
+
+        def merge_resolved(text: str, terminal: dict, hint: str, priority: int) -> None:
+            key = self._locations.terminal_key(terminal)
+            if key not in resolved_by_key:
+                # 5th element: every raw OCR spelling that resolved to this
+                # same real place ("Long Forest Station", and separately
+                # "Forest Station" once disambiguated) — commodity
+                # extraction needs *all* of them, not just whichever won
+                # the display text, since a garbled mention that's missing
+                # a word can still be the only line mentioning a
+                # particular commodity for this stop.
+                resolved_by_key[key] = [text, terminal, hint, priority, {text}]
+                order.append(key)
+                return
+            resolved_by_key[key][4].add(text)
+            if priority > resolved_by_key[key][3]:
+                # Same real place reached via a *differently-worded*
+                # candidate (e.g. "Shallow Frontier Station" from one line
+                # vs. bare "Shallow Frontier" from another) — these never
+                # share a text-based dedup key, so the priority check has
+                # to happen again here too, not just inside
+                # `_candidate_phrases`. Confirmed real: a lookback-mishinted
+                # "dropoff" mention blocked a later, correct, higher-
+                # priority "pickup" mention of the very same terminal.
+                resolved_by_key[key][2] = hint
+                resolved_by_key[key][3] = priority
+
+        # Pass 1: every candidate that resolves to exactly one real place —
+        # these are the ground truth the ambiguous pass below leans on.
+        pending_ambiguous: list[tuple[str, str, int, list[dict]]] = []
+        for text, hint, priority in candidates:
             matches = self._locations.resolve_all(text)
             if not matches:
                 continue
             if len(matches) > 1 and hint != "neutral":
-                if text.lower() not in noted:
-                    noted.add(text.lower())
-                    options = ", ".join(self._locations.display_name(m) for m in matches[:5])
-                    ambiguous_notes.append(f"{text!r} ({hint}) could be: {options} — not auto-resolved")
+                pending_ambiguous.append((text, hint, priority, matches))
                 continue
-            terminal = matches[0]
-            key = self._locations.terminal_key(terminal)
-            if key not in resolved_by_key:
-                resolved_by_key[key] = [text, terminal, hint]
-                order.append(key)
-            elif resolved_by_key[key][2] == "neutral" and hint != "neutral":
-                resolved_by_key[key][2] = hint
+            merge_resolved(text, matches[0], hint, priority)
 
-        resolved: list[tuple[str, dict, str]] = [tuple(resolved_by_key[k]) for k in order]
+        # Pass 2: try to disambiguate what's left, now that we know which
+        # real places this contract has *already* confirmed unambiguously.
+        # Two independent checks, either is enough to resolve:
+        #  - a distinguishing suffix particular to one candidate appears
+        #    somewhere in the text ("ArcCorp Mining Area" -> "...061" seen
+        #    on another line);
+        #  - one of the ambiguous options was *already* confirmed by a
+        #    different, unambiguous mention elsewhere in this same
+        #    contract ("Forest Station" alone is ambiguous between "Wide
+        #    Forest Station"/"Long Forest Station", but this contract's
+        #    OTHER mentions already unambiguously confirmed "Long Forest
+        #    Station" — a real place appearing twice under two different
+        #    OCR-garbled spellings is far more likely than two unrelated
+        #    real places both showing up in one contract by coincidence).
+        for text, hint, priority, matches in pending_ambiguous:
+            disambiguated = self._disambiguate_by_suffix(text, matches, raw_text)
+            if disambiguated is None:
+                already_confirmed = [
+                    m for m in matches
+                    if self._locations.terminal_key(m) in resolved_by_key
+                ]
+                if len(already_confirmed) == 1:
+                    disambiguated = already_confirmed[0]
+
+            if disambiguated is not None:
+                merge_resolved(text, disambiguated, hint, priority)
+                continue
+
+            if text.lower() not in noted:
+                noted.add(text.lower())
+                options = ", ".join(self._locations.display_name(m) for m in matches[:5])
+                ambiguous_notes.append(f"{text!r} ({hint}) could be: {options} — not auto-resolved")
+
+        resolved: list[tuple[str, dict, str, set]] = [
+            (resolved_by_key[k][0], resolved_by_key[k][1], resolved_by_key[k][2], resolved_by_key[k][4])
+            for k in order
+        ]
 
         if not resolved and not candidates:
             return None
 
         if resolved:
             pickups = [
-                {"raw": text, "terminal": terminal}
-                for text, terminal, hint in resolved if hint == "pickup"
+                {"raw": text, "terminal": terminal, "_aka": aka}
+                for text, terminal, hint, aka in resolved if hint == "pickup"
             ]
             dropoffs = [
-                {"raw": text, "terminal": terminal}
-                for text, terminal, hint in resolved if hint == "dropoff"
+                {"raw": text, "terminal": terminal, "_aka": aka}
+                for text, terminal, hint, aka in resolved if hint == "dropoff"
             ]
             # A resolved but merely "neutral" match (e.g. the contractor's
             # own company name happening to also be a real UEX shop/company
             # record) is noise, not a mission stop — only fall back to it
             # if a role would otherwise be completely empty.
             neutrals = [
-                {"raw": text, "terminal": terminal}
-                for text, terminal, hint in resolved if hint == "neutral"
+                {"raw": text, "terminal": terminal, "_aka": aka}
+                for text, terminal, hint, aka in resolved if hint == "neutral"
             ]
             if not pickups and not dropoffs:
                 # Nothing got a real role hint at all — best guess: first
@@ -1002,7 +1311,7 @@ class LogisticsHubModule(ModuleBase):
             # Nothing resolved against UEX data — keep the module useful by
             # falling back to raw text, clearly marked unresolved in the UI.
             pickups = [{"raw": candidates[0][0], "terminal": None}]
-            dropoffs = [{"raw": c, "terminal": None} for c, _hint in candidates[1:3]]
+            dropoffs = [{"raw": c, "terminal": None} for c, _hint, _priority in candidates[1:3]]
 
         if not pickups:
             pickups = [{"raw": "?", "terminal": None}]
@@ -1014,7 +1323,7 @@ class LogisticsHubModule(ModuleBase):
             pickup_raws = {p["raw"].lower() for p in pickups}
             commodity_names = _all_commodity_names(raw_text)
             remaining = [
-                (c, h) for c, h in candidates
+                (c, h) for c, h, _priority in candidates
                 if c.lower() not in pickup_raws and c.lower() not in commodity_names
             ]
             fallback = next((c for c, h in remaining if h == "dropoff"), None)
@@ -1029,6 +1338,11 @@ class LogisticsHubModule(ModuleBase):
             entry["commodities"] = self._entry_commodities(raw_text, entry, "pickup")
         for entry in dropoffs:
             entry["commodities"] = self._entry_commodities(raw_text, entry, "dropoff")
+        # `_aka` (a set) was only needed to widen the commodity search above
+        # — drop it before this contract gets persisted to config.json,
+        # since a set isn't JSON-serializable.
+        for entry in pickups + dropoffs:
+            entry.pop("_aka", None)
 
         return {
             "id": uuid.uuid4().hex[:8],
@@ -1042,12 +1356,16 @@ class LogisticsHubModule(ModuleBase):
 
     @staticmethod
     def _entry_commodities(raw_text: str, entry: dict, role: str) -> list[str]:
-        """Try every name this location is known by — the exact OCR phrase
-        that resolved it, plus its real terminal/nickname name if resolved
-        — since the commodity-bearing line ("Collect X from Y") doesn't
-        always use the same wording as whichever candidate happened to win
-        resolution."""
-        keys = [entry["raw"]]
+        """Try every name this location is known by — every raw OCR
+        spelling that resolved to it (`_aka`, including ones that only
+        got there via disambiguation and would otherwise be lost — a
+        garbled mention missing a word, like "Forest Station" instead of
+        "Long Forest Station", can still be the only line mentioning a
+        particular commodity for this stop), plus its real terminal
+        nickname/name — since the commodity-bearing line ("Collect X from
+        Y") doesn't always use the same wording as whichever candidate
+        happened to win resolution."""
+        keys = list(entry.get("_aka") or [entry["raw"]])
         terminal = entry.get("terminal")
         if terminal:
             for k in (terminal.get("nickname"), terminal.get("name")):
@@ -1236,6 +1554,13 @@ class LogisticsHubModule(ModuleBase):
     def _terminal_cost(self, a: dict, b: dict) -> float:
         if self._locations.terminal_key(a) == self._locations.terminal_key(b):
             return COST_SAME_TERMINAL
+        distance = self._locations.distance(a, b)
+        if distance is not None:
+            return distance
+        # Real distance unavailable (missing orbit/system data on either
+        # side, or the UEX distance endpoints themselves failed) — fall
+        # back to the coarse tier, scaled into the same rough numeric
+        # range real distances live in (see the COST_* comment above).
         body_keys = ("planet_name", "moon_name", "space_station_name", "city_name", "outpost_name")
         if any(a.get(k) and a.get(k) == b.get(k) for k in body_keys):
             return COST_SAME_BODY
@@ -1300,8 +1625,7 @@ class LogisticsHubModule(ModuleBase):
                 label_text = self._locations.display_name(terminal) if terminal else None
                 display = label_text or f"{raw} (unresolved)"
                 role_tag = "PICKUP" if role == "pickup" else "DROPOFF"
-                commodities = entry.get("commodities") or []
-                cargo_text = f" — {' / '.join(commodities)}" if commodities else ""
+                cargo_text = f" — {_cargo_label(entry.get('commodities'))}"
                 self._results_layout.addWidget(
                     self._route_row(f"{idx}. [{role_tag}] {display}{cargo_text}")
                 )
@@ -1326,8 +1650,7 @@ class LogisticsHubModule(ModuleBase):
         names = []
         for e in entries:
             base = display_name(e["terminal"]) if e.get("terminal") else f"{e.get('raw', '??')} (unresolved)"
-            commodities = e.get("commodities") or []
-            names.append(f"{base} ({'/'.join(commodities)})" if commodities else base)
+            names.append(f"{base} ({_cargo_label(e.get('commodities'))})")
         return " / ".join(names) if names else "??"
 
     def _contract_row(self, contract: dict) -> QWidget:
