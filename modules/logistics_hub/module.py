@@ -149,6 +149,30 @@ def _extract_commodities(raw_text: str, location_raw: str, role: str) -> list[st
     return found
 
 
+def _all_commodity_names(raw_text: str) -> set[str]:
+    """Every commodity name mentioned anywhere in the text (normalized,
+    lowercase), regardless of which location it's tied to — used only to
+    keep the "always have a fallback stop" logic in `_build_contract` from
+    grabbing a commodity name and displaying it as if it were an
+    unresolved location. Confirmed real: when a contract's real drop-off
+    text never matches anything ("NB Int. Spaceport" — an abbreviation
+    with no real substring relationship to the actual place, "New
+    Babbage" — see docs/DECISIONS.md), the fallback used to pick the
+    nearest leftover dropoff-hinted candidate with no regard for whether
+    it was actually a place; that leftover was "Ship Ammunition", the
+    commodity being delivered, not a location at all.
+    """
+    names: set[str] = set()
+    for pattern in (_PICKUP_COMMODITY_RE, _DROPOFF_COMMODITY_RE):
+        for line in raw_text.splitlines():
+            m = pattern.search(line)
+            if m:
+                commodity = re.sub(r"[.:_,;]+$", "", m.group(1)).strip().lower()
+                if commodity:
+                    names.add(commodity)
+    return names
+
+
 def _extract_reward(raw_text: str) -> str | None:
     # aUEC amounts are comma-grouped ("50,250") — that's a much more
     # reliable signal than the word "reward" itself, since OCR frequently
@@ -170,11 +194,26 @@ _PHRASE_STOPWORDS = {
     "primary objectives", "drop off locations", "abandon", "share",
     "track", "any order", "lagrange point", "rookie", "small haul",
     "collect stims", "freight elevator",
+    # Bare section headers ("PICK UP" / "DROP OFF" with no "LOCATIONS"
+    # suffix — see the section regexes below) matched the general
+    # capitalized-phrase pattern and got treated as location text in their
+    # own right. Confirmed real and bad: "DROP OFF" normalizes to
+    # "dropoff", which contains Port Olisar's 2-letter nickname "PO" as a
+    # substring, so it silently "resolved" to a real but completely
+    # unrelated place. Excluding them here is a second, independent guard
+    # alongside the section regexes actually consuming these lines.
+    "pick up", "drop off",
 }
 
 
-_DROPOFF_SECTION_RE = re.compile(r"drop.?off locations", re.I)
-_PICKUP_SECTION_RE = re.compile(r"pick.?up locations", re.I)
+# Matches a *standalone* section header line — "PICK UP", "DROP OFF",
+# "PICK UP LOCATIONS", "DROP OFF LOCATIONS (ANY ORDER)" — anchored to the
+# whole line (plus optional trailing "(...)"/punctuation) so it can't
+# accidentally fire on an unrelated sentence that merely contains the
+# words "pick up"/"drop off" somewhere in the middle (e.g. "Doesn't matter
+# what order you drop them off:" must NOT trigger section mode).
+_DROPOFF_SECTION_RE = re.compile(r"^\s*drop.?off(\s+locations)?\s*(\(.*\))?\s*:?\s*$", re.I)
+_PICKUP_SECTION_RE = re.compile(r"^\s*pick.?up(\s+locations)?\s*(\(.*\))?\s*:?\s*$", re.I)
 _PICKUP_HINT_RE = re.compile(r"\bcollect\b|\bpick(?:ed|ing)?\s*up\b", re.I)
 _DROPOFF_HINT_RE = re.compile(r"\bdeliver(?:ed)?\b.*\bto\b", re.I)
 
@@ -201,32 +240,59 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str]]:
     seen: dict[str, int] = {}  # normalized phrase -> index in candidates
     section_hint = None  # None, "pickup", or "dropoff" — set by a section header
 
-    for line in raw_text.splitlines():
+    raw_lines = raw_text.splitlines()
+
+    # First pass: a per-line keyword hint from "Collect X from Y" / "Deliver
+    # X to Y" alone (no section fallback yet) — used below to look
+    # *backward* a couple of lines when a location's own line has no
+    # keyword. Real panels split "Collect Processed Food" and its location
+    # ("HDMS-Ryder.") across 2-3 lines when OCR reads a two-column layout
+    # in the wrong order, interleaving unrelated flavor-text sentences in
+    # between; a same-line-only check missed every one of those.
+    KEYWORD_LOOKBACK = 2
+    keyword_hints: list[str | None] = []
+    for line in raw_lines:
+        if _PICKUP_HINT_RE.search(line):
+            keyword_hints.append("pickup")
+        elif _DROPOFF_HINT_RE.search(line):
+            keyword_hints.append("dropoff")
+        else:
+            keyword_hints.append(None)
+
+    for line_idx, line in enumerate(raw_lines):
         if _DROPOFF_SECTION_RE.search(line):
             section_hint = "dropoff"
             continue
         if _PICKUP_SECTION_RE.search(line):
             section_hint = "pickup"
             continue
-        # A per-line keyword ("Collect X from Y" / "Deliver X to Y") is a
-        # more specific signal than which section we're currently under —
-        # e.g. contract 3's PICK UP LOCATIONS section still had "Deliver
-        # ...to Port Tressler" lines mixed in among its pickups.
-        if _PICKUP_HINT_RE.search(line):
-            hint = "pickup"
-        elif _DROPOFF_HINT_RE.search(line):
-            hint = "dropoff"
-        elif section_hint is not None and re.search(r"\bat\b", line, re.I):
-            # The section header applies until the panel ends, but nothing
-            # marks that end explicitly — so don't trust it forever. Real
-            # list rows under either header ("Freight elevator at X at Y's
-            # L# Lagrange point") always contain "at"; trailing signature/
-            # footer text (contractor name, "Jr. Logistics Coordinator",
-            # the company name, ABANDON/SHARE/TRACK buttons) never does,
-            # so require it rather than tagging everything after the header.
-            hint = section_hint
+
+        if keyword_hints[line_idx] is not None:
+            hint = keyword_hints[line_idx]
         else:
-            hint = "neutral"
+            # No keyword on this exact line — check the last couple of
+            # lines for one before falling back to section/neutral. Nearest
+            # keyword wins if more than one is in range.
+            hint = None
+            for back in range(1, KEYWORD_LOOKBACK + 1):
+                idx = line_idx - back
+                if idx < 0:
+                    break
+                if keyword_hints[idx] is not None:
+                    hint = keyword_hints[idx]
+                    break
+            if hint is None:
+                if section_hint is not None and re.search(r"\bat\b", line, re.I):
+                    # The section header applies until the panel ends, but
+                    # nothing marks that end explicitly — so don't trust it
+                    # forever. Real list rows under either header ("Freight
+                    # elevator at X at Y's L# Lagrange point") always
+                    # contain "at"; trailing signature/footer text
+                    # (contractor name, "Jr. Logistics Coordinator", the
+                    # company name, ABANDON/SHARE/TRACK buttons) never does.
+                    hint = section_hint
+                else:
+                    hint = "neutral"
 
         def add_candidate(phrase: str, phrase_hint: str) -> None:
             key = phrase.lower()
@@ -699,6 +765,13 @@ class LogisticsHubModule(ModuleBase):
                     cargo = f" ({'/'.join(commodities)})" if commodities else ""
                     raw = entry.get("raw", "??")
                     lines.append(f"     [{role_label}] {name}{cargo}  (OCR text: {raw!r})")
+            for note in contract.get("ambiguous", []):
+                lines.append(f"     [AMBIGUOUS] {note}")
+            raw_text = contract.get("raw_text")
+            if raw_text:
+                lines.append("     --- raw OCR text for this scan ---")
+                for raw_line in raw_text.splitlines():
+                    lines.append(f"     | {raw_line}")
         lines.append("")
 
         lines.append("SUGGESTED VISITING ORDER")
@@ -866,10 +939,27 @@ class LogisticsHubModule(ModuleBase):
         # earlier, hint-less mention.
         resolved_by_key: dict = {}
         order: list = []
+        # A bare phrase can genuinely match more than one distinct real
+        # place — "ArcCorp Mining Area" alone matches both "...045" and
+        # "...056" — usually because OCR separated the distinguishing
+        # suffix onto a different line entirely. Silently picking one is
+        # worse than admitting the parser isn't sure: only note this for
+        # candidates that actually got a real pickup/dropoff hint (a
+        # "neutral" ambiguous match was never going anywhere anyway and
+        # would just be noise here).
+        ambiguous_notes: list[str] = []
+        noted: set[str] = set()
         for text, hint in candidates:
-            terminal = self._locations.resolve(text)
-            if terminal is None:
+            matches = self._locations.resolve_all(text)
+            if not matches:
                 continue
+            if len(matches) > 1 and hint != "neutral":
+                if text.lower() not in noted:
+                    noted.add(text.lower())
+                    options = ", ".join(self._locations.display_name(m) for m in matches[:5])
+                    ambiguous_notes.append(f"{text!r} ({hint}) could be: {options} — not auto-resolved")
+                continue
+            terminal = matches[0]
             key = self._locations.terminal_key(terminal)
             if key not in resolved_by_key:
                 resolved_by_key[key] = [text, terminal, hint]
@@ -918,13 +1008,22 @@ class LogisticsHubModule(ModuleBase):
             pickups = [{"raw": "?", "terminal": None}]
         if not dropoffs:
             # Always have at least one drop-off slot, even if unresolved,
-            # so the route always has somewhere to go besides the pickup.
+            # so the route always has somewhere to go besides the pickup —
+            # but never invent one out of a candidate that's actually a
+            # commodity name ("Ship Ammunition"), not a place at all.
             pickup_raws = {p["raw"].lower() for p in pickups}
-            remaining = [(c, h) for c, h in candidates if c.lower() not in pickup_raws]
+            commodity_names = _all_commodity_names(raw_text)
+            remaining = [
+                (c, h) for c, h in candidates
+                if c.lower() not in pickup_raws and c.lower() not in commodity_names
+            ]
             fallback = next((c for c, h in remaining if h == "dropoff"), None)
-            if fallback is None:
-                fallback = remaining[0][0] if remaining else pickups[0]["raw"]
-            dropoffs = [{"raw": fallback, "terminal": None}]
+            if fallback is None and remaining:
+                fallback = remaining[0][0]
+            dropoffs = [{
+                "raw": fallback if fallback is not None else "(unresolved — no location text found)",
+                "terminal": None,
+            }]
 
         for entry in pickups:
             entry["commodities"] = self._entry_commodities(raw_text, entry, "pickup")
@@ -937,6 +1036,8 @@ class LogisticsHubModule(ModuleBase):
             "dropoffs": dropoffs,
             "reward": reward,
             "scanned_at": time.strftime("%H:%M:%S"),
+            "ambiguous": ambiguous_notes,
+            "raw_text": raw_text,
         }
 
     @staticmethod
@@ -1178,6 +1279,8 @@ class LogisticsHubModule(ModuleBase):
         else:
             for c in contracts:
                 self._results_layout.addWidget(self._contract_row(c))
+                for note in c.get("ambiguous", []):
+                    self._results_layout.addWidget(self._ambiguous_row(note))
 
         if self._route_order:
             route_title = QLabel("SUGGESTED VISITING ORDER")
@@ -1251,6 +1354,21 @@ class LogisticsHubModule(ModuleBase):
             f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
             f"padding: 5px 8px; font-family: {theme.FONT_MONO}; "
             f"font-size: {theme.fpx(10)}px;"
+        )
+        return row
+
+    def _ambiguous_row(self, text: str) -> QWidget:
+        """A location phrase that matched more than one distinct real
+        place (see the `ambiguous` note in `_build_contract`) — surfaced
+        visibly rather than silently guessing one and possibly being
+        wrong. Amber, same as the card's own error-state accent."""
+        row = QLabel(f"⚠ {text}")
+        row.setWordWrap(True)
+        row.setStyleSheet(
+            f"background: {theme.ACCENT_AMBER_DIM}; color: {theme.ACCENT_AMBER}; "
+            f"border: 1px solid {theme.ACCENT_AMBER}; border-radius: {theme.RADIUS}px; "
+            f"padding: 5px 8px; font-family: {theme.FONT_MONO}; "
+            f"font-size: {theme.fpx(9)}px;"
         )
         return row
 

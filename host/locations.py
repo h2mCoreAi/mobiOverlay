@@ -211,22 +211,51 @@ class LocationService:
         return display
 
     def resolve(self, text: str) -> dict | None:
-        """Best-effort match of a name/nickname/code string against known
-        locations. Exact normalized match first, then substring match in
-        either direction (OCR text or partial typing is often a superset/
-        subset of the real name)."""
+        """Best-effort single match — the first hit from `resolve_all`, if
+        any. Callers that need to know whether a phrase is *ambiguous*
+        (matches more than one distinct real place — e.g. "ArcCorp Mining
+        Area" alone matches both "ArcCorp Mining Area 045" and "...056")
+        should use `resolve_all` instead and check its length; silently
+        picking one of several real candidates can confidently show the
+        wrong place rather than an honest "not sure which one"."""
+        matches = self.resolve_all(text)
+        return matches[0] if matches else None
+
+    # A short nickname/code (2-3 chars, e.g. Port Olisar's "PO") is prone to
+    # coincidentally appearing *inside* unrelated text purely by chance —
+    # confirmed for real: "DROP OFF" normalizes to "dropoff", which
+    # contains "po" (the tail of "dro**p**" + the head of "**o**ff"), so it
+    # substring-matched Port Olisar even though the OCR text had nothing to
+    # do with it. Exact matches are always trusted regardless of length —
+    # this only guards the fuzzy substring pass.
+    MIN_SUBSTRING_KEY_LEN = 4
+
+    def resolve_all(self, text: str) -> list[dict]:
+        """Every distinct known location whose name/nickname matches
+        `text` — exact normalized match first (always a single result when
+        it hits), otherwise every substring match in either direction
+        (skipping keys shorter than `MIN_SUBSTRING_KEY_LEN` — see above),
+        deduped by `terminal_key` (two index entries can point at the same
+        real record via its nickname and its name)."""
         self.ensure_loaded()
         if not self._name_index:
-            return None
+            return []
         norm = self.normalize(text)
         if not norm:
-            return None
+            return []
         if norm in self._name_index:
-            return self._name_index[norm]
+            return [self._name_index[norm]]
+        matches: list[dict] = []
+        seen_keys = set()
         for key, row in self._name_index.items():
-            if key and (key in norm or norm in key):
-                return row
-        return None
+            if not key or len(key) < self.MIN_SUBSTRING_KEY_LEN:
+                continue
+            if key in norm or norm in key:
+                k = self.terminal_key(row)
+                if k not in seen_keys:
+                    seen_keys.add(k)
+                    matches.append(row)
+        return matches
 
     def search(self, query: str, limit: int = 50) -> list[dict]:
         """All unique locations whose search_label contains `query`
