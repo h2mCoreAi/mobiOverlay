@@ -19,3 +19,12 @@ def app_root() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
+
+
+def relaunch_command() -> list[str]:
+    """Command to start a fresh instance of this app — the same exe when
+    packaged, or the same interpreter + entry script when running from
+    source. Used by Settings > Relaunch."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    return [sys.executable, str(Path(__file__).resolve().parent / "main.py")]

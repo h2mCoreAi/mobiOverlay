@@ -190,3 +190,61 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   to be converted from a module-level string (frozen at import time, i.e.
   before config even loads) into a function called at construction time,
   otherwise the scale-aware helper would always see the default 1.0.
+
+- **2026-09-03 — Dropped real-time text scaling; kept everything else from
+  that request.** Considered actually attempting live font rescaling
+  (every stylesheet rebuilt and reapplied to every existing widget on a
+  Settings change) rather than assuming it was too painful, per the user's
+  instruction. User then explicitly cut it before implementation to keep
+  scope sane. In its place: reworded the existing Text Size description
+  to point at the new Relaunch button rather than building a separate
+  toast/notice — the panel already had a persistent description line, no
+  new UI needed.
+
+- **2026-09-03 — Find Most Profitable split into Retrieve Data +
+  Find Most Profitable; user caught a real correctness bug.** The
+  original combined scan computed sell-minus-buy margin across ALL
+  systems, silently ignoring the Best Sell/Best Buy system filters right
+  above it on the same card — a real bug the user found by asking "does
+  it take into account the selected system filters?" rather than one
+  caught by our own testing. Fixed by separating concerns: "Retrieve
+  Data" does only the network fetch (~150-200 calls, cached in
+  `_all_commodity_data`, no margin math); "Find Most Profitable" is a
+  separate, instant, local-only action that reads `sell_system`/
+  `buy_system` filter state at click time — same filter logic already
+  proven correct in `_apply_filters`, just applied across every cached
+  commodity instead of one. This also enables the countdown/force-update
+  UX below, since "when was the data retrieved" is now a separate concept
+  from "what did we do with it."
+
+- **2026-09-03 — Countdown + "FORCE UPDATE?" confirm on Retrieve Data.**
+  User-specified UX: after retrieving, the button counts down (MM:SS) to
+  the next recommended refresh (reuses the existing 30-min cache window).
+  Clicking mid-countdown doesn't immediately re-fetch — it swaps to
+  "FORCE UPDATE?" as a confirm step (auto-reverts after 4s if ignored,
+  via a singleShot `QTimer`), and only a second click while that's showing
+  triggers an actual forced retrieve. One implementation detail worth
+  recording: verifying the two-click force-confirm sequence requires both
+  clicks to land within that 4-second window, which is impossible across
+  two separate tool-call round-trips (each has real latency exceeding 4s)
+  — had to combine "click, verify prompt, click again" into one atomic
+  script to test it at all. Same underlying lesson as the earlier
+  UI-Automation-popup-timing issue, one level up: it's not just popups
+  that need atomic scripts, anything with its own auto-reverting timeout
+  does too.
+
+- **2026-09-03 — Settings > Relaunch button; found and fixed a real
+  process-leak bug while verifying it.** Spawns a fresh instance via the
+  new `host/paths.py` `relaunch_command()` (mirrors `app_root()`'s
+  frozen-vs-source detection) and closes the current one. First
+  implementation only called `self.close()`, which turned out to be
+  insufficient: the Settings panel itself is where the Relaunch button
+  lives, and it's a separate top-level `Qt.Popup` widget still open at
+  the moment it's clicked — `self.close()` only closes `MainWindow`, not
+  that popup, so Qt's `quitOnLastWindowClosed` never fires and the old
+  process lingers forever (confirmed live: old PID stayed `Responding:
+  True` indefinitely, spawned the new instance as its own child process).
+  Fixed with an explicit `QApplication.instance().quit()` after
+  `self.close()`, not relying on last-window-closed detection at all.
+  Re-verified clean afterward: old PID fully exits, exactly one new PID
+  ends up running, its window is the real visible one.

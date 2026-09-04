@@ -1,8 +1,12 @@
 """Commodity Prices module: best sell/buy price for a chosen commodity
 across UEX-tracked terminals. Sell and buy each have their own independent
-star-system filter (e.g. buy in Stanton, sell in Pyro). Also offers a
-"Find Most Profitable" scan across every commodity UEX tracks.
-See docs/modules/commodity-prices.md for scope.
+star-system filter (e.g. buy in Stanton, sell in Pyro).
+
+Also offers "Retrieve Data" (downloads current prices for every commodity
+UEX tracks) and "Find Most Profitable" (an instant, local-only search over
+that retrieved data, respecting the system filters above) as two separate
+actions — see docs/modules/commodity-prices.md for why they're split and
+how the countdown/force-update button behaves.
 """
 import time
 
@@ -14,8 +18,9 @@ from host.api_client import UexRateLimitError
 from host.module_base import ModuleBase
 
 ALL_SYSTEMS = "All Systems"
-SCAN_STEP_INTERVAL_MS = 120  # be nice to the API — ~8 requests/sec while scanning
-SCAN_CACHE_SECONDS = 1800  # 30 min — commodity prices don't move that fast
+RETRIEVE_STEP_INTERVAL_MS = 120  # be nice to the API — ~8 requests/sec while retrieving
+REFRESH_CACHE_SECONDS = 1800  # 30 min — commodity prices don't move that fast
+FORCE_CONFIRM_TIMEOUT_MS = 4000  # how long "FORCE UPDATE?" stays up before reverting
 
 _ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; padding: 9px 10px;"
 _LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 2px;'
@@ -36,7 +41,7 @@ _SYSTEM_COMBO_STYLE = f"""
         font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
     }}
 """
-_SCAN_BTN_STYLE = f"""
+_ACTION_BTN_STYLE = f"""
     QPushButton {{
         background: transparent; color: {theme.ACCENT_CYAN};
         border: 1px solid {theme.BORDER_CYAN}; padding: 5px 0;
@@ -58,13 +63,15 @@ class CommodityPricesModule(ModuleBase):
         self._last_rows: list[dict] = []
         self.request_refresh = None  # injected by host after wrapping refresh()
 
-        # "Find Most Profitable" scan state
-        self._scan_timer: QTimer | None = None
-        self._scan_queue: list[str] = []
-        self._scan_index = 0
-        self._scan_results: dict[str, float] = {}
-        self._profitable_cache: str | None = None
-        self._profitable_cache_time = 0.0
+        # Retrieve Data state
+        self._all_commodity_data: dict[str, list[dict]] = {}
+        self._retrieve_timer: QTimer | None = None
+        self._retrieve_queue: list[str] = []
+        self._retrieve_index = 0
+        self._last_retrieve_time = 0.0
+        self._countdown_timer: QTimer | None = None
+        self._force_confirm_pending = False
+        self._force_confirm_revert_timer: QTimer | None = None
 
     def create_card(self, container):
         card = container.add_card(self.module_id, self.display_name)
@@ -74,11 +81,26 @@ class CommodityPricesModule(ModuleBase):
         self.combo.setEditable(False)
         card.body_layout.addWidget(self.combo)
 
-        self.scan_btn = QPushButton("FIND MOST PROFITABLE")
-        self.scan_btn.setStyleSheet(_SCAN_BTN_STYLE)
-        self.scan_btn.setToolTip("Scans every commodity UEX tracks for the biggest sell-minus-buy margin. Takes a bit — result is cached for 30 minutes.")
-        self.scan_btn.clicked.connect(self.start_profitability_scan)
-        card.body_layout.addWidget(self.scan_btn)
+        self.retrieve_btn = QPushButton("RETRIEVE DATA")
+        self.retrieve_btn.setStyleSheet(_ACTION_BTN_STYLE)
+        self.retrieve_btn.setToolTip(
+            "Downloads current prices for every commodity UEX tracks (takes "
+            "~20-30s). Click again before the countdown ends to force an "
+            "early refresh."
+        )
+        self.retrieve_btn.clicked.connect(self._on_retrieve_clicked)
+        card.body_layout.addWidget(self.retrieve_btn)
+
+        self.profitable_btn = QPushButton("FIND MOST PROFITABLE")
+        self.profitable_btn.setStyleSheet(_ACTION_BTN_STYLE)
+        self.profitable_btn.setToolTip(
+            "Finds the biggest sell-minus-buy margin among retrieved data, "
+            "respecting the system filters below. Instant — no new API "
+            "calls. Retrieve Data first."
+        )
+        self.profitable_btn.setEnabled(False)
+        self.profitable_btn.clicked.connect(self.find_most_profitable)
+        card.body_layout.addWidget(self.profitable_btn)
 
         self.sell_box, self.sell_price, self.sell_loc, self.sell_system = self._build_price_row(
             "▲ BEST SELL", theme.ACCENT_CYAN
@@ -232,68 +254,139 @@ class CommodityPricesModule(ModuleBase):
         terminal = row.get("terminal_name") or ""
         return f"{terminal} · {place}" if place else terminal
 
-    # -- Find Most Profitable: brute-force scan across every commodity ------
-    def start_profitability_scan(self):
-        if self._scan_timer is not None or not self._commodities:
+    # -- Retrieve Data: downloads every commodity's prices, no math yet -----
+    def _on_retrieve_clicked(self):
+        if self._retrieve_timer is not None:
+            return  # already retrieving — ignore extra clicks
+
+        if self._force_confirm_pending:
+            self._force_confirm_pending = False
+            if self._force_confirm_revert_timer is not None:
+                self._force_confirm_revert_timer.stop()
+                self._force_confirm_revert_timer = None
+            self._start_retrieve()
             return
 
-        now = time.time()
-        if self._profitable_cache and now - self._profitable_cache_time < SCAN_CACHE_SECONDS:
-            self.combo.setCurrentText(self._profitable_cache)
+        if self._countdown_timer is not None:
+            # Data's still fresh — ask for confirmation instead of
+            # re-fetching immediately.
+            self._force_confirm_pending = True
+            self.retrieve_btn.setText("FORCE UPDATE?")
+            self._force_confirm_revert_timer = QTimer()
+            self._force_confirm_revert_timer.setSingleShot(True)
+            self._force_confirm_revert_timer.timeout.connect(self._cancel_force_confirm)
+            self._force_confirm_revert_timer.start(FORCE_CONFIRM_TIMEOUT_MS)
             return
 
-        self._scan_queue = list(self._commodities)
-        self._scan_index = 0
-        self._scan_results = {}
-        self.scan_btn.setEnabled(False)
-        self.scan_btn.setText(f"SCANNING 0/{len(self._scan_queue)}")
+        self._start_retrieve()
 
-        self._scan_timer = QTimer()
-        self._scan_timer.timeout.connect(self._scan_step)
-        self._scan_timer.start(SCAN_STEP_INTERVAL_MS)
+    def _cancel_force_confirm(self):
+        self._force_confirm_pending = False
+        self._force_confirm_revert_timer = None
+        self._update_countdown_label()
 
-    def _scan_step(self):
-        if self._scan_index >= len(self._scan_queue):
-            self._stop_scan()
-            self._finish_scan()
+    def _start_retrieve(self):
+        if not self._commodities:
+            return
+        self._stop_countdown()
+        self._retrieve_queue = list(self._commodities)
+        self._retrieve_index = 0
+        self._all_commodity_data = {}
+        self.retrieve_btn.setEnabled(False)
+        self.profitable_btn.setEnabled(False)
+        self.retrieve_btn.setText(f"RETRIEVING 0/{len(self._retrieve_queue)}")
+
+        self._retrieve_timer = QTimer()
+        self._retrieve_timer.timeout.connect(self._retrieve_step)
+        self._retrieve_timer.start(RETRIEVE_STEP_INTERVAL_MS)
+
+    def _retrieve_step(self):
+        if self._retrieve_index >= len(self._retrieve_queue):
+            self._finish_retrieve()
             return
 
-        name = self._scan_queue[self._scan_index]
-        self._scan_index += 1
+        name = self._retrieve_queue[self._retrieve_index]
+        self._retrieve_index += 1
         try:
-            rows = self.api.get("commodities_prices", {"commodity_name": name})
+            self._all_commodity_data[name] = self.api.get("commodities_prices", {"commodity_name": name})
+        except UexRateLimitError as exc:
+            self._retrieve_timer.stop()
+            self._retrieve_timer = None
+            self.retrieve_btn.setEnabled(True)
+            self.retrieve_btn.setText("RETRIEVE DATA")
+            self.profitable_btn.setEnabled(bool(self._all_commodity_data))
+            self.card.set_error(str(exc), retry_callback=self._start_retrieve)
+            return
+        except Exception:
+            pass  # skip commodities that individually fail; don't abort the whole retrieval
+
+        self.retrieve_btn.setText(f"RETRIEVING {self._retrieve_index}/{len(self._retrieve_queue)}")
+
+    def _finish_retrieve(self):
+        self._retrieve_timer.stop()
+        self._retrieve_timer = None
+        self._last_retrieve_time = time.time()
+        self.retrieve_btn.setEnabled(True)
+        self.profitable_btn.setEnabled(bool(self._all_commodity_data))
+        self.card.clear_error()
+        self._start_countdown()
+
+    def _start_countdown(self):
+        self._countdown_timer = QTimer()
+        self._countdown_timer.timeout.connect(self._update_countdown_label)
+        self._countdown_timer.start(1000)
+        self._update_countdown_label()
+
+    def _update_countdown_label(self):
+        if self._force_confirm_pending:
+            return  # don't overwrite the "FORCE UPDATE?" prompt mid-tick
+        remaining = int(REFRESH_CACHE_SECONDS - (time.time() - self._last_retrieve_time))
+        if remaining <= 0:
+            self._stop_countdown()
+            self.retrieve_btn.setText("RETRIEVE DATA")
+            return
+        mins, secs = divmod(remaining, 60)
+        self.retrieve_btn.setText(f"REFRESH IN {mins:02d}:{secs:02d}")
+
+    def _stop_countdown(self):
+        if self._countdown_timer is not None:
+            self._countdown_timer.stop()
+            self._countdown_timer = None
+
+    # -- Find Most Profitable: instant, local, respects the system filters --
+    def find_most_profitable(self):
+        if not self._all_commodity_data:
+            return
+
+        sell_system = self.sell_system.currentText()
+        buy_system = self.buy_system.currentText()
+
+        results: dict[str, float] = {}
+        for name, rows in self._all_commodity_data.items():
             sell_rows = [r for r in rows if r.get("price_sell", 0) > 0]
+            if sell_system != ALL_SYSTEMS:
+                sell_rows = [r for r in sell_rows if r.get("star_system_name") == sell_system]
+
             buy_rows = [r for r in rows if r.get("price_buy", 0) > 0]
+            if buy_system != ALL_SYSTEMS:
+                buy_rows = [r for r in buy_rows if r.get("star_system_name") == buy_system]
+
             if sell_rows and buy_rows:
                 margin = max(r["price_sell"] for r in sell_rows) - min(r["price_buy"] for r in buy_rows)
                 if margin > 0:
-                    self._scan_results[name] = margin
-        except UexRateLimitError as exc:
-            self._stop_scan()
-            self.card.set_error(str(exc), retry_callback=self.start_profitability_scan)
-            return
-        except Exception:
-            pass  # skip commodities that individually fail; don't abort the whole scan
+                    results[name] = margin
 
-        self.scan_btn.setText(f"SCANNING {self._scan_index}/{len(self._scan_queue)}")
-
-    def _stop_scan(self):
-        if self._scan_timer is not None:
-            self._scan_timer.stop()
-            self._scan_timer = None
-        self.scan_btn.setEnabled(True)
-        self.scan_btn.setText("FIND MOST PROFITABLE")
-
-    def _finish_scan(self):
-        if not self._scan_results:
+        if not results:
+            filter_note = ""
+            if sell_system != ALL_SYSTEMS or buy_system != ALL_SYSTEMS:
+                filter_note = " with the current system filters"
             self.card.set_error(
-                "Scan found no profitable commodities right now.",
-                retry_callback=self.start_profitability_scan,
+                f"No profitable commodity found{filter_note}.",
+                retry_callback=self.find_most_profitable,
             )
             return
-        best = max(self._scan_results, key=self._scan_results.get)
-        self._profitable_cache = best
-        self._profitable_cache_time = time.time()
+
+        best = max(results, key=results.get)
         self.card.clear_error()
         self.combo.setCurrentText(best)  # triggers a normal refresh via currentTextChanged
 

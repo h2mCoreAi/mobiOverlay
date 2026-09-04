@@ -1,16 +1,19 @@
 """Always-on-top, frameless, draggable overlay window. Houses the
 CardContainer, the tray for stowed (hidden) cards, and Settings.
 """
+import subprocess
+
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider,
-    QSizeGrip, QSizePolicy
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QSlider, QSizeGrip, QSizePolicy
 )
 
 from host import theme
 from host.card_container import CardContainer
 from host.config import Config
+from host.paths import app_root, relaunch_command
 
 def _build_stylesheet() -> str:
     # A function, not a module-level constant: theme.fpx() must read
@@ -242,7 +245,7 @@ class _SettingsPanel(QWidget):
         layout.addWidget(card_row)
 
         # -- Text Size --
-        text_row = _SettingsRow("TEXT SIZE", "Applies the next time you launch mobiOverlay.")
+        text_row = _SettingsRow("TEXT SIZE", "Applies after a relaunch — use the button below.")
         current_scale = main_window.config.data["ui"]["font_scale"]
         for name, scale in theme.FONT_SCALE_OPTIONS.items():
             btn = QPushButton(name.upper())
@@ -261,6 +264,24 @@ class _SettingsPanel(QWidget):
             btn.clicked.connect(lambda checked, s=scale: main_window.set_font_scale(s))
             text_row.control_row.addWidget(btn)
         layout.addWidget(text_row)
+
+        # -- Relaunch --
+        relaunch_row = QWidget()
+        relaunch_layout = QHBoxLayout(relaunch_row)
+        relaunch_layout.setContentsMargins(12, 4, 12, 12)
+        relaunch_btn = QPushButton("RELAUNCH")
+        relaunch_btn.setToolTip("Closes and reopens mobiOverlay — applies Text Size and anything else that needs a fresh start.")
+        relaunch_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {theme.ACCENT_CYAN};
+                border: 1px solid {theme.BORDER_CYAN}; padding: 6px 0;
+                font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px; letter-spacing: 1px;
+            }}
+            QPushButton:hover {{ background: {theme.ACCENT_CYAN_DIM}; }}
+        """)
+        relaunch_btn.clicked.connect(main_window.relaunch)
+        relaunch_layout.addWidget(relaunch_btn)
+        layout.addWidget(relaunch_row)
 
 
 class _TitleBar(QWidget):
@@ -386,6 +407,15 @@ class MainWindow(QWidget):
         btn = self.title_bar.settings_btn
         panel.move(btn.mapToGlobal(QPoint(0, btn.height())))
         panel.show()
+
+    def relaunch(self):
+        subprocess.Popen(relaunch_command(), cwd=str(app_root()))
+        self.close()
+        # Not just self.close(): the Settings panel that owns this button
+        # is itself a live top-level widget (Qt.Popup with WA_StyledBackground
+        # still counts as a window), so Qt's quitOnLastWindowClosed never
+        # fires and the old process lingers indefinitely. Quit explicitly.
+        QApplication.instance().quit()
 
     def closeEvent(self, event):
         self.config.data["ui"]["window_geometry"] = {

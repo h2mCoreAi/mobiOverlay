@@ -1,6 +1,6 @@
 # Progress
 
-## Status: host + 2 modules + Settings menu + Find Most Profitable scan; card raise-to-front and rename shipped; awaiting human test
+## Status: Retrieve/Find split with countdown+force-update, Settings Relaunch button; awaiting human test
 
 ## Done
 
@@ -150,12 +150,49 @@
   card sizes visibly larger after relaunch)
 - Config schema: `ui.opacity` renamed to `ui.window_opacity`, added
   `ui.card_opacity` and `ui.font_scale`
+- **Retrieve Data / Find Most Profitable split.** User caught a real bug:
+  the old combined scan computed margin across ALL systems, ignoring the
+  Best Sell/Best Buy system filters entirely. Fixed by splitting into two
+  actions: "Retrieve Data" only downloads (`_all_commodity_data` cache, no
+  math), "Find Most Profitable" is now instant/local and reads
+  `sell_system`/`buy_system` filter state at click time — verified
+  end-to-end for the unfiltered case (live scan + selection); the
+  filtered case is code-reviewed (identical filter logic to the
+  already-verified `_apply_filters`) but not interactively confirmed —
+  UI Automation couldn't reliably drive the system-filter combo boxes in
+  this environment (popups closing between separate tool calls, z-order
+  making element ordering unstable), not an app problem
+- **Countdown / Force Update on Retrieve Data.** After a successful
+  retrieve, the button shows a live "REFRESH IN MM:SS" countdown (30 min).
+  Clicking while it's counting down doesn't re-fetch — it prompts "FORCE
+  UPDATE?" first (auto-reverts after 4s if not confirmed), and only a
+  second click actually forces a fresh retrieve. Verified all three states
+  via UI Automation, including confirming the 4-second auto-revert
+  actually happens by letting two separate tool calls (each with real
+  wall-clock latency) land on either side of it
+- **Settings > Relaunch button.** Spawns a fresh instance
+  (`host/paths.py`'s new `relaunch_command()` — same exe when frozen, same
+  interpreter+script from source) and closes the current one. **Found and
+  fixed a real bug during testing**: the old process didn't actually exit
+  after `self.close()` — the Settings panel itself (a `Qt.Popup`, open at
+  the moment Relaunch is clicked, since that's where the button lives) is
+  a separate top-level widget that `self.close()` never touched, so Qt's
+  `quitOnLastWindowClosed` never fired and the old process lingered
+  indefinitely. Fixed with an explicit `QApplication.instance().quit()`
+  rather than relying on that. Verified clean: old PID fully gone,
+  exactly one new PID running, new window visible and functional
+- Text Size's settings-panel description reworded to point at the new
+  Relaunch button ("Applies after a relaunch — use the button below")
+  instead of a vague "next launch" — real-time font scaling was
+  considered and explicitly dropped per user direction (too heavy a
+  refactor for the value)
 
 ## Next
 
 - Human review of the running app (this is the current handoff point) —
-  especially the new Settings panel, Find Most Profitable, and raise-to-
-  front, none of which have been touched by a human yet
+  especially Retrieve/Find with real system filters set (only the
+  unfiltered path got a live human-equivalent test this session), the
+  Force Update confirm flow, and Relaunch
 - Grid-snap drag and per-card resize handle are code-reviewed and
   screenshot-confirmed to render, but not yet mouse-drag-tested by a human
 - Confirm UEX bearer token is genuinely optional for the long term (GET
