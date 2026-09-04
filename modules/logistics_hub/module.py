@@ -10,10 +10,11 @@ does **not** use any host‑side screen‑capture or OCR helpers.  All new
 third‑party dependencies are declared in the local :file:`requirements.txt`
 so the base project stays clean.
 
-Chosen OCR engine: **pytesseract** – small, permissively licensed
-(Apache 2.0), and fine for UI text when the region is cropped tightly.
-The tradeoff is that it requires a real Tesseract binary installed
-separately on the machine.
+Chosen OCR engine: **easyocr** – permissively licensed (Apache 2.0)
+and fully pip‑installable on Windows, which avoids making the user
+install a separate Tesseract binary. The tradeoff is a much heavier
+download (it pulls in PyTorch and torchvision), so it may take a few
+seconds on first use.
 
 Route optimization uses a simple nearest‑neighbour heuristic; it is not
 guaranteed to be optimal, but it is deterministic and cheap.
@@ -50,12 +51,12 @@ from host.module_base import ModuleBase
 # load if the user has not yet installed the local requirements.txt.
 # ---------------------------------------------------------------------------
 try:
-    import pytesseract  # type: ignore
+    import easyocr  # type: ignore
     from PIL import Image, ImageOps  # type: ignore
 
     OCR_AVAILABLE = True
 except ImportError:
-    pytesseract = None  # type: ignore
+    easyocr = None  # type: ignore
     Image = None  # type: ignore
     ImageOps = None  # type: ignore
     OCR_AVAILABLE = False
@@ -202,6 +203,7 @@ class LogisticsHubModule(ModuleBase):
         self._stops = []
         self._order = []
         self._card_widget = None
+        self._reader = None
 
     # ------------------------------------------------------------------
     # Card construction
@@ -369,7 +371,7 @@ class LogisticsHubModule(ModuleBase):
             return
         if not OCR_AVAILABLE:
             raise RuntimeError(
-                "pytesseract/PIL not installed. Run:\n"
+                "easyocr/Pillow not installed. Run:\n"
                 "  pip install -r modules/logistics_hub/requirements.txt"
             )
 
@@ -409,7 +411,7 @@ class LogisticsHubModule(ModuleBase):
         return screen.grabWindow(0, local_x, local_y, w, h)
 
     def _ocr(self, pixmap):
-        """Runs Tesseract over the given QPixmap and returns raw text."""
+        """Runs EasyOCR over the given QPixmap and returns raw text."""
         # Convert QPixmap → QImage → PIL image.
         qimg = pixmap.toImage().convertToFormat(QImage.Format_RGBA8888)
         ptr = qimg.bits()
@@ -419,9 +421,16 @@ class LogisticsHubModule(ModuleBase):
         )
         pil_rgb = pil_rgba.convert("RGB")
 
+        # Preprocess a little for the OCR engine.
         gray = ImageOps.grayscale(pil_rgb)
         gray = ImageOps.autocontrast(gray)
-        return pytesseract.image_to_string(gray)
+
+        if self._reader is None:
+            self._reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+
+        import numpy as np
+        result = self._reader.readtext(np.array(gray), detail=0)
+        return "\n".join(result)
 
     # ------------------------------------------------------------------
     # Route heuristic

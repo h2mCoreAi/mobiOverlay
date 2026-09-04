@@ -1,14 +1,9 @@
 # OCR engine used by modules/logistics_hub/module.py.
 #
-# pytesseract is a thin wrapper around the Apache‑2.0 Tesseract OCR binary.
-# It's lightweight and works well on tightly‑cropped UI text, but you must
-# also install the actual Tesseract executable outside of pip (e.g.
-# https://github.com/UB‑Mannheim/tesseract/wiki).
-#
-# Pillow is used to convert the Qt screenshot to a format pytesseract
-# expects.
-#
-# (easyocr was considered instead; it's fully pip‑installable but pulls in
-# PyTorch and model files – heavy for what we need here.)
-pytesseract>=0.3.10
+# easyocr is permissively licensed (Apache-2.0), pip-installable, and
+# works out‑of‑the‑box on Windows without requiring a separate Tesseract
+# binary.  Tradeoff: it's much heavier (pulls in PyTorch + torchvision).
+# Keep this at the module level so the base project's dependency list
+# stays clean.
+easyocr>=1.7.0
 Pillow>=9.0.0
