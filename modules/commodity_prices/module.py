@@ -219,7 +219,14 @@ class CommodityPricesModule(ModuleBase):
         # already renders "no terminals buying/selling" gracefully per row,
         # so let it flow through instead of raising and showing a scary
         # card-level error for something that isn't actually broken.
-        rows = self.api.get("commodities_prices", {"commodity_name": name})
+        # UEX's commodity_name filter is a substring match, not exact --
+        # querying "Diamond" also returns "Diamond Laminate" rows (a
+        # different commodity that happens to contain the same substring),
+        # which without this filter could get picked as the "best" price
+        # for the wrong item entirely. Confirmed live: this is exactly what
+        # was inflating Diamond's reported sell price 10x.
+        rows = [r for r in self.api.get("commodities_prices", {"commodity_name": name})
+                if r.get("commodity_name") == name]
         self._last_rows = rows
         self._repopulate_system_filters(rows)
         self._apply_filters()
@@ -326,7 +333,8 @@ class CommodityPricesModule(ModuleBase):
         name = self._retrieve_queue[self._retrieve_index]
         self._retrieve_index += 1
         try:
-            self._all_commodity_data[name] = self.api.get("commodities_prices", {"commodity_name": name})
+            rows = self.api.get("commodities_prices", {"commodity_name": name})
+            self._all_commodity_data[name] = [r for r in rows if r.get("commodity_name") == name]
         except UexRateLimitError as exc:
             self._retrieve_timer.stop()
             self._retrieve_timer = None

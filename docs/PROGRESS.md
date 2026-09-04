@@ -368,6 +368,19 @@
   ("Admin - MIC-L2" -> "MIC-L2", "TDD - Trade and Development Division -
   Area 18" -> "TDD Area 18", etc.) and confirmed visually in the running
   app afterward.
+- **Bug fix: Diamond's reported sell price was ~10x too high (80,000 vs.
+  the real ~7,800 aUEC/SCU).** User flagged it as suspicious; checked live
+  against UEX's own site and the raw API. Root cause: UEX's
+  `commodity_name` query param is a substring match, not exact —
+  `commodity_name=Diamond` also returns rows for "Diamond Laminate" (a
+  different commodity, id 119 vs. Diamond's id 25), and the card's
+  best-price logic just took the max/min `price_sell`/`price_buy` across
+  every returned row with no check that it actually belonged to the
+  selected commodity. Fixed by filtering rows to `commodity_name == name`
+  exactly after fetching, in both `refresh()` and the Retrieve Data loop.
+  Verified against real API data before and after the fix (mixed-in
+  Diamond Laminate rows removed, top Diamond sell price correctly 7,800
+  at HUR-L1) and confirmed visually in the running app.
 
 ## Next
 

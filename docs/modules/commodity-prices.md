@@ -26,7 +26,12 @@ system).
 
 - `commodities` — list of commodities for the picker (`GET`, no auth needed)
 - `commodities_prices?commodity_name=<name>` — current prices per terminal
-  for a given commodity (`GET`, no auth needed)
+  for a given commodity (`GET`, no auth needed). **`commodity_name` is a
+  substring match, not exact** (confirmed live, 2026-09-03) — querying
+  `"Diamond"` also returns `"Diamond Laminate"` rows. `refresh()` and the
+  Retrieve Data loop both filter the response to
+  `commodity_name == name` exactly before using it, or the wrong
+  commodity's price can silently win "best price."
 - `terminals?type=commodity` — fetched once at card creation, purely to
   build an `id_terminal -> nickname` lookup (`GET`, no auth needed)
 

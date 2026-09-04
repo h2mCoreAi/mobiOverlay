@@ -567,3 +567,20 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   `terminal_name` if a terminal isn't in that map. Same `nickname` field
   the trade route picker already uses — not a new pattern, just applied
   to the one place it was missed.
+
+- **2026-09-03 — UEX's `commodity_name` query param is a substring match,
+  not exact — filter results client-side or the wrong commodity can win
+  "best price."** User flagged Diamond's reported sell price (80,000
+  aUEC/SCU) as suspiciously high. Cross-checked against UEX's own website
+  (~7,800) and the raw API directly: `commodity_name=Diamond` returns
+  rows for both `"Diamond"` (id 25) and `"Diamond Laminate"` (id 119) —
+  a different commodity that happens to contain "Diamond" as a substring.
+  `_apply_filters`/`find_most_profitable` took `max()`/`min()` over
+  `price_sell`/`price_buy` across every row returned with no check that
+  the row's `commodity_name` actually matched the selected commodity, so
+  Diamond Laminate's much higher price silently won. Fixed by filtering
+  to `r["commodity_name"] == name` right after fetching, in both
+  `refresh()` and the Retrieve Data loop. Worth remembering for any
+  future UEX endpoint call using a `*_name` filter param — this API
+  doesn't appear to support exact-match filtering, so assume substring
+  matching unless proven otherwise.
