@@ -16,6 +16,10 @@ DEFAULT_CONFIG = {
         "font_scale": 1.15,  # matches the new "Normal" tier — see theme.py
         "always_on_top": True,
         "window_geometry": {},
+        "pre_stow_geometry": {},
+        "hotkey_mod": None,
+        "hotkey_vk": None,
+        "hotkey_display": "",
     },
     "api": {"uex_token": "", "uex_base_url": "https://api.uexcorp.uk/2.0/"},
     "cards": {},

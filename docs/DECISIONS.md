@@ -303,3 +303,46 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   limitation for `QComboBox` popup *selection* specifically (buttons via
   `InvokePattern` have been reliable all session) rather than an app bug
   — logged as a general lesson, not just for this feature.
+
+- **2026-09-04 — Whole-app minimize-to-pill, Collapse All, and a
+  system-wide Stow/Deploy hotkey.** All user-requested, implemented
+  together since the hotkey's whole purpose is toggling the same
+  stow/deploy behavior the minimize button drives directly.
+  - **Minimize-to-pill** reuses `MainWindow` itself rather than spawning
+    a second window — hides `card_container`/size grip, hides
+    Tray/Settings/minimize in the title bar (keeps wordmark + close),
+    resizes down to the wordmark's `sizeHint()` (padded for
+    `MainWindow`'s own content margins, which `sizeHint()` alone
+    ignores), and remembers the pre-stow geometry to restore exactly.
+    Avoided a second top-level window on purpose — it would've resurrected
+    the "which window is actually on top" z-order/focus fights this
+    session already hit repeatedly with popups.
+  - **Global hotkey required real Win32 API access** (`ctypes`,
+    `RegisterHotKey`/`WM_HOTKEY`), not a Qt `QShortcut` — shortcuts only
+    fire while the app itself has focus, useless for "toggle while I'm
+    alt-tabbed into the game," which is the actual use case per the
+    request ("utilized more as part of the player's UI"). New
+    `host/hotkey.py`, a `QAbstractNativeEventFilter` installed on
+    `QApplication` to catch `WM_HOTKEY` regardless of focus.
+  - **Hard requirement: at least one modifier.** A hotkey capture field
+    that accepted a bare key would let someone accidentally register,
+    say, plain `M` as a system-wide hotkey — hijacking that key
+    everywhere, including normal typing in the game. Rejected before
+    `RegisterHotKey` is ever called, with an inline message telling the
+    user why.
+  - Verification is split, and the gap matters: the click-to-arm
+    "listening" state change is confirmed live (real mouse click,
+    visible text change). The key/modifier→VK-code parsing logic is
+    confirmed correct in isolation (`Ctrl+Shift+M` → exactly
+    `MOD_CONTROL|MOD_SHIFT` + `VK_M`, using real `Qt` constants, no GUI
+    involved). But actual keystroke capture — pressing the combo while
+    the field is armed — could not be verified at all: `SendKeys`,
+    even after `SetForegroundWindow` on the main window, never visibly
+    reached the field, and `config.json` confirmed nothing was actually
+    saved. Root cause suspected rather than confirmed: the Settings
+    panel is its own `Qt.Popup` HWND, and focusing the *owner* window
+    doesn't necessarily focus the popup's own HWND — `NativeWindowHandle`
+    came back empty for the field too, so there wasn't even a handle to
+    route input to directly as a workaround. This is a real, flagged gap
+    in PROGRESS.md, not a "probably fine" — a human needs to actually
+    click the field and press a real combo before trusting it works.

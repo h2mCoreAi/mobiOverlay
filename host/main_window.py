@@ -3,14 +3,15 @@ CardContainer, the tray for stowed (hidden) cards, and Settings.
 """
 import subprocess
 
-from PySide6.QtCore import Qt, QPoint
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtGui import QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QSlider, QSizeGrip, QSizePolicy
+    QSlider, QSizeGrip, QSizePolicy, QLineEdit
 )
 
 from host import theme
+from host import hotkey as hotkey_mod
 from host.card_container import CardContainer
 from host.config import Config
 from host.paths import app_root, relaunch_command
@@ -199,6 +200,65 @@ class _SettingsRow(QWidget):
         layout.addLayout(self.control_row)
 
 
+class _HotkeyField(QLineEdit):
+    """Click, then press a key combo to record it as the global Stow/Deploy
+    hotkey — works even while another app (the game) has focus, since it's
+    a real OS-level hotkey (host/hotkey.py), not a Qt shortcut.
+
+    Must include at least one modifier (Ctrl/Alt/Shift/Win): a bare key
+    would hijack that key system-wide, including while playing. Escape
+    cancels without changing anything.
+    """
+
+    def __init__(self, main_window: "MainWindow"):
+        super().__init__()
+        self._win = main_window
+        self.setReadOnly(True)
+        self.setAlignment(Qt.AlignCenter)
+        self._listening = False
+        self._show_current()
+
+    def _show_current(self):
+        display = self._win.config.data["ui"].get("hotkey_display") or ""
+        self.setText(display if display else "Click to set…")
+
+    def _flash(self, message: str):
+        self.setText(message)
+        QTimer.singleShot(1600, self._show_current)
+
+    def mousePressEvent(self, event):
+        self._listening = True
+        self.setText("Press a key combo… (Esc cancels)")
+
+    def keyPressEvent(self, event):
+        if not self._listening:
+            return
+        key = event.key()
+        if key == Qt.Key_Escape:
+            self._listening = False
+            self._show_current()
+            return
+        if key in (Qt.Key_Control, Qt.Key_Shift, Qt.Key_Alt, Qt.Key_Meta, Qt.Key_unknown):
+            return  # a bare modifier isn't a complete combo yet — keep listening
+
+        self._listening = False
+        mod = hotkey_mod.qt_modifiers_to_mod(event.modifiers())
+        vk = hotkey_mod.qt_key_to_vk(key)
+
+        if mod == 0:
+            self._flash("Needs Ctrl / Alt / Shift / Win too")
+            return
+        if vk is None:
+            self._flash("Unsupported key — try another")
+            return
+
+        display = QKeySequence(int(event.modifiers()) | key).toString()
+        if self._win.set_stow_hotkey(mod, vk, display):
+            self._show_current()
+        else:
+            self._flash("Already in use by another app")
+
+
 class _SettingsPanel(QWidget):
     """Window Opacity, Card Opacity, and Text Size — a themed panel next to
     the Tray, same Qt.Popup pattern (closes on an outside click)."""
@@ -283,6 +343,32 @@ class _SettingsPanel(QWidget):
         relaunch_layout.addWidget(relaunch_btn)
         layout.addWidget(relaunch_row)
 
+        # -- Stow/Deploy hotkey --
+        hotkey_row = _SettingsRow(
+            "STOW/DEPLOY HOTKEY",
+            "Toggles the whole overlay, even while the game has focus.",
+        )
+        hotkey_field = _HotkeyField(main_window)
+        hotkey_field.setStyleSheet(f"""
+            QLineEdit {{
+                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
+                border: 1px solid {theme.BORDER_FLAT}; padding: 4px 6px;
+                font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px;
+            }}
+        """)
+        hotkey_row.control_row.addWidget(hotkey_field, 1)
+        clear_btn = QPushButton("CLEAR")
+        clear_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {theme.TEXT_MUTED};
+                border: 1px solid {theme.BORDER_FLAT}; padding: 4px 8px;
+                font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
+            }}
+        """)
+        clear_btn.clicked.connect(lambda: (main_window.clear_stow_hotkey(), hotkey_field._show_current()))
+        hotkey_row.control_row.addWidget(clear_btn)
+        layout.addWidget(hotkey_row)
+
 
 class _TitleBar(QWidget):
     def __init__(self, main_window: "MainWindow"):
@@ -290,6 +376,7 @@ class _TitleBar(QWidget):
         self.setObjectName("titleBar")
         self._win = main_window
         self._drag_offset: QPoint | None = None
+        self._press_pos = QPoint()
         self.setFixedHeight(38)
 
         layout = QHBoxLayout(self)
@@ -309,6 +396,13 @@ class _TitleBar(QWidget):
             padding: 3px 8px; border: 1px solid {theme.BORDER_FLAT};
         """
 
+        self.collapse_all_btn = QPushButton("▾ ALL")
+        self.collapse_all_btn.setObjectName("cardIconBtn")
+        self.collapse_all_btn.setStyleSheet(_button_style)
+        self.collapse_all_btn.setToolTip("Collapse or expand every card at once")
+        self.collapse_all_btn.clicked.connect(self._win.toggle_collapse_all)
+        layout.addWidget(self.collapse_all_btn)
+
         self.tray_btn = QPushButton("TRAY")
         self.tray_btn.setObjectName("cardIconBtn")
         self.tray_btn.setStyleSheet(_button_style)
@@ -321,6 +415,13 @@ class _TitleBar(QWidget):
         self.settings_btn.clicked.connect(self._win.show_settings)
         layout.addWidget(self.settings_btn)
 
+        self.minimize_btn = QPushButton("▬")
+        self.minimize_btn.setObjectName("cardIconBtn")
+        self.minimize_btn.setFixedSize(20, 20)
+        self.minimize_btn.setToolTip("Stow mobiOverlay to a small button — click it (or the hotkey) to bring it back")
+        self.minimize_btn.clicked.connect(self._win.stow_app)
+        layout.addWidget(self.minimize_btn)
+
         close_btn = QPushButton("✕")
         close_btn.setObjectName("cardIconBtn")
         close_btn.setFixedSize(20, 20)
@@ -331,15 +432,31 @@ class _TitleBar(QWidget):
         count = len(self._win.card_container.stowed_cards())
         self.tray_btn.setText(f"TRAY ({count})" if count else "TRAY")
 
+    def set_collapse_all_label(self, all_collapsed: bool):
+        self.collapse_all_btn.setText("▸ ALL" if all_collapsed else "▾ ALL")
+
+    def set_stowed_mode(self, stowed: bool):
+        """Pill mode: only the wordmark (click to deploy) and close stay
+        visible — everything else would be dead weight on a small button."""
+        self.collapse_all_btn.setVisible(not stowed)
+        self.tray_btn.setVisible(not stowed)
+        self.settings_btn.setVisible(not stowed)
+        self.minimize_btn.setVisible(not stowed)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self._drag_offset = event.globalPosition().toPoint() - self._win.pos()
+            self._press_pos = event.globalPosition().toPoint()
 
     def mouseMoveEvent(self, event):
         if self._drag_offset is not None:
             self._win.move(event.globalPosition().toPoint() - self._drag_offset)
 
     def mouseReleaseEvent(self, event):
+        if self._drag_offset is not None and self._win.is_app_stowed():
+            moved = (event.globalPosition().toPoint() - self._press_pos).manhattanLength()
+            if moved < 5:
+                self._win.deploy_app()
         self._drag_offset = None
 
 
@@ -373,12 +490,82 @@ class MainWindow(QWidget):
         footer.addWidget(self._size_grip)
         outer.addLayout(footer)
 
-        self.setMinimumSize(460, 380)
+        self._normal_min_size = (460, 380)
+        self.setMinimumSize(*self._normal_min_size)
 
         geo = config.data["ui"].get("window_geometry") or {}
         self.resize(geo.get("width", 680), geo.get("height", 560))
         default_x, default_y = _default_launch_position()
         self.move(geo.get("x", default_x), geo.get("y", default_y))
+
+        self._all_collapsed = False
+        self._app_stowed = False
+        self._pre_stow_geometry: tuple[int, int, int, int] | None = None
+
+        # Global (system-wide) Stow/Deploy hotkey — works even while the
+        # game has focus. installNativeEventFilter doesn't keep the filter
+        # alive on its own, so self._hotkey is the thing keeping it around.
+        self._hotkey = hotkey_mod.GlobalHotkey()
+        QApplication.instance().installNativeEventFilter(self._hotkey)
+        saved_mod = config.data["ui"].get("hotkey_mod")
+        saved_vk = config.data["ui"].get("hotkey_vk")
+        if saved_mod is not None and saved_vk is not None:
+            self._hotkey.set_hotkey(saved_mod, saved_vk, self.toggle_app_stow)
+
+    def toggle_collapse_all(self):
+        self._all_collapsed = not self._all_collapsed
+        self.card_container.set_all_collapsed(self._all_collapsed)
+        self.title_bar.set_collapse_all_label(self._all_collapsed)
+
+    def is_app_stowed(self) -> bool:
+        return self._app_stowed
+
+    def stow_app(self):
+        if self._app_stowed:
+            return
+        self._pre_stow_geometry = (self.x(), self.y(), self.width(), self.height())
+        self.card_container.setVisible(False)
+        self._size_grip.setVisible(False)
+        self.title_bar.set_stowed_mode(True)
+        self._app_stowed = True
+        self.setMinimumSize(1, 1)  # let it actually shrink to pill size
+        # title_bar.sizeHint() alone ignores MainWindow's own content
+        # margins (outer.setContentsMargins(10,10,10,10)) — pad for them
+        # explicitly rather than resizing to an exact fit that clips it.
+        hint = self.title_bar.sizeHint()
+        self.resize(hint.width() + 24, hint.height() + 24)
+
+    def deploy_app(self):
+        if not self._app_stowed:
+            return
+        self.card_container.setVisible(True)
+        self._size_grip.setVisible(True)
+        self.title_bar.set_stowed_mode(False)
+        self._app_stowed = False
+        self.setMinimumSize(*self._normal_min_size)
+        if self._pre_stow_geometry:
+            x, y, w, h = self._pre_stow_geometry
+            self.move(x, y)
+            self.resize(w, h)
+
+    def toggle_app_stow(self):
+        self.deploy_app() if self._app_stowed else self.stow_app()
+
+    def set_stow_hotkey(self, mod: int, vk: int, display: str) -> bool:
+        ok = self._hotkey.set_hotkey(mod, vk, self.toggle_app_stow)
+        if ok:
+            self.config.data["ui"]["hotkey_mod"] = mod
+            self.config.data["ui"]["hotkey_vk"] = vk
+            self.config.data["ui"]["hotkey_display"] = display
+            self.config.save()
+        return ok
+
+    def clear_stow_hotkey(self):
+        self._hotkey.clear()
+        self.config.data["ui"]["hotkey_mod"] = None
+        self.config.data["ui"]["hotkey_vk"] = None
+        self.config.data["ui"]["hotkey_display"] = ""
+        self.config.save()
 
     def set_window_opacity_percent(self, value: int):
         opacity = value / 100
@@ -418,9 +605,14 @@ class MainWindow(QWidget):
         QApplication.instance().quit()
 
     def closeEvent(self, event):
-        self.config.data["ui"]["window_geometry"] = {
-            "x": self.x(), "y": self.y(),
-            "width": self.width(), "height": self.height(),
-        }
+        # If stowed, self.x()/y()/width()/height() describe the tiny pill,
+        # not a size worth reopening at next launch — save the geometry
+        # from before it was stowed instead.
+        if self._app_stowed and self._pre_stow_geometry:
+            x, y, w, h = self._pre_stow_geometry
+        else:
+            x, y, w, h = self.x(), self.y(), self.width(), self.height()
+        self.config.data["ui"]["window_geometry"] = {"x": x, "y": y, "width": w, "height": h}
         self.config.save()
+        self._hotkey.clear()
         super().closeEvent(event)

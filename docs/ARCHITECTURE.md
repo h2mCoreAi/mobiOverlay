@@ -66,6 +66,28 @@ click one to deploy it back onto the board. See `host/card_container.py`
 (`stow_card`/`deploy_card`/`stowed_cards`) and `host/main_window.py`
 (`_TrayPanel`).
 
+The same Stow/Deploy vocabulary applies to the whole app, not just
+individual cards: the title bar's minimize button (`▬`) shrinks the
+entire window down to a small pill (just the wordmark + close button,
+still always-on-top), and clicking that pill restores it to its exact
+previous position/size. See `MainWindow.stow_app`/`deploy_app` in
+`host/main_window.py`. A system-wide hotkey (`host/hotkey.py`, Win32
+`RegisterHotKey` via `ctypes` — plain Qt shortcuts only fire while the
+app has focus, useless for toggling while the game does) can trigger the
+same stow/deploy toggle from Settings, meant for use while playing.
+
+## Global hotkey (host/hotkey.py)
+
+`GlobalHotkey` wraps `RegisterHotKey`/`UnregisterHotKey` and installs a
+`QAbstractNativeEventFilter` to catch the resulting `WM_HOTKEY` message
+regardless of which window has OS focus. Only one hotkey exists right now
+(Stow/Deploy the whole app) — `_HOTKEY_ID = 1` in `hotkey.py`. Requires at
+least one modifier (Ctrl/Alt/Shift/Win); a bare key is rejected before
+`RegisterHotKey` is ever called, since that would hijack the key
+system-wide (including inside the game). The capture UI
+(`_HotkeyField` in `main_window.py`) is click-to-arm: click the field,
+press the combo, Escape cancels.
+
 ## Packaging
 
 PyInstaller. `host/` is bundled into the exe. `modules/` and `config.json`

@@ -147,3 +147,8 @@ class CardContainer(QWidget):
         self._card_opacity = opacity
         for card in self.cards.values():
             card.set_card_opacity(opacity)
+
+    # -- collapse/expand every card at once ----------------------------------
+    def set_all_collapsed(self, collapsed: bool):
+        for card in self.cards.values():
+            card.set_collapsed(collapsed)

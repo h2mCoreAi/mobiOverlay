@@ -208,9 +208,40 @@
   Large (1.3), and a genuinely new Extra Large (1.45) was added on top —
   same +0.15 step throughout. Default `font_scale` moved from 1.0 to
   1.15 to match the shift
+- **Collapse All / Expand All** toggle in the title bar (`▾ ALL` /
+  `▸ ALL`) — one click collapses or expands every card at once. Verified
+  working both directions via UI Automation
+- **Minimize the whole app to a small pill.** New `▬` button shrinks
+  MainWindow down to just the wordmark + close button (still always-
+  on-top); clicking the pill restores the exact previous position and
+  size. Uses the same Stow/Deploy vocabulary as cards, applied to the
+  whole window — see `MainWindow.stow_app`/`deploy_app` in
+  `main_window.py`. Verified end-to-end with a real mouse click (not
+  just automation Invoke): stow → screenshot confirmed pill-only content
+  → click → screenshot confirmed exact restore, cards and all
+- **System-wide Stow/Deploy hotkey**, `host/hotkey.py` — real Win32
+  `RegisterHotKey`/`WM_HOTKEY`, not a Qt shortcut, so it works while the
+  game (not mobiOverlay) has focus. Capture field in Settings: click,
+  press a combo, Escape cancels; requires at least one modifier (a bare
+  key would hijack that key system-wide, rejected before ever calling
+  `RegisterHotKey`). Verified: the click-to-arm-listening state change
+  works (confirmed live), and the key/modifier-parsing logic is correct
+  (`Ctrl+Shift+M` → correct `MOD_CONTROL|MOD_SHIFT` + `VK_M`, tested in
+  isolation with real `Qt` modifier/key constants). **Could not verify
+  actual keystroke capture landing in the field** — `SendKeys` never
+  reached it even after `SetForegroundWindow`, most likely because the
+  Settings panel is its own `Qt.Popup` HWND and focusing the *owner*
+  window doesn't focus the popup itself; see DECISIONS.md. This needs a
+  human to actually click the field and press a combo to confirm it
+  really registers.
 
 ## Next
 
+- **Top priority: hotkey capture field needs real human hands** — click
+  it and press a combo, confirm it actually saves and the hotkey works
+  while the game has focus. This is the one piece this session genuinely
+  could not verify at all (not just "couldn't prove it," no signal
+  either way on whether a keystroke reaches the field)
 - Human review of the running app (this is the current handoff point) —
   especially Retrieve/Find with real system filters set (only the
   unfiltered path got a live human-equivalent test this session), the
