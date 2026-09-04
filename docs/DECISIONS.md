@@ -419,3 +419,33 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
     exact runtime types the real code path produces (e.g. `event.key()`
     is `int`, not `Qt.Key`) — reproducing the shape of the call, not just
     its intent, is what makes a regression test meaningful here.
+
+- **2026-09-03 — Window opacity fix #3: QSS `background:` on a
+  `WA_TranslucentBackground` top-level widget doesn't reliably work at
+  all; switched to painting the void directly in `paintEvent()`.**
+  `WA_StyledBackground` (the previous fix) was a real, necessary
+  requirement but not sufficient — the user reported no visible change
+  from the slider at any position. Live debug output proved the Python
+  side was unambiguously correct (right rgba string recomputed and
+  reapplied on every slider move, both attributes `True`, right class
+  name for the QSS selector), and `GetWindowLong`/`GWL_EXSTYLE` confirmed
+  Windows genuinely created the native window with `WS_EX_LAYERED`. So
+  the bug was in Qt's own QSS-background-to-layered-window compositing
+  path specifically — a real, if obscure, rough edge, not a code mistake
+  this time. Fix: paint the void directly with `QPainter` in
+  `CompositionMode_Source` inside `MainWindow.paintEvent()`, which writes
+  ARGB pixels straight into the translucent surface instead of going
+  through the QSS pipeline. Proof this actually changed something (not
+  just another unverified guess): sampling the same screen pixel at
+  100% vs. 40% opacity went from `(6, 9, 11)` — exactly `theme.BG_VOID`,
+  correctly rendered — down to `(2, 4, 4)`, matching premultiplied-alpha
+  scaling by ~0.4 almost exactly. The *previous* (QSS) attempt sampled as
+  flat `(0, 0, 0)` at both settings — not even the right color, let alone
+  reactive to the slider — which is hard confirmation the QSS path was
+  never really working, not just hard to verify.
+  Still can't fully confirm the on-screen result against real desktop
+  content behind the window (PrintWindow only proves Qt is producing
+  correct, opacity-reactive premultiplied pixel data, not what DWM does
+  with it against the desktop) — needs the user's own eyes as the final
+  check, same as before, but now with much stronger evidence the
+  mechanism itself is doing the right thing.

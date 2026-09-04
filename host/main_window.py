@@ -4,7 +4,7 @@ CardContainer, the tray for stowed (hidden) cards, and Settings.
 import subprocess
 
 from PySide6.QtCore import Qt, QPoint, QTimer, QKeyCombination
-from PySide6.QtGui import QGuiApplication, QKeySequence
+from PySide6.QtGui import QGuiApplication, QKeySequence, QColor, QPainter
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QSizeGrip, QSizePolicy, QLineEdit
@@ -496,19 +496,22 @@ class MainWindow(QWidget):
         # background at their own alpha (see Card.set_card_opacity) on top
         # of whatever the void behind them is doing.
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        # A plain QWidget ignores a QSS "background" property entirely
-        # unless WA_StyledBackground is also set — without this, the void
-        # background rule below never actually paints, and combined with
-        # WA_TranslucentBackground that means permanently fully transparent
-        # (alpha 0) no matter what the opacity slider is set to.
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self._base_stylesheet = _build_stylesheet()
-        self.setStyleSheet(self._base_stylesheet)
+        self.setStyleSheet(_build_stylesheet())
+
+        # The void background is painted directly in paintEvent() below,
+        # not via a QSS "background" rule. QSS-driven backgrounds on a
+        # WA_TranslucentBackground top-level widget were tried first and
+        # didn't work reliably — the alpha value updated correctly on the
+        # Python/Qt side (confirmed) but never visibly changed on screen,
+        # a known rough edge with Qt's style-sheet background compositing
+        # on translucent windows. Painting with QPainter in
+        # CompositionMode_Source writes the RGBA pixels directly and
+        # doesn't go through that pipeline at all.
+        self._void_opacity = config.data["ui"]["window_opacity"]
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(10)
-        self._apply_void_background(config.data["ui"]["window_opacity"])
 
         self.title_bar = _TitleBar(self)
         outer.addWidget(self.title_bar)
@@ -658,13 +661,24 @@ class MainWindow(QWidget):
     def last_hotkey_error(self) -> int | None:
         return self._hotkey.last_error
 
-    def _apply_void_background(self, opacity: float):
-        bg = theme.hex_to_rgba(theme.BG_VOID, opacity)
-        self.setStyleSheet(self._base_stylesheet + f"MainWindow {{ background: {bg}; }}")
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        # CompositionMode_Source writes the RGBA pixels directly instead of
+        # blending onto whatever's already in the (possibly garbage, for a
+        # freshly-resized translucent surface) backing store — required for
+        # the alpha value itself to be trustworthy.
+        painter.setCompositionMode(QPainter.CompositionMode_Source)
+        color = QColor(theme.BG_VOID)
+        color.setAlphaF(self._void_opacity)
+        painter.fillRect(self.rect(), color)
+        painter.end()
+        super().paintEvent(event)
 
     def set_window_opacity_percent(self, value: int):
         opacity = value / 100
-        self._apply_void_background(opacity)
+        self._void_opacity = opacity
+        self.update()
         self.config.data["ui"]["window_opacity"] = opacity
         self.config.save()
 

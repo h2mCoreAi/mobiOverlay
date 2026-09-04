@@ -295,6 +295,18 @@
   it permanently transparent regardless of the slider. `_SettingsPanel`/
   `_TrayPanel` elsewhere in the same file already had this attribute set
   correctly — `MainWindow` was the one place it was missing. Fixed.
+- **Bug fix (2026-09-03, third pass): the WA_StyledBackground fix wasn't
+  enough — QSS `background:` on a translucent top-level widget doesn't
+  reliably composite on this Qt/Windows combo at all.** User confirmed:
+  moving the slider produced no visible change at any position. Rewrote
+  to paint the void directly in `MainWindow.paintEvent()` via `QPainter`
+  in `CompositionMode_Source` instead of a QSS rule. Confirmed with pixel
+  sampling this is a real, reactive fix this time: the same screen pixel
+  read as flat `(0, 0, 0)` regardless of slider position under the old
+  QSS approach (not even `theme.BG_VOID`'s actual color), vs. correctly
+  `(6, 9, 11)` at 100% and `(2, 4, 4)` at 40% (matching premultiplied-
+  alpha scaling almost exactly) under the new paintEvent approach. See
+  DECISIONS.md for the full trail.
 
 ## Next
 
@@ -307,12 +319,14 @@
   live capture-into-the-popup-field itself was never confirmed by
   automation across this whole project — only a human click can close
   this out.
-- **Human check: void background transparency.** Confirm the empty space
-  around cards now actually looks see-through to whatever's behind the
-  window at low `WINDOW OPACITY`, independent of card opacity — the
-  "stuck at 0" bug should be fixed, but `PrintWindow`-based screenshots
-  can't distinguish "correctly transparent" from "still broken" since
-  they only capture the window's own render, not the desktop behind it.
+- **Human check: void background transparency (again).** Two fix attempts
+  for this didn't hold up under the user's own testing already this
+  session — the third attempt (direct `paintEvent` painting) has much
+  stronger evidence behind it (see above), but only the user's own eyes
+  against real desktop/game content can fully confirm it, since
+  `PrintWindow` can prove the pixel data is correct and opacity-reactive
+  but not what DWM does with it against whatever's actually behind the
+  window.
 - Human review of the running app (this is the current handoff point) —
   especially Retrieve/Find with real system filters set (only the
   unfiltered path got a live human-equivalent test this session), the
