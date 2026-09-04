@@ -43,8 +43,26 @@ _QT_TO_VK.update({
 })
 
 
+# Keys that are safe to register with NO modifier at all — none of these
+# produce a character during normal typing (in the overlay or in-game), so
+# there's no risk of accidentally hijacking ordinary keyboard input. Every
+# other key (letters, digits, space, punctuation, ...) requires at least
+# one modifier, or it'd steal that key system-wide, including in the game.
+_BARE_KEY_SAFE = {
+    Qt.Key_F1, Qt.Key_F2, Qt.Key_F3, Qt.Key_F4, Qt.Key_F5, Qt.Key_F6,
+    Qt.Key_F7, Qt.Key_F8, Qt.Key_F9, Qt.Key_F10, Qt.Key_F11, Qt.Key_F12,
+    Qt.Key_Insert, Qt.Key_Delete, Qt.Key_Home, Qt.Key_End,
+    Qt.Key_PageUp, Qt.Key_PageDown,
+    Qt.Key_Left, Qt.Key_Up, Qt.Key_Right, Qt.Key_Down,
+}
+
+
 def qt_key_to_vk(qt_key: int) -> int | None:
     return _QT_TO_VK.get(qt_key)
+
+
+def key_requires_modifier(qt_key: int) -> bool:
+    return qt_key not in _BARE_KEY_SAFE
 
 
 def qt_modifiers_to_mod(modifiers) -> int:
@@ -72,6 +90,7 @@ class GlobalHotkey(QAbstractNativeEventFilter):
         super().__init__()
         self._callback = None
         self._registered = False
+        self.last_error: int | None = None
 
     def set_hotkey(self, mod: int, vk: int, callback) -> bool:
         """Registers (mod, vk) as the global hotkey. Returns False if the
@@ -82,6 +101,8 @@ class GlobalHotkey(QAbstractNativeEventFilter):
         if ok:
             self._callback = callback
             self._registered = True
+        else:
+            self.last_error = ctypes.windll.kernel32.GetLastError()
         return ok
 
     def clear(self):

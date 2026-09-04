@@ -222,26 +222,71 @@
 - **System-wide Stow/Deploy hotkey**, `host/hotkey.py` — real Win32
   `RegisterHotKey`/`WM_HOTKEY`, not a Qt shortcut, so it works while the
   game (not mobiOverlay) has focus. Capture field in Settings: click,
-  press a combo, Escape cancels; requires at least one modifier (a bare
-  key would hijack that key system-wide, rejected before ever calling
-  `RegisterHotKey`). Verified: the click-to-arm-listening state change
-  works (confirmed live), and the key/modifier-parsing logic is correct
-  (`Ctrl+Shift+M` → correct `MOD_CONTROL|MOD_SHIFT` + `VK_M`, tested in
-  isolation with real `Qt` modifier/key constants). **Could not verify
-  actual keystroke capture landing in the field** — `SendKeys` never
-  reached it even after `SetForegroundWindow`, most likely because the
-  Settings panel is its own `Qt.Popup` HWND and focusing the *owner*
-  window doesn't focus the popup itself; see DECISIONS.md. This needs a
-  human to actually click the field and press a combo to confirm it
-  really registers.
+  press a combo, Escape cancels; requires at least one modifier for keys
+  that would otherwise hijack normal typing — but function/navigation
+  keys (F1-F12, Insert, Delete, Home, End, Page Up/Down, arrows) are
+  exempt and can be set bare (`key_requires_modifier()` in `hotkey.py`).
+- **Bug fix (2026-09-03): hotkey field never actually captured a
+  keystroke, for any key, not just bare F3.** Root cause: `keyPressEvent`
+  built the display string with `QKeySequence(int(event.modifiers()) |
+  key)` — in PySide6/Qt6, `event.modifiers()` returns a `Qt.KeyboardModifier`
+  flag object that `int()` can't coerce (`TypeError`), so the handler threw
+  and silently died before ever calling `set_stow_hotkey()`. Fixed with
+  `QKeySequence(QKeyCombination(event.modifiers(), key))`, the Qt6-correct
+  way to pair a modifier with a key. Confirmed via isolated script (both a
+  bare `F3` and `Ctrl+Shift+M` now build the correct display string with no
+  exception) and confirmed `RegisterHotKey` itself accepts a bare F3 at the
+  Win32 level. Live keystroke-into-the-popup-field capture still couldn't
+  be re-verified by automation this session (see DECISIONS.md) — needs a
+  human to click the field and press a combo to fully close this out.
+- **Bug fix (2026-09-03): pill couldn't be dragged.** The title bar's
+  wordmark is a rich-text `QLabel`, which defaults to
+  `Qt::LinksAccessibleByMouse` and was intercepting mouse events before
+  they reached the title bar's own drag handlers — the pill's whole
+  clickable surface is that label, so nothing could ever drag it. Fixed
+  with `setTextInteractionFlags(Qt.NoTextInteraction)`. Verified live:
+  real mouse drag moved the pill ~180×135px.
+- **Bug fix (2026-09-03): "by Kestryl" showed in pill mode.** Wordmark
+  was one combined-HTML `QLabel`; split into a main wordmark label (kept
+  visible while stowed) and a separate byline label (hidden via
+  `set_stowed_mode()`). Verified live via UI Automation control
+  enumeration — pill now shows only "MOBIOVERLAY" + close.
+- **Feature (2026-09-03): pill and deployed-window positions are now each
+  remembered independently and persisted to config.json**, not just held
+  in memory for the current session. Dragging the pill around and
+  re-stowing later reopens it at that exact spot instead of wherever the
+  full-size window happened to be; likewise the full-size window's last
+  position/size is saved continuously (debounced, 400ms after the last
+  move/resize) so it survives even if the app is closed while stowed.
+  New `pill_geometry` config key alongside the now-actually-used
+  `pre_stow_geometry`. Verified live: dragged the pill, confirmed
+  `pill_geometry` in config.json matched, deployed, re-stowed, pill
+  reopened at the remembered spot.
+- **Feature (2026-09-03): window/void background transparency decoupled
+  from card opacity.** Previously `WINDOW OPACITY` used `setWindowOpacity()`,
+  which dims the *entire* rendered window uniformly — cards could never
+  look more opaque than the window itself, coupling the two sliders.
+  Switched `MainWindow` to `Qt.WA_TranslucentBackground` with a per-pixel
+  rgba background (`theme.hex_to_rgba(theme.BG_VOID, window_opacity)`,
+  same pattern `Card.set_card_opacity()` already used) so the empty space
+  around cards can be fully see-through independent of each card's own
+  opacity slider. Settings label updated to "How see-through the empty
+  space around your cards is." to match. Not yet visually confirmed
+  against the desktop/game behind it (PrintWindow captures a window's own
+  render, not what's genuinely behind it) — worth a human glance.
 
 ## Next
 
-- **Top priority: hotkey capture field needs real human hands** — click
-  it and press a combo, confirm it actually saves and the hotkey works
-  while the game has focus. This is the one piece this session genuinely
-  could not verify at all (not just "couldn't prove it," no signal
-  either way on whether a keystroke reaches the field)
+- **Human check: hotkey field.** Click it, press a combo (including a
+  bare F3), confirm the display updates and the hotkey actually toggles
+  stow/deploy while the game has focus. The display-string crash that
+  was silently eating every keystroke is now fixed and isolated-tested,
+  but live capture-into-the-popup-field itself was never confirmed by
+  automation across this whole project — only a human click can close
+  this out.
+- **Human check: void background transparency.** Confirm the empty space
+  around cards actually looks see-through to whatever's behind the
+  window at low `WINDOW OPACITY`, independent of card opacity.
 - Human review of the running app (this is the current handoff point) —
   especially Retrieve/Find with real system filters set (only the
   unfiltered path got a live human-equivalent test this session), the

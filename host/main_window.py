@@ -3,7 +3,7 @@ CardContainer, the tray for stowed (hidden) cards, and Settings.
 """
 import subprocess
 
-from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtCore import Qt, QPoint, QTimer, QKeyCombination
 from PySide6.QtGui import QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -245,18 +245,29 @@ class _HotkeyField(QLineEdit):
         mod = hotkey_mod.qt_modifiers_to_mod(event.modifiers())
         vk = hotkey_mod.qt_key_to_vk(key)
 
-        if mod == 0:
+        # Bare letters/digits/space/etc. would hijack normal typing if
+        # registered without a modifier — but function keys and navigation
+        # keys (F1-F12, Insert, arrows, ...) never produce a character
+        # during normal typing, so those are fine standalone (this is also
+        # what let the user's F3-alone case through instead of being
+        # wrongly rejected).
+        if mod == 0 and hotkey_mod.key_requires_modifier(key):
             self._flash("Needs Ctrl / Alt / Shift / Win too")
             return
         if vk is None:
             self._flash("Unsupported key — try another")
             return
 
-        display = QKeySequence(int(event.modifiers()) | key).toString()
+        # PySide6/Qt6 uses new-style enums: event.modifiers() returns a
+        # Qt.KeyboardModifier flag object that int() can't coerce directly
+        # (raises TypeError) — QKeyCombination is the Qt6-correct way to
+        # pair a modifier flag with a key for QKeySequence.
+        display = QKeySequence(QKeyCombination(event.modifiers(), key)).toString()
         if self._win.set_stow_hotkey(mod, vk, display):
             self._show_current()
         else:
-            self._flash("Already in use by another app")
+            err = self._win.last_hotkey_error()
+            self._flash(f"Already in use (Win32 error {err})" if err else "Could not register hotkey")
 
 
 class _SettingsPanel(QWidget):
@@ -282,7 +293,7 @@ class _SettingsPanel(QWidget):
 
         # -- Window Opacity --
         window_row = _SettingsRow(
-            "WINDOW OPACITY", "How see-through the whole overlay is."
+            "WINDOW OPACITY", "How see-through the empty space around your cards is."
         )
         window_slider = QSlider(Qt.Horizontal)
         window_slider.setRange(40, 100)
@@ -385,10 +396,21 @@ class _TitleBar(QWidget):
         wordmark = QLabel(
             f'<span style="color:{theme.TEXT_PRIMARY};">MOBI</span>'
             f'<span style="color:{theme.ACCENT_CYAN};">OVERLAY</span>'
-            f'<span style="color:{theme.TEXT_MUTED}; font-size:{theme.fpx(7)}px;"> by Kestryl</span>'
         )
         wordmark.setObjectName("wordmark")
+        # Rich-text QLabels default to Qt::LinksAccessibleByMouse, which
+        # intercepts mouse events before they reach the title bar's own
+        # mousePressEvent/mouseMoveEvent — that ate every drag attempt on
+        # the pill (the wordmark is the whole clickable surface there).
+        wordmark.setTextInteractionFlags(Qt.NoTextInteraction)
         layout.addWidget(wordmark)
+
+        self.byline_label = QLabel(
+            f'<span style="color:{theme.TEXT_MUTED}; font-size:{theme.fpx(7)}px;"> by Kestryl</span>'
+        )
+        self.byline_label.setObjectName("wordmark")
+        self.byline_label.setTextInteractionFlags(Qt.NoTextInteraction)
+        layout.addWidget(self.byline_label)
         layout.addStretch()
 
         _button_style = f"""
@@ -442,6 +464,7 @@ class _TitleBar(QWidget):
         self.tray_btn.setVisible(not stowed)
         self.settings_btn.setVisible(not stowed)
         self.minimize_btn.setVisible(not stowed)
+        self.byline_label.setVisible(not stowed)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -465,14 +488,19 @@ class MainWindow(QWidget):
         super().__init__()
         self.config = config
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
-        self.setAttribute(Qt.WA_TranslucentBackground, False)
-        self.setStyleSheet(_build_stylesheet())
-        self.setWindowOpacity(config.data["ui"]["window_opacity"])
+        # Per-pixel alpha (not setWindowOpacity, which dims the whole
+        # rendered window uniformly) so the empty background can be made
+        # see-through independently of card opacity — cards paint their own
+        # background at their own alpha (see Card.set_card_opacity) on top
+        # of whatever the void behind them is doing.
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self._base_stylesheet = _build_stylesheet()
+        self.setStyleSheet(self._base_stylesheet)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(10)
-        self.setStyleSheet(self.styleSheet() + f"MainWindow {{ background: {theme.BG_VOID}; }}")
+        self._apply_void_background(config.data["ui"]["window_opacity"])
 
         self.title_bar = _TitleBar(self)
         outer.addWidget(self.title_bar)
@@ -493,14 +521,30 @@ class MainWindow(QWidget):
         self._normal_min_size = (460, 380)
         self.setMinimumSize(*self._normal_min_size)
 
+        # Must exist before the resize()/move() calls below — moveEvent/
+        # resizeEvent fire as soon as geometry changes, even pre-show.
+        self._all_collapsed = False
+        self._app_stowed = False
+        self._geometry_tracking_ready = False
+        self._geometry_save_timer = QTimer(self)
+        self._geometry_save_timer.setSingleShot(True)
+        self._geometry_save_timer.timeout.connect(self._save_tracked_geometry)
+
+        pre_stow = config.data["ui"].get("pre_stow_geometry") or {}
+        self._pre_stow_geometry: tuple[int, int, int, int] | None = (
+            (pre_stow["x"], pre_stow["y"], pre_stow["width"], pre_stow["height"])
+            if pre_stow else None
+        )
+        pill_geo = config.data["ui"].get("pill_geometry") or {}
+        self._pill_geometry: tuple[int, int] | None = (
+            (pill_geo["x"], pill_geo["y"]) if pill_geo else None
+        )
+
         geo = config.data["ui"].get("window_geometry") or {}
         self.resize(geo.get("width", 680), geo.get("height", 560))
         default_x, default_y = _default_launch_position()
         self.move(geo.get("x", default_x), geo.get("y", default_y))
-
-        self._all_collapsed = False
-        self._app_stowed = False
-        self._pre_stow_geometry: tuple[int, int, int, int] | None = None
+        self._geometry_tracking_ready = True
 
         # Global (system-wide) Stow/Deploy hotkey — works even while the
         # game has focus. installNativeEventFilter doesn't keep the filter
@@ -520,10 +564,39 @@ class MainWindow(QWidget):
     def is_app_stowed(self) -> bool:
         return self._app_stowed
 
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._queue_geometry_save()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._queue_geometry_save()
+
+    def _queue_geometry_save(self):
+        # Debounced: a drag fires dozens of these a second, and only the
+        # final position is worth writing to disk.
+        if not self._geometry_tracking_ready:
+            return
+        self._geometry_save_timer.start(400)
+
+    def _save_tracked_geometry(self):
+        if self._app_stowed:
+            self._pill_geometry = (self.x(), self.y())
+            self.config.data["ui"]["pill_geometry"] = {"x": self.x(), "y": self.y()}
+        else:
+            self._pre_stow_geometry = (self.x(), self.y(), self.width(), self.height())
+            self.config.data["ui"]["pre_stow_geometry"] = {
+                "x": self.x(), "y": self.y(), "width": self.width(), "height": self.height(),
+            }
+        self.config.save()
+
     def stow_app(self):
         if self._app_stowed:
             return
         self._pre_stow_geometry = (self.x(), self.y(), self.width(), self.height())
+        self.config.data["ui"]["pre_stow_geometry"] = {
+            "x": self.x(), "y": self.y(), "width": self.width(), "height": self.height(),
+        }
         self.card_container.setVisible(False)
         self._size_grip.setVisible(False)
         self.title_bar.set_stowed_mode(True)
@@ -534,6 +607,13 @@ class MainWindow(QWidget):
         # explicitly rather than resizing to an exact fit that clips it.
         hint = self.title_bar.sizeHint()
         self.resize(hint.width() + 24, hint.height() + 24)
+        # Re-open at the pill's own last remembered spot, not wherever the
+        # full-size window happened to be sitting — dragging the pill
+        # around shouldn't get forgotten every time it's deployed and
+        # re-stowed.
+        if self._pill_geometry:
+            self.move(*self._pill_geometry)
+        self.config.save()
 
     def deploy_app(self):
         if not self._app_stowed:
@@ -567,9 +647,16 @@ class MainWindow(QWidget):
         self.config.data["ui"]["hotkey_display"] = ""
         self.config.save()
 
+    def last_hotkey_error(self) -> int | None:
+        return self._hotkey.last_error
+
+    def _apply_void_background(self, opacity: float):
+        bg = theme.hex_to_rgba(theme.BG_VOID, opacity)
+        self.setStyleSheet(self._base_stylesheet + f"MainWindow {{ background: {bg}; }}")
+
     def set_window_opacity_percent(self, value: int):
         opacity = value / 100
-        self.setWindowOpacity(opacity)
+        self._apply_void_background(opacity)
         self.config.data["ui"]["window_opacity"] = opacity
         self.config.save()
 

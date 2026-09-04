@@ -346,3 +346,45 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
     route input to directly as a workaround. This is a real, flagged gap
     in PROGRESS.md, not a "probably fine" — a human needs to actually
     click the field and press a real combo before trusting it works.
+
+- **2026-09-03 — The hotkey field's real bug was a PySide6/Qt6 API
+  mismatch, not focus routing.** The previous entry's "SendKeys never
+  reaches it" theory turned out to be a red herring for the underlying
+  functional bug (though the focus-routing problem is real and separately
+  documented in memory). `_HotkeyField.keyPressEvent` built its display
+  string with `QKeySequence(int(event.modifiers()) | key)` — but in
+  PySide6/Qt6's new-style enums, `event.modifiers()` returns a
+  `Qt.KeyboardModifier` flag object that `int()` cannot coerce, raising
+  `TypeError` on every single keypress, for every key, with or without a
+  modifier. The exception was thrown and silently swallowed by Qt's event
+  loop before `set_stow_hotkey()` was ever reached — so the field had
+  *never* worked, for anyone, the entire time it existed. Fixed with
+  `QKeySequence(QKeyCombination(event.modifiers(), key))`. Confirmed by
+  reproducing the exact `TypeError` in an isolated script, then confirming
+  the fix produces correct strings for both a bare `F3` and a modified
+  combo (`Ctrl+Shift+M`).
+
+- **2026-09-03 — Window background transparency decoupled from card
+  opacity; `WINDOW OPACITY` now controls only the empty space.**
+  `setWindowOpacity()` scales the whole rendered window's alpha uniformly
+  at the compositor level, so cards could never look more opaque than the
+  window they sit in — the two opacity sliders were coupled despite
+  looking independent in the UI. Switched to `Qt.WA_TranslucentBackground`
+  with a per-pixel rgba background on `MainWindow` (same
+  `theme.hex_to_rgba()` pattern `Card.set_card_opacity()` already used),
+  so the void area's alpha is now genuinely independent of each card's own
+  background alpha. Title bar and panels keep their own solid/gradient
+  backgrounds, unaffected by this slider — that's a visible behavior
+  change from before (previously lowering window opacity dimmed the
+  title bar too), but it's the correct trade for making the setting mean
+  what its label says.
+
+- **2026-09-03 — Pill and deployed-window positions are tracked and
+  persisted independently.** Previously the pill always reopened wherever
+  the full-size window last was, forgetting any position it had been
+  dragged to; `pre_stow_geometry` lived only in memory and was lost on
+  restart if the app closed while stowed. Added a `pill_geometry` config
+  key alongside `pre_stow_geometry` (already in the config schema but
+  unused until now), both updated via debounced `moveEvent`/`resizeEvent`
+  handlers on `MainWindow` (400ms after the last move, so a drag doesn't
+  hammer disk I/O) rather than only at the moment of stow/deploy.

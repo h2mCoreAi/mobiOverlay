@@ -17,6 +17,7 @@ DEFAULT_CONFIG = {
         "always_on_top": True,
         "window_geometry": {},
         "pre_stow_geometry": {},
+        "pill_geometry": {},
         "hotkey_mod": None,
         "hotkey_vk": None,
         "hotkey_display": "",

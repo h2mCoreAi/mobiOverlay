@@ -81,12 +81,18 @@ same stow/deploy toggle from Settings, meant for use while playing.
 `GlobalHotkey` wraps `RegisterHotKey`/`UnregisterHotKey` and installs a
 `QAbstractNativeEventFilter` to catch the resulting `WM_HOTKEY` message
 regardless of which window has OS focus. Only one hotkey exists right now
-(Stow/Deploy the whole app) — `_HOTKEY_ID = 1` in `hotkey.py`. Requires at
-least one modifier (Ctrl/Alt/Shift/Win); a bare key is rejected before
-`RegisterHotKey` is ever called, since that would hijack the key
-system-wide (including inside the game). The capture UI
+(Stow/Deploy the whole app) — `_HOTKEY_ID = 1` in `hotkey.py`. Most keys
+require at least one modifier (Ctrl/Alt/Shift/Win) — a bare key is
+rejected before `RegisterHotKey` is ever called, since that would hijack
+the key system-wide (including inside the game) — but function/navigation
+keys (F1-F12, Insert, Delete, Home, End, Page Up/Down, arrows) never
+produce a character during normal typing, so `key_requires_modifier()`
+exempts that whole class and lets them be set bare. The capture UI
 (`_HotkeyField` in `main_window.py`) is click-to-arm: click the field,
-press the combo, Escape cancels.
+press the combo, Escape cancels. Building the display string uses
+`QKeySequence(QKeyCombination(modifiers, key))` — PySide6/Qt6's
+`event.modifiers()` returns a `Qt.KeyboardModifier` flag object that
+plain `int()` cannot coerce (see DECISIONS.md, 2026-09-03).
 
 ## Packaging
 
