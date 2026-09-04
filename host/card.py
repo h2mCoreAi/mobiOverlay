@@ -29,6 +29,22 @@ class _DragHeader(QWidget):
         self._drag_offset: QPoint | None = None
         self.setFixedHeight(theme.CARD_HEADER_HEIGHT)
         self.setCursor(Qt.OpenHandCursor)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        # A distinct, slightly lighter header fill with only its top
+        # corners rounded (matching the card's own radius) — mirrors the
+        # in-game MobiGlas UI's two-tier panel look (a separate header
+        # strip sitting above the body), checked against a live screenshot
+        # 2026-09-04. theme.BG_PANEL_HEADER existed for this in theme.py
+        # from the original design mockup but had never actually been
+        # wired up anywhere until now.
+        self.setStyleSheet(f"""
+            _DragHeader {{
+                background: {theme.BG_PANEL_HEADER};
+                border-top-left-radius: {theme.RADIUS}px;
+                border-top-right-radius: {theme.RADIUS}px;
+                border-bottom: 1px solid {theme.BORDER_FLAT};
+            }}
+        """)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 0, 10, 0)

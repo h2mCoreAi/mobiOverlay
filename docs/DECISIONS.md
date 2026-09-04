@@ -615,3 +615,20 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   backing store instead of being genuinely see-through. Also bumped
   `theme.RADIUS` from 4 to 8 per the user's "increase it" ask. Confirmed
   visually on both the pill and the deployed window after relaunch.
+
+- **2026-09-04 — Checked mobiOverlay's styling directly against a live
+  MobiGlas (in-game device menu) screenshot, not memory/guesswork.**
+  User asked for this explicitly. Captured the actual Star Citizen window
+  via `PrintWindow` (found by window title, not by trusting a stale PID —
+  the game had restarted since it was last checked this session) while
+  MobiGlas was open. Observations: dark navy-black panel fills and thin
+  cyan borders already matched our palette closely, no color changes
+  needed — but MobiGlas's panels use a visibly larger, softer corner
+  radius than ours, and each panel is clearly two-tier: a separate,
+  slightly lighter, more-rounded header strip sitting above a flatter
+  body, not one uniform box. Bumped `theme.RADIUS` 8 -> 10. Gave
+  `_DragHeader` (card.py) its own background fill with only the top
+  corners rounded and a bottom border separating it from the body —
+  `theme.BG_PANEL_HEADER` already existed for exactly this in `theme.py`
+  (from the original approved design mockup) but had never actually been
+  wired up anywhere until now. Confirmed visually after relaunch.

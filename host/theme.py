@@ -13,7 +13,10 @@ BORDER_FLAT = "#1c2b2d"
 # Corner radius applied to every bordered box (cards, buttons, panels,
 # combos, rows...) and to the main window's own outer shape (including
 # the stowed pill — same constant, same radius everywhere on purpose).
-RADIUS = 8
+# Sized to roughly match the in-game MobiGlas UI's own panel radius
+# (checked against a live screenshot, 2026-09-04) — MobiGlas runs
+# noticeably softer/rounder than a typical desktop app.
+RADIUS = 10
 
 # Primary accent (cyan)
 ACCENT_CYAN = "#2de1d0"
