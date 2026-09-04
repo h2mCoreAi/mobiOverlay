@@ -356,6 +356,18 @@
   (`keybd_event`) while Star Citizen genuinely held foreground focus:
   sampled the foreground window at 20ms/200ms/800ms after deploying and
   it was mobiOverlay's own process at every sample, not the game.
+- **Bug fix: Commodity Prices showed the raw "Admin - MIC-L2" kiosk label
+  instead of a clean terminal name** — same underlying issue Trade Route
+  Optimizer already had fixed (`docs/modules/trade-route-optimizer.md`).
+  Confirmed via real API calls that `commodities_prices` has no nickname
+  field of its own (`terminal_name` is always the raw kiosk label), but
+  does have `id_terminal`. Fetches `terminals?type=commodity` once at
+  card creation to build an `id_terminal -> nickname` map instead —
+  `nickname` is the same clean-name field the trade route picker already
+  uses. Verified against real live API data before wiring it in
+  ("Admin - MIC-L2" -> "MIC-L2", "TDD - Trade and Development Division -
+  Area 18" -> "TDD Area 18", etc.) and confirmed visually in the running
+  app afterward.
 
 ## Next
 

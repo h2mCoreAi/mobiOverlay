@@ -553,3 +553,17 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   64-bit Windows an `HWND` is a 64-bit pointer, so window handles could
   have been silently truncated. Fixed by declaring proper
   `ctypes.wintypes.HWND`/`DWORD`/`BOOL` signatures throughout.
+
+- **2026-09-03 — Commodity Prices had the same raw-kiosk-label bug Trade
+  Route Optimizer already had fixed; fixed the same way.** User spotted
+  `"Admin - MIC-L2"` in the Best Buy row. Checked the live
+  `commodities_prices` API response directly rather than guessing: it
+  has `terminal_name` (always the raw label) and `id_terminal`, but no
+  nickname field of its own — unlike `terminals`, which has both `name`
+  (raw) and `nickname` (clean, e.g. `"MIC-L2"`) for the same terminal.
+  Fetch `terminals?type=commodity` once at card creation
+  (`_populate_terminal_nicknames()`) and look the clean name up by
+  `id_terminal` in `_format_location()`, falling back to the raw
+  `terminal_name` if a terminal isn't in that map. Same `nickname` field
+  the trade route picker already uses — not a new pattern, just applied
+  to the one place it was missed.

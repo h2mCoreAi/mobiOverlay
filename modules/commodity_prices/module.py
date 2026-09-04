@@ -61,6 +61,7 @@ class CommodityPricesModule(ModuleBase):
         super().__init__(api_client, config)
         self._commodities: list[str] = []
         self._last_rows: list[dict] = []
+        self._terminal_nicknames: dict[int, str] = {}
         self.request_refresh = None  # injected by host after wrapping refresh()
 
         # Retrieve Data state
@@ -125,6 +126,7 @@ class CommodityPricesModule(ModuleBase):
         card.body_layout.addLayout(footer)
 
         self._populate_commodities()
+        self._populate_terminal_nicknames()
         self.combo.currentTextChanged.connect(lambda _: self.request_refresh and self.request_refresh())
         self.sell_system.currentTextChanged.connect(self._on_sell_filter_changed)
         self.buy_system.currentTextChanged.connect(self._on_buy_filter_changed)
@@ -179,6 +181,23 @@ class CommodityPricesModule(ModuleBase):
         if default:
             self.combo.setCurrentText(default)
         self.combo.blockSignals(False)
+
+    def _populate_terminal_nicknames(self):
+        # commodities_prices only gives back "terminal_name", which is the
+        # raw in-game kiosk label (e.g. "Admin - MIC-L2", or "TDD - Trade
+        # and Development Division - Area 18") — not the clean name players
+        # actually know a place by. The terminals endpoint's "nickname"
+        # field has that ("MIC-L2", "TDD Area 18"); it doesn't come back on
+        # commodities_prices itself, so fetch it once here and look terminals
+        # up by id_terminal instead. Same field trade_route_optimizer's
+        # origin-terminal picker already uses, for consistency.
+        try:
+            data = self.api.get("terminals", {"type": "commodity"})
+        except Exception:
+            data = []
+        self._terminal_nicknames = {
+            row["id"]: row.get("nickname") or row["name"] for row in data if row.get("id")
+        }
 
     def _on_sell_filter_changed(self, _system: str):
         self.settings["sell_system_filter"] = self.sell_system.currentText()
@@ -248,10 +267,9 @@ class CommodityPricesModule(ModuleBase):
             self.buy_price.setText("—")
             self.buy_loc.setText("no terminals selling" + ("" if buy_system == ALL_SYSTEMS else f" in {buy_system}"))
 
-    @staticmethod
-    def _format_location(row: dict) -> str:
+    def _format_location(self, row: dict) -> str:
         place = row.get("city_name") or row.get("planet_name") or row.get("star_system_name") or ""
-        terminal = row.get("terminal_name") or ""
+        terminal = self._terminal_nicknames.get(row.get("id_terminal")) or row.get("terminal_name") or ""
         return f"{terminal} · {place}" if place else terminal
 
     # -- Retrieve Data: downloads every commodity's prices, no math yet -----

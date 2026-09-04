@@ -27,12 +27,26 @@ system).
 - `commodities` — list of commodities for the picker (`GET`, no auth needed)
 - `commodities_prices?commodity_name=<name>` — current prices per terminal
   for a given commodity (`GET`, no auth needed)
+- `terminals?type=commodity` — fetched once at card creation, purely to
+  build an `id_terminal -> nickname` lookup (`GET`, no auth needed)
 
 Confirmed via real API calls (2026-09-03): `commodities_prices` rows come
 pre-joined with `terminal_name`, `star_system_name`, `planet_name`,
-`city_name` — no separate `terminals` lookup is needed for this module.
-Star-system filter options are derived client-side from the fetched rows,
-not a separate systems endpoint.
+`city_name` — no separate `terminals` lookup is needed for the location
+fields themselves. Star-system filter options are derived client-side
+from the fetched rows, not a separate systems endpoint.
+
+**`terminal_name` is the raw in-game kiosk label, not a clean display
+name** (2026-09-03 bug fix) — e.g. `"Admin - MIC-L2"` or `"TDD - Trade and
+Development Division - Area 18"`, not `"MIC-L2"` or `"TDD Area 18"`.
+`commodities_prices` has no nickname field of its own, so `_format_location()`
+fetches `terminals?type=commodity` once (`_populate_terminal_nicknames()`)
+and looks the clean name up by `id_terminal`, falling back to the raw
+`terminal_name` only if a terminal isn't found in that map. Same field
+(`nickname`) `trade_route_optimizer`'s origin-terminal picker already
+uses, for consistency — see that module's doc for the same issue on the
+`commodities_routes` endpoint (which needed a hand-rolled prefix strip
+instead, since it has no `id_terminal` for the destination to look up by).
 
 **No true "most profitable commodity" endpoint exists.** `commodities_ranking`
 is deprecated (confirmed live — returns empty data). Its documented
