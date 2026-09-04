@@ -63,6 +63,17 @@ except ImportError:
 AUTO_RESCAN_MS = 5 * 60 * 1000  # 5 minutes, off by default
 
 
+def _virtual_desktop_rect() -> QRect | None:
+    """Return the union of all Qt screen geometries (multi‑monitor aware)."""
+    screens = QGuiApplication.screens()
+    if not screens:
+        return None
+    rect = screens[0].geometry()
+    for sc in screens[1:]:
+        rect = rect.united(sc.geometry())
+    return rect
+
+
 def _parse_ocr_line_to_stop(line: str) -> dict | None:
     """Best‑effort conversion of one OCR line into a mission stop record.
 
@@ -105,9 +116,9 @@ class _RegionSelector(QWidget):
 
     selected = Signal(QRect)
 
-    def __init__(self, screen):
+    def __init__(self, desktop_rect: QRect):
         super().__init__()
-        self._screen = screen
+        self._desktop_rect = desktop_rect
         self._start = None
         self._end = None
 
@@ -119,8 +130,7 @@ class _RegionSelector(QWidget):
         self.setCursor(Qt.CrossCursor)
         self.setFocusPolicy(Qt.StrongFocus)
 
-        geo = screen.geometry()
-        self.setGeometry(geo)
+        self.setGeometry(desktop_rect)
         self.show()
         self.raise_()
         self.setFocus(Qt.OtherFocusReason)
@@ -164,7 +174,7 @@ class _RegionSelector(QWidget):
             and self._end is not None
         ):
             local_rect = QRect(self._start, self._end).normalized()
-            global_top_left = self._screen.geometry().topLeft() + local_rect.topLeft()
+            global_top_left = self.geometry().topLeft() + local_rect.topLeft()
             self.selected.emit(QRect(global_top_left, local_rect.size()))
         self._finish()
 
@@ -309,12 +319,10 @@ class LogisticsHubModule(ModuleBase):
             card.clear_error()
 
     def _select_region(self):
-        screen = QGuiApplication.screenAt(QCursor.pos())
-        if screen is None:
-            screen = QGuiApplication.primaryScreen()
-        if screen is None:  # practically never happens on Windows
+        desktop = _virtual_desktop_rect()
+        if desktop is None:
             return
-        selector = _RegionSelector(screen)
+        selector = _RegionSelector(desktop)
         selector.selected.connect(self._on_region_selected)
         self._selector = selector  # keep a reference so the GC doesn't reap it
 
