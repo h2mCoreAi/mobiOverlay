@@ -1,6 +1,7 @@
 # Progress
 
-## Status: Retrieve/Find split with countdown+force-update, Settings Relaunch button; awaiting human test
+## Status: Logistics Hub (4th module) built and verified against 4 real
+## contracts; shared Core Location service planned (phased, not started)
 
 ## Done
 
@@ -387,8 +388,74 @@
   center on the primary display (separate top-level widget from the
   card, click-through, no UEX API involved) with a card holding
   Show/Hide + 1px-increment nudge/reset controls.
+- **mobiOverlay Core hardening pass (C1-C4, all Critical items from a
+  senior-dev-style readiness review):** soft diagnostic watchdog for
+  slow module calls, `create_card()`/`refresh()` load-time contract
+  validation, duplicate `module_id` rejection, removed the documented-
+  but-never-built `settings_schema` field. Also fixed 3 code-review
+  findings (a card-visibility bug, a missing `KeyError` catch in the
+  hotkey code, and a GC-lifetime fragility in hotkey capture). Core
+  informally renamed "mobiOverlay Core" in docs (no folder/import
+  rename). See DECISIONS.md for each item's rationale/scope.
+- **New module: Logistics Hub** (`modules/logistics_hub/`) — OCR-driven
+  hauling mission board reader + UEX-backed route planner, the 4th
+  module. Scaffolded by Aider (DeepSeek V4 Flash), then substantially
+  hardened by Claude across several real-contract test/fix rounds — see
+  DECISIONS.md for the full design writeup (contract model, UEX
+  location resolution, the cross-endpoint id-collision bug, role
+  hinting, commodity extraction, route planning with a hard pickup-
+  before-dropoff constraint). Verified end-to-end against 4 real
+  screenshotted Star Citizen contracts (single pickup/single dropoff,
+  single pickup/multiple dropoffs, multiple pickups/single dropoff, and
+  a 4-pickup/1-dropoff contract), each re-checked after every fix to
+  catch regressions — caught and fixed several this way (an endpoint-
+  priority "fix" that silently dropped a real station, a signature-
+  based merge that wrongly collapsed two different stations on the same
+  planet). Uses `easyocr` (was `winsdk`/native Windows OCR briefly —
+  reverted, no prebuilt wheel for this machine's Python 3.14 and no
+  Visual Studio build tools to compile it from source).
+- Verified live against the real UEX API (not just unit-style checks
+  with fake data) that `terminals_distances` and `orbits_distances`
+  return real point-to-point/orbit-to-orbit distances, including
+  cross-system — Logistics Hub's route cost is currently a coarse
+  4-tier heuristic (same terminal/body/system/different-system) with
+  made-up weights; switching to these endpoints is the next concrete
+  improvement, not yet implemented. Also spot-checked several resolved
+  locations (HDMS-Edmond/Thedus/Hadley, Bueno Ravine) against the
+  Star Citizen Wiki — all correct (right planet, right system).
 
 ## Next
+
+- **Phased Core Location service** (decided, not started — see
+  DECISIONS.md for the full rationale on why this belongs in Core, not
+  a module):
+  1. Build the shared service in `host/` alone; verify standalone
+     against live UEX data before touching any module.
+  2. Migrate Logistics Hub onto it (it has the most sophisticated
+     location logic today — good first real test); re-verify all 4
+     real contracts still resolve correctly.
+  3. Migrate Trade Route Optimizer and Commodity Prices onto it
+     (simpler location needs, lower risk).
+  4. Swap Logistics Hub's route-cost heuristic for real
+     `terminals_distances`/`orbits_distances` data, now sitting on the
+     shared service.
+  5. (Optional, do last) Share a "current location" concept across
+     modules — Logistics Hub already has one; Trade Route
+     Optimizer/Commodity Prices could default their system filters
+     from it.
+  Each phase is its own tested checkpoint before starting the next —
+  not a single big-bang change.
+- **Human check: Logistics Hub end-to-end in the real app.** Everything
+  above was verified via direct backend calls against the live UEX API
+  and real captured OCR text, not by driving the actual running app —
+  worth a human pass: SELECT REGION, SCAN CONTRACT on a real mission
+  panel, confirm the card renders correctly (not just that the
+  underlying data is right), and try the CURRENT LOCATION picker's
+  search live.
+- Packaging: `modules/logistics_hub/requirements.txt` (easyocr,
+  ~500MB+ with PyTorch) needs folding into the standard install/build
+  path now that distribution is all-inclusive (see DECISIONS.md,
+  supersedes the earlier "optional module" framing) — not done yet.
 
 - **Human check: crosshair module.** Confirm it actually shows up
   correctly over Star Citizen (not just confirmed centered/rendered
