@@ -24,6 +24,7 @@ class CardContainer(QWidget):
         self._stowed: set[str] = set()  # tracked ourselves — Card.isVisible()
         # is unreliable before the top-level window itself has been shown
         # (Qt visibility depends on ancestor visibility too)
+        self._card_opacity = config.data["ui"]["card_opacity"]
 
         self.snap_overlay = QFrame(self)
         self.snap_overlay.setStyleSheet(
@@ -55,6 +56,7 @@ class CardContainer(QWidget):
 
     def add_card(self, card_id: str, title: str) -> Card:
         card = Card(card_id, title, self)
+        card.set_card_opacity(self._card_opacity)
         card.moved.connect(self._on_card_moved)
         card.resized.connect(self._on_card_resized)
         card.collapsed_changed.connect(self._on_card_collapsed_changed)
@@ -139,3 +141,9 @@ class CardContainer(QWidget):
 
     def hide_snap_preview(self):
         self.snap_overlay.hide()
+
+    # -- card opacity (independent of window opacity) -----------------------
+    def set_all_card_opacity(self, opacity: float):
+        self._card_opacity = opacity
+        for card in self.cards.values():
+            card.set_card_opacity(opacity)

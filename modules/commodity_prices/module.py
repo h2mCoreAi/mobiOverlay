@@ -1,53 +1,70 @@
-"""Price Lookup module: best sell/buy price for a chosen commodity across
-UEX-tracked terminals. Sell and buy each have their own independent
-star-system filter (e.g. buy in Stanton, sell in Pyro).
-See docs/modules/price-lookup.md for scope.
+"""Commodity Prices module: best sell/buy price for a chosen commodity
+across UEX-tracked terminals. Sell and buy each have their own independent
+star-system filter (e.g. buy in Stanton, sell in Pyro). Also offers a
+"Find Most Profitable" scan across every commodity UEX tracks.
+See docs/modules/commodity-prices.md for scope.
 """
 import time
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QComboBox, QLabel, QHBoxLayout, QVBoxLayout, QWidget, QPushButton
 
 from host import theme
+from host.api_client import UexRateLimitError
 from host.module_base import ModuleBase
 
 ALL_SYSTEMS = "All Systems"
+SCAN_STEP_INTERVAL_MS = 120  # be nice to the API — ~8 requests/sec while scanning
+SCAN_CACHE_SECONDS = 1800  # 30 min — commodity prices don't move that fast
 
-_ROW_STYLE = f"""
-    border: 1px solid {theme.BORDER_FLAT};
-    padding: 9px 10px;
-"""
-_LABEL_SMALL = f"""
-    color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}";
-    font-size: 9px; letter-spacing: 2px;
-"""
-_PRICE_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: 20px; font-weight: bold;'
-_LOC_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: 10px;'
-_TIMESTAMP_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: 9px; letter-spacing: 1px;'
+_ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; padding: 9px 10px;"
+_LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 2px;'
+_PRICE_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(20)}px; font-weight: bold;'
+_LOC_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px;'
+_TIMESTAMP_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;'
 _COMBO_STYLE = f"""
     QComboBox {{
         background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
         border: 1px solid {theme.BORDER_FLAT}; padding: 4px 6px;
-        font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: 15px;
+        font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(15)}px;
     }}
 """
 _SYSTEM_COMBO_STYLE = f"""
     QComboBox {{
         background: {theme.BG_VOID}; color: {theme.TEXT_MUTED};
         border: 1px solid {theme.BORDER_FLAT}; padding: 2px 4px;
-        font-family: "{theme.FONT_MONO}"; font-size: 9px;
+        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
+    }}
+"""
+_SCAN_BTN_STYLE = f"""
+    QPushButton {{
+        background: transparent; color: {theme.ACCENT_CYAN};
+        border: 1px solid {theme.BORDER_CYAN}; padding: 5px 0;
+        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;
+    }}
+    QPushButton:disabled {{
+        color: {theme.TEXT_DIM}; border: 1px solid {theme.BORDER_FLAT};
     }}
 """
 
 
-class PriceLookupModule(ModuleBase):
-    module_id = "price_lookup"
-    display_name = "Price Lookup"
+class CommodityPricesModule(ModuleBase):
+    module_id = "commodity_prices"
+    display_name = "Commodity Prices"
 
     def __init__(self, api_client, config):
         super().__init__(api_client, config)
         self._commodities: list[str] = []
         self._last_rows: list[dict] = []
         self.request_refresh = None  # injected by host after wrapping refresh()
+
+        # "Find Most Profitable" scan state
+        self._scan_timer: QTimer | None = None
+        self._scan_queue: list[str] = []
+        self._scan_index = 0
+        self._scan_results: dict[str, float] = {}
+        self._profitable_cache: str | None = None
+        self._profitable_cache_time = 0.0
 
     def create_card(self, container):
         card = container.add_card(self.module_id, self.display_name)
@@ -56,6 +73,12 @@ class PriceLookupModule(ModuleBase):
         self.combo.setStyleSheet(_COMBO_STYLE)
         self.combo.setEditable(False)
         card.body_layout.addWidget(self.combo)
+
+        self.scan_btn = QPushButton("FIND MOST PROFITABLE")
+        self.scan_btn.setStyleSheet(_SCAN_BTN_STYLE)
+        self.scan_btn.setToolTip("Scans every commodity UEX tracks for the biggest sell-minus-buy margin. Takes a bit — result is cached for 30 minutes.")
+        self.scan_btn.clicked.connect(self.start_profitability_scan)
+        card.body_layout.addWidget(self.scan_btn)
 
         self.sell_box, self.sell_price, self.sell_loc, self.sell_system = self._build_price_row(
             "▲ BEST SELL", theme.ACCENT_CYAN
@@ -74,7 +97,7 @@ class PriceLookupModule(ModuleBase):
         footer.addStretch()
         refresh_btn = QPushButton("↻")
         refresh_btn.setFixedSize(20, 20)
-        refresh_btn.setStyleSheet(f"background: transparent; color: {theme.ACCENT_CYAN}; border: none; font-size: 13px;")
+        refresh_btn.setStyleSheet(f"background: transparent; color: {theme.ACCENT_CYAN}; border: none; font-size: {theme.fpx(13)}px;")
         refresh_btn.clicked.connect(lambda: self.request_refresh and self.request_refresh())
         footer.addWidget(refresh_btn)
         card.body_layout.addLayout(footer)
@@ -130,7 +153,7 @@ class PriceLookupModule(ModuleBase):
         self.combo.blockSignals(True)
         self.combo.addItems(names)
         watched = self.settings.get("watched_commodity")
-        default = watched if watched in names else ("Laranite" if "Laranite" in names else (names[0] if names else ""))
+        default = watched if watched in names else (names[0] if names else "")
         if default:
             self.combo.setCurrentText(default)
         self.combo.blockSignals(False)
@@ -150,10 +173,12 @@ class PriceLookupModule(ModuleBase):
         if not name:
             raise ValueError("No commodity selected")
 
+        # An empty result is a legitimate state (some commodities genuinely
+        # have no active listings right now), not an error — _apply_filters
+        # already renders "no terminals buying/selling" gracefully per row,
+        # so let it flow through instead of raising and showing a scary
+        # card-level error for something that isn't actually broken.
         rows = self.api.get("commodities_prices", {"commodity_name": name})
-        if not rows:
-            raise ValueError(f"No active price data for {name}")
-
         self._last_rows = rows
         self._repopulate_system_filters(rows)
         self._apply_filters()
@@ -207,5 +232,70 @@ class PriceLookupModule(ModuleBase):
         terminal = row.get("terminal_name") or ""
         return f"{terminal} · {place}" if place else terminal
 
+    # -- Find Most Profitable: brute-force scan across every commodity ------
+    def start_profitability_scan(self):
+        if self._scan_timer is not None or not self._commodities:
+            return
 
-MODULE_CLASS = PriceLookupModule
+        now = time.time()
+        if self._profitable_cache and now - self._profitable_cache_time < SCAN_CACHE_SECONDS:
+            self.combo.setCurrentText(self._profitable_cache)
+            return
+
+        self._scan_queue = list(self._commodities)
+        self._scan_index = 0
+        self._scan_results = {}
+        self.scan_btn.setEnabled(False)
+        self.scan_btn.setText(f"SCANNING 0/{len(self._scan_queue)}")
+
+        self._scan_timer = QTimer()
+        self._scan_timer.timeout.connect(self._scan_step)
+        self._scan_timer.start(SCAN_STEP_INTERVAL_MS)
+
+    def _scan_step(self):
+        if self._scan_index >= len(self._scan_queue):
+            self._stop_scan()
+            self._finish_scan()
+            return
+
+        name = self._scan_queue[self._scan_index]
+        self._scan_index += 1
+        try:
+            rows = self.api.get("commodities_prices", {"commodity_name": name})
+            sell_rows = [r for r in rows if r.get("price_sell", 0) > 0]
+            buy_rows = [r for r in rows if r.get("price_buy", 0) > 0]
+            if sell_rows and buy_rows:
+                margin = max(r["price_sell"] for r in sell_rows) - min(r["price_buy"] for r in buy_rows)
+                if margin > 0:
+                    self._scan_results[name] = margin
+        except UexRateLimitError as exc:
+            self._stop_scan()
+            self.card.set_error(str(exc), retry_callback=self.start_profitability_scan)
+            return
+        except Exception:
+            pass  # skip commodities that individually fail; don't abort the whole scan
+
+        self.scan_btn.setText(f"SCANNING {self._scan_index}/{len(self._scan_queue)}")
+
+    def _stop_scan(self):
+        if self._scan_timer is not None:
+            self._scan_timer.stop()
+            self._scan_timer = None
+        self.scan_btn.setEnabled(True)
+        self.scan_btn.setText("FIND MOST PROFITABLE")
+
+    def _finish_scan(self):
+        if not self._scan_results:
+            self.card.set_error(
+                "Scan found no profitable commodities right now.",
+                retry_callback=self.start_profitability_scan,
+            )
+            return
+        best = max(self._scan_results, key=self._scan_results.get)
+        self._profitable_cache = best
+        self._profitable_cache_time = time.time()
+        self.card.clear_error()
+        self.combo.setCurrentText(best)  # triggers a normal refresh via currentTextChanged
+
+
+MODULE_CLASS = CommodityPricesModule

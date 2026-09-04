@@ -133,3 +133,60 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   header. Smoke-tested via UI Automation (click doesn't crash the app);
   full visual confirmation of the raise (two overlapping cards) needs a
   human dragging one over the other, not yet done by this session.
+
+- **2026-09-03 — Never embed our own UEX token; "most profitable" done as
+  a client-side brute-force scan instead.** User asked how to make
+  Commodity Prices smarter (query for most profitable) and separately
+  drew a hard line on distribution: no shared app token baked into the
+  exe, ever — it'd get extracted from the public repo immediately and
+  either get abused by randoms or revoked by UEX, breaking the feature for
+  everyone at once. Investigated the "real" ranking path first:
+  `commodities_ranking` is deprecated (confirmed live, returns empty). Its
+  documented replacement `commodities_averages` requires a bearer token
+  AND is still per-commodity (`id_commodity` required) — not actually a
+  ranking/discovery query even with a token. With per-user tokens ruled
+  out as a *requirement* (optional/degraded is fine, required for a core
+  feature is not) and the "official" path a dead end anyway, landed on:
+  scan every commodity via `commodities_prices` (already anonymous, ~150-
+  200 calls), compute margin client-side, cache 30 min, chunk via `QTimer`
+  so it doesn't freeze the UI or look like a stub while running. See
+  docs/modules/commodity-prices.md for the mechanics.
+
+- **2026-09-03 — Price Lookup renamed to Commodity Prices.** User noticed
+  it only covers commodities (ore, agricultural goods) — the old name
+  implied broader scope (items, ship components) it never had. Renamed
+  the module folder, `module_id`, and class to match
+  (`price_lookup`/`PriceLookupModule` → `commodity_prices`/
+  `CommodityPricesModule`), not just the display string, since it's still
+  pre-release and there's no cost to getting the internal name right too.
+  Also dropped a hardcoded "default to Laranite if present" fallback that
+  existed only because that's what got typed in while first building the
+  module — not tied to profitability or any real signal. Removing it
+  surfaced a latent bug (see PROGRESS.md): the new alphabetical-first
+  default landed on a commodity with zero active listings, and `refresh()`
+  treated that as a hard error instead of the graceful empty state the
+  per-row display logic already supports. Fixed the actual bug rather than
+  reintroducing a hardcoded "safe" commodity to paper over it.
+
+- **2026-09-03 — Settings menu added; Window/Card Opacity split, Text Size
+  added.** User: opacity slider belonged in a real settings surface, not
+  loose in the title bar, and 1440p made the default text hard to read.
+  Added `_SettingsPanel` (same themed Qt.Popup pattern as the Tray).
+  Window Opacity (existing slider, relocated) and the new Card Opacity
+  (card background alpha, independent of the window — lets you see through
+  cards without making window chrome/text transparent too) both apply
+  live: `Card._apply_border` now composites `theme.BG_PANEL` through
+  `theme.hex_to_rgba` at the card's stored opacity, and
+  `CardContainer.set_all_card_opacity` broadcasts a change to every
+  existing card immediately. Text Size does NOT apply live — every
+  font-size in the app is a literal baked into a stylesheet string built
+  once (`theme.fpx()`, a scale-aware helper, reads `theme.FONT_SCALE` at
+  the moment each stylesheet function runs); rebuilding and reapplying
+  every stylesheet on every existing widget live was out of scope for this
+  pass, so it's an honest "applies next launch" setting instead, labeled
+  as such in the panel. `theme.FONT_SCALE` must be set from config
+  (`main.py`) before `MainWindow` is constructed and before modules are
+  imported — `host/main_window.py`'s top-level `STYLESHEET` constant had
+  to be converted from a module-level string (frozen at import time, i.e.
+  before config even loads) into a function called at construction time,
+  otherwise the scale-aware helper would always see the default 1.0.

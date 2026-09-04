@@ -1,5 +1,5 @@
-"""Always-on-top, frameless, draggable, opacity-adjustable overlay window.
-Houses the CardContainer and the tray for stowed (hidden) cards.
+"""Always-on-top, frameless, draggable overlay window. Houses the
+CardContainer, the tray for stowed (hidden) cards, and Settings.
 """
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QGuiApplication
@@ -12,7 +12,12 @@ from host import theme
 from host.card_container import CardContainer
 from host.config import Config
 
-STYLESHEET = f"""
+def _build_stylesheet() -> str:
+    # A function, not a module-level constant: theme.fpx() must read
+    # theme.FONT_SCALE at call time. This module is imported (and a
+    # module-level string would be frozen) before main.py has a chance to
+    # set the scale from config.
+    return f"""
 QWidget#titleBar {{
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #0f1a1d, stop:1 #0a1214);
@@ -21,21 +26,21 @@ QWidget#titleBar {{
 QLabel#wordmark {{
     font-family: "{theme.FONT_DISPLAY}";
     font-weight: 800;
-    font-size: 14px;
+    font-size: {theme.fpx(14)}px;
     letter-spacing: 3px;
 }}
 QLabel#cardTitle {{
     color: {theme.TEXT_PRIMARY};
     font-family: "{theme.FONT_DISPLAY}";
     font-weight: 700;
-    font-size: 11px;
+    font-size: {theme.fpx(11)}px;
     letter-spacing: 2px;
 }}
 QPushButton#cardIconBtn {{
     background: transparent;
     color: {theme.TEXT_MUTED};
     border: none;
-    font-size: 11px;
+    font-size: {theme.fpx(11)}px;
 }}
 QPushButton#cardIconBtn:hover {{
     color: {theme.ACCENT_CYAN};
@@ -45,7 +50,7 @@ QPushButton#retryBtn {{
     color: {theme.ACCENT_AMBER};
     border: 1px solid {theme.BORDER_AMBER};
     font-family: "{theme.FONT_MONO}";
-    font-size: 10px;
+    font-size: {theme.fpx(10)}px;
     letter-spacing: 2px;
     padding: 5px 0;
 }}
@@ -55,7 +60,7 @@ QPushButton#retryBtn:hover {{
 QLabel#errorMessage {{
     color: {theme.TEXT_PRIMARY};
     font-family: "{theme.FONT_MONO}";
-    font-size: 11px;
+    font-size: {theme.fpx(11)}px;
 }}
 QWidget#titleBtn {{
     background: transparent;
@@ -65,6 +70,14 @@ QWidget#titleBtn {{
 QWidget#titleBtn:hover {{
     color: {theme.ACCENT_CYAN};
 }}
+"""
+
+
+def _panel_header_style() -> str:
+    return f"""
+    color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_DISPLAY}";
+    font-weight: 700; font-size: {theme.fpx(10)}px; letter-spacing: 2px;
+    padding: 9px 12px; border-bottom: 1px solid {theme.BORDER_FLAT};
 """
 
 
@@ -100,12 +113,12 @@ class _TrayRow(QWidget):
         layout.setContentsMargins(12, 8, 12, 8)
 
         label = QLabel(title)
-        label.setStyleSheet(f'color: {theme.TEXT_PRIMARY}; font-family: "{theme.FONT_MONO}"; font-size: 10px;')
+        label.setStyleSheet(f'color: {theme.TEXT_PRIMARY}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px;')
         layout.addWidget(label)
         layout.addStretch()
 
         deploy = QLabel("DEPLOY")
-        deploy.setStyleSheet(f'color: {theme.ACCENT_CYAN}; font-family: "{theme.FONT_MONO}"; font-size: 9px; letter-spacing: 1px;')
+        deploy.setStyleSheet(f'color: {theme.ACCENT_CYAN}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;')
         layout.addWidget(deploy)
 
     def mousePressEvent(self, event):
@@ -132,11 +145,7 @@ class _TrayPanel(QWidget):
         layout.setSpacing(0)
 
         header = QLabel("STOWED MODULES")
-        header.setStyleSheet(f"""
-            color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_DISPLAY}";
-            font-weight: 700; font-size: 10px; letter-spacing: 2px;
-            padding: 9px 12px; border-bottom: 1px solid {theme.BORDER_FLAT};
-        """)
+        header.setStyleSheet(_panel_header_style())
         layout.addWidget(header)
 
         stowed = main_window.card_container.stowed_cards()
@@ -144,7 +153,7 @@ class _TrayPanel(QWidget):
             empty = QLabel("NOTHING STOWED")
             empty.setStyleSheet(f"""
                 color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}";
-                font-size: 10px; padding: 16px 12px;
+                font-size: {theme.fpx(10)}px; padding: 16px 12px;
             """)
             layout.addWidget(empty)
         else:
@@ -154,6 +163,104 @@ class _TrayPanel(QWidget):
     def _deploy(self, card_id: str):
         self._win.card_container.deploy_card(card_id)
         self.close()
+
+
+class _SettingsRow(QWidget):
+    """One labeled control row in the Settings panel: a title, an optional
+    one-line description underneath, and the control itself."""
+
+    def __init__(self, title: str, description: str = ""):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
+
+        title_label = QLabel(title)
+        title_label.setStyleSheet(f"""
+            color: {theme.TEXT_PRIMARY}; font-family: "{theme.FONT_DISPLAY}";
+            font-weight: 700; font-size: {theme.fpx(10)}px; letter-spacing: 1px;
+        """)
+        layout.addWidget(title_label)
+
+        if description:
+            desc_label = QLabel(description)
+            desc_label.setWordWrap(True)
+            desc_label.setStyleSheet(f"""
+                color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}";
+                font-size: {theme.fpx(9)}px;
+            """)
+            layout.addWidget(desc_label)
+
+        self.control_row = QHBoxLayout()
+        self.control_row.setSpacing(8)
+        layout.addLayout(self.control_row)
+
+
+class _SettingsPanel(QWidget):
+    """Window Opacity, Card Opacity, and Text Size — a themed panel next to
+    the Tray, same Qt.Popup pattern (closes on an outside click)."""
+
+    def __init__(self, main_window: "MainWindow"):
+        super().__init__(main_window, Qt.Popup)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            _SettingsPanel {{ background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_CYAN}; }}
+        """)
+        self._win = main_window
+        self.setFixedWidth(230)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QLabel("SETTINGS")
+        header.setStyleSheet(_panel_header_style())
+        layout.addWidget(header)
+
+        # -- Window Opacity --
+        window_row = _SettingsRow(
+            "WINDOW OPACITY", "How see-through the whole overlay is."
+        )
+        window_slider = QSlider(Qt.Horizontal)
+        window_slider.setRange(40, 100)
+        window_slider.setValue(int(main_window.config.data["ui"]["window_opacity"] * 100))
+        window_slider.valueChanged.connect(main_window.set_window_opacity_percent)
+        window_row.control_row.addWidget(window_slider)
+        layout.addWidget(window_row)
+
+        # -- Card Opacity --
+        card_row = _SettingsRow(
+            "CARD OPACITY",
+            "How see-through each card's background is, on its own — "
+            "separate from the window above.",
+        )
+        card_slider = QSlider(Qt.Horizontal)
+        card_slider.setRange(20, 100)
+        card_slider.setValue(int(main_window.config.data["ui"]["card_opacity"] * 100))
+        card_slider.valueChanged.connect(main_window.set_card_opacity_percent)
+        card_row.control_row.addWidget(card_slider)
+        layout.addWidget(card_row)
+
+        # -- Text Size --
+        text_row = _SettingsRow("TEXT SIZE", "Applies the next time you launch mobiOverlay.")
+        current_scale = main_window.config.data["ui"]["font_scale"]
+        for name, scale in theme.FONT_SCALE_OPTIONS.items():
+            btn = QPushButton(name.upper())
+            btn.setCheckable(True)
+            btn.setChecked(abs(scale - current_scale) < 0.001)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent; color: {theme.TEXT_MUTED};
+                    border: 1px solid {theme.BORDER_FLAT}; padding: 4px 6px;
+                    font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
+                }}
+                QPushButton:checked {{
+                    color: {theme.ACCENT_CYAN}; border: 1px solid {theme.BORDER_CYAN};
+                }}
+            """)
+            btn.clicked.connect(lambda checked, s=scale: main_window.set_font_scale(s))
+            text_row.control_row.addWidget(btn)
+        layout.addWidget(text_row)
 
 
 class _TitleBar(QWidget):
@@ -170,27 +277,28 @@ class _TitleBar(QWidget):
         wordmark = QLabel(
             f'<span style="color:{theme.TEXT_PRIMARY};">MOBI</span>'
             f'<span style="color:{theme.ACCENT_CYAN};">OVERLAY</span>'
-            f'<span style="color:{theme.TEXT_MUTED}; font-size:7px;"> by Kestryl</span>'
+            f'<span style="color:{theme.TEXT_MUTED}; font-size:{theme.fpx(7)}px;"> by Kestryl</span>'
         )
         wordmark.setObjectName("wordmark")
         layout.addWidget(wordmark)
         layout.addStretch()
 
+        _button_style = f"""
+            font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px; letter-spacing: 1px;
+            padding: 3px 8px; border: 1px solid {theme.BORDER_FLAT};
+        """
+
         self.tray_btn = QPushButton("TRAY")
         self.tray_btn.setObjectName("cardIconBtn")
-        self.tray_btn.setStyleSheet(f"""
-            font-family: "{theme.FONT_MONO}"; font-size: 10px; letter-spacing: 1px;
-            padding: 3px 8px; border: 1px solid {theme.BORDER_FLAT};
-        """)
+        self.tray_btn.setStyleSheet(_button_style)
         self.tray_btn.clicked.connect(self._win.show_tray)
         layout.addWidget(self.tray_btn)
 
-        opacity_slider = QSlider(Qt.Horizontal)
-        opacity_slider.setRange(40, 100)
-        opacity_slider.setValue(int(self._win.config.data["ui"]["opacity"] * 100))
-        opacity_slider.setFixedWidth(70)
-        opacity_slider.valueChanged.connect(self._win.set_opacity_percent)
-        layout.addWidget(opacity_slider)
+        self.settings_btn = QPushButton("SETTINGS")
+        self.settings_btn.setObjectName("cardIconBtn")
+        self.settings_btn.setStyleSheet(_button_style)
+        self.settings_btn.clicked.connect(self._win.show_settings)
+        layout.addWidget(self.settings_btn)
 
         close_btn = QPushButton("✕")
         close_btn.setObjectName("cardIconBtn")
@@ -220,8 +328,8 @@ class MainWindow(QWidget):
         self.config = config
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground, False)
-        self.setStyleSheet(STYLESHEET)
-        self.setWindowOpacity(config.data["ui"]["opacity"])
+        self.setStyleSheet(_build_stylesheet())
+        self.setWindowOpacity(config.data["ui"]["window_opacity"])
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
@@ -251,15 +359,31 @@ class MainWindow(QWidget):
         default_x, default_y = _default_launch_position()
         self.move(geo.get("x", default_x), geo.get("y", default_y))
 
-    def set_opacity_percent(self, value: int):
+    def set_window_opacity_percent(self, value: int):
         opacity = value / 100
         self.setWindowOpacity(opacity)
-        self.config.data["ui"]["opacity"] = opacity
+        self.config.data["ui"]["window_opacity"] = opacity
+        self.config.save()
+
+    def set_card_opacity_percent(self, value: int):
+        opacity = value / 100
+        self.card_container.set_all_card_opacity(opacity)
+        self.config.data["ui"]["card_opacity"] = opacity
+        self.config.save()
+
+    def set_font_scale(self, scale: float):
+        self.config.data["ui"]["font_scale"] = scale
         self.config.save()
 
     def show_tray(self):
         panel = _TrayPanel(self)
         btn = self.title_bar.tray_btn
+        panel.move(btn.mapToGlobal(QPoint(0, btn.height())))
+        panel.show()
+
+    def show_settings(self):
+        panel = _SettingsPanel(self)
+        btn = self.title_bar.settings_btn
         panel.move(btn.mapToGlobal(QPoint(0, btn.height())))
         panel.show()
 

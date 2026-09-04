@@ -35,3 +35,26 @@ CARD_HEADER_HEIGHT = 34
 GRID_SIZE = 20
 SNAP_BORDER = "#a855f7"
 SNAP_FILL = "rgba(168, 85, 247, 0.18)"
+
+# Text size: a global multiplier applied to every font-size in the app.
+# Set once at startup from config (see set_font_scale in main.py) — changing
+# it requires a restart, since stylesheets are built once as plain strings
+# rather than re-computed live. Options shown in Settings.
+FONT_SCALE = 1.0
+FONT_SCALE_OPTIONS = {"Small": 0.85, "Normal": 1.0, "Large": 1.15, "Extra Large": 1.3}
+
+
+def set_font_scale(scale: float) -> None:
+    global FONT_SCALE
+    FONT_SCALE = scale
+
+
+def fpx(base_px: int) -> int:
+    """Scale a base pixel font size by the current FONT_SCALE."""
+    return max(1, round(base_px * FONT_SCALE))
+
+
+def hex_to_rgba(hex_color: str, alpha: float) -> str:
+    hex_color = hex_color.lstrip("#")
+    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+    return f"rgba({r}, {g}, {b}, {alpha})"

@@ -15,7 +15,7 @@ availability. Evidence tiers:
 
 ## Tier 1 — Strong evidence
 
-1. **Price Lookup** — *(built)* — foundational to every major tool
+1. **Commodity Prices** — *(built, originally named "Price Lookup")* — foundational to every major tool
    ("SC Trade Tools... shop and commodity browser", "UEX covers commodity
    prices" — both named among the 3 essential community tools alongside
    Erkul)
@@ -49,7 +49,14 @@ availability. Evidence tiers:
    buzz found; likely covered by checking the trade-route tools directly
    rather than as a standalone alerting product
 10. **Commodity Price History / Trends**
-11. **Commodity Ranking (most profitable/most traded)**
+11. **Commodity Ranking (most profitable/most traded)** — **dead end,
+    confirmed 2026-09-03**: `commodities_ranking` is deprecated (returns
+    empty data live), its replacement `commodities_averages` needs a
+    bearer token and is per-commodity, not a ranking query. "Most
+    profitable" was instead built into Commodity Prices as a client-side
+    brute-force scan — see docs/modules/commodity-prices.md and
+    DECISIONS.md. Don't re-investigate this endpoint expecting different
+    results.
 12. **Raw-vs-Refined Comparator**
 13. **Ship Loaner Lookup**
 14. **Marketplace Listings Browser**
@@ -113,7 +120,7 @@ tier.
 
 ## Status
 
-Price Lookup and Trade Route Optimizer (tiers 1.1 and 1.2) are built — see
+Commodity Prices and Trade Route Optimizer (tiers 1.1 and 1.2) are built — see
 docs/PROGRESS.md. Refinery Yield Calculator (1.3) is the strongest
 next pick from the community-interest ranking. The Multi-Stop Contract
 Route Optimizer above is a separate high-priority want, held for later

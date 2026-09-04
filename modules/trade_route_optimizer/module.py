@@ -19,23 +19,23 @@ _COMBO_STYLE = f"""
     QComboBox {{
         background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
         border: 1px solid {theme.BORDER_FLAT}; padding: 4px 6px;
-        font-family: "{theme.FONT_DISPLAY}"; font-weight: 700; font-size: 12px;
+        font-family: "{theme.FONT_DISPLAY}"; font-weight: 700; font-size: {theme.fpx(12)}px;
     }}
 """
 _INVESTMENT_STYLE = f"""
     QLineEdit {{
         background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
         border: 1px solid {theme.BORDER_FLAT}; padding: 4px 6px;
-        font-family: "{theme.FONT_MONO}"; font-size: 11px;
+        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(11)}px;
     }}
 """
 _ROUTE_ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; padding: 7px 9px;"
-_COMMODITY_STYLE = f'color: {theme.ACCENT_CYAN}; font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: 13px;'
-_DEST_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: 9px;'
-_PROFIT_STYLE = f'color: {theme.TEXT_PRIMARY}; font-family: "{theme.FONT_MONO}"; font-size: 14px; font-weight: bold;'
-_ROI_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: 9px;'
-_TIMESTAMP_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: 9px; letter-spacing: 1px;'
-_LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: 9px; letter-spacing: 1px;'
+_COMMODITY_STYLE = f'color: {theme.ACCENT_CYAN}; font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(13)}px;'
+_DEST_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
+_PROFIT_STYLE = f'color: {theme.TEXT_PRIMARY}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(14)}px; font-weight: bold;'
+_ROI_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
+_TIMESTAMP_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;'
+_LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;'
 
 
 class TradeRouteOptimizerModule(ModuleBase):
@@ -87,7 +87,7 @@ class TradeRouteOptimizerModule(ModuleBase):
         footer.addStretch()
         refresh_btn = QPushButton("↻")
         refresh_btn.setFixedSize(20, 20)
-        refresh_btn.setStyleSheet(f"background: transparent; color: {theme.ACCENT_CYAN}; border: none; font-size: 13px;")
+        refresh_btn.setStyleSheet(f"background: transparent; color: {theme.ACCENT_CYAN}; border: none; font-size: {theme.fpx(13)}px;")
         refresh_btn.clicked.connect(lambda: self.request_refresh and self.request_refresh())
         footer.addWidget(refresh_btn)
         card.body_layout.addLayout(footer)

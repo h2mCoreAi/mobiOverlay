@@ -51,7 +51,7 @@ returns `missing_one_required_inputs`. This module always sends
 - Top 5 routes by profit, each row: commodity, destination terminal +
   system/planet, profit (aUEC), ROI%
 - Last-updated timestamp, manual refresh button
-- Error state: message + retry, same as Price Lookup
+- Error state: message + retry, same as Commodity Prices
 
 ## Settings (modules.trade_route_optimizer in config.json)
 

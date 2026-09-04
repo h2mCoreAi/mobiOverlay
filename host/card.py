@@ -35,7 +35,7 @@ class _DragHeader(QWidget):
         layout.setSpacing(8)
 
         self.dot = QLabel("●")
-        self.dot.setStyleSheet(f"color: {theme.ACCENT_CYAN}; font-size: 9px;")
+        self.dot.setStyleSheet(f"color: {theme.ACCENT_CYAN}; font-size: {theme.fpx(9)}px;")
         layout.addWidget(self.dot)
 
         self.title_label = QLabel(title.upper())
@@ -125,6 +125,8 @@ class Card(QFrame):
         self.container = container
         self._collapsed = False
         self._manual_size: tuple[int, int] | None = None
+        self._card_opacity = 1.0
+        self._border_color = theme.ACCENT_CYAN
         self.setMinimumWidth(CARD_MIN_WIDTH)
         self.setMinimumHeight(CARD_MIN_HEIGHT)
 
@@ -198,7 +200,7 @@ class Card(QFrame):
 
         icon = QLabel("⚠")
         icon.setAlignment(Qt.AlignCenter)
-        icon.setStyleSheet(f"color: {theme.ACCENT_AMBER}; font-size: 22px;")
+        icon.setStyleSheet(f"color: {theme.ACCENT_AMBER}; font-size: {theme.fpx(22)}px;")
         layout.addWidget(icon)
 
         self.error_message = QLabel("")
@@ -235,12 +237,21 @@ class Card(QFrame):
             self._retry_callback()
 
     def _apply_border(self, color: str):
+        self._border_color = color
+        background = theme.hex_to_rgba(theme.BG_PANEL, self._card_opacity)
         self.setStyleSheet(f"""
             Card {{
-                background: {theme.BG_PANEL};
+                background: {background};
                 border: 1px solid {color};
             }}
         """)
+
+    def set_card_opacity(self, opacity: float):
+        """Card background transparency — independent of the window's own
+        opacity, so you can see through cards to the game behind them
+        without making the window chrome or text transparent too."""
+        self._card_opacity = opacity
+        self._apply_border(self._border_color)
 
     # -- collapse -------------------------------------------------------
     def toggle_collapsed(self):

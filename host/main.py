@@ -10,6 +10,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
+from host import theme
 from host.api_client import UexApiClient
 from host.config import Config
 from host.main_window import MainWindow
@@ -45,6 +46,11 @@ def main():
     load_fonts()
 
     config = Config()
+    # Must happen before MainWindow (and before any module is imported) —
+    # every stylesheet-building call reads theme.FONT_SCALE at the moment
+    # it runs, so this needs to be set first, once, for the whole session.
+    theme.set_font_scale(config.data["ui"]["font_scale"])
+
     api_client = UexApiClient(
         base_url=config.data["api"]["uex_base_url"],
         token=config.data["api"]["uex_token"],

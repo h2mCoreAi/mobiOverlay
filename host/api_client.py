@@ -5,7 +5,14 @@ import requests
 
 
 class UexApiError(Exception):
-    pass
+    """Generic UEX API failure — network error, bad JSON, non-ok status."""
+
+
+class UexRateLimitError(UexApiError):
+    """UEX's own rate limit was hit (status: requests_limit_reached).
+    Kept distinct from UexApiError so callers can show a specific,
+    actionable message instead of a generic failure.
+    """
 
 
 class UexApiClient:
@@ -28,6 +35,11 @@ class UexApiClient:
         except ValueError as exc:
             raise UexApiError(f"UEX API returned invalid JSON: {exc}") from exc
 
-        if payload.get("status") != "ok":
+        status = payload.get("status")
+        if status == "requests_limit_reached":
+            raise UexRateLimitError(
+                "UEX rate limit reached — wait a moment, then retry."
+            )
+        if status != "ok":
             raise UexApiError(f"UEX API error response: {payload}")
         return payload.get("data", [])

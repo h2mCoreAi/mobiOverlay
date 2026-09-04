@@ -1,6 +1,6 @@
 # Progress
 
-## Status: host + 2 modules + MIT license + GitHub repo live; Stow/Deploy rebuild awaiting human test
+## Status: host + 2 modules + Settings menu + Find Most Profitable scan; card raise-to-front and rename shipped; awaiting human test
 
 ## Done
 
@@ -8,7 +8,8 @@
   modular trading overlay (see DECISIONS.md for why)
 - Host/module architecture decided: PySide6, folder-per-module, auto-discovery
 - Doc structure scaffolded (this file, ARCHITECTURE.md, DECISIONS.md,
-  modules/price-lookup.md)
+  modules/commodity-prices.md — named modules/price-lookup.md at the time,
+  renamed 2026-09-03, see below)
 - Visual design mocked up (dark sci-fi HUD, cyan/amber accents, Orbitron +
   Share Tech Mono) and approved as-is — see DECISIONS.md for the full value
   reference and the artifact link
@@ -26,7 +27,8 @@
   config persistence (layout + module settings), per-module auto-discovery
   from `modules/`, per-module error boundary (a failed refresh puts that
   card into its error state with a retry button, doesn't crash the host)
-- Price Lookup module built and working: `modules/price_lookup/module.py` —
+- Price Lookup module built and working (renamed to Commodity Prices /
+  `modules/commodity_prices/module.py` on 2026-09-03, see below) —
   commodity picker, best-sell/best-buy rows with terminal+location, last
   updated timestamp, manual refresh button, periodic auto-refresh
 - Ran the actual app and screenshotted it (via PrintWindow — CopyFromScreen
@@ -113,16 +115,54 @@
   the complete stow → tray → deploy cycle via real UI Automation clicks
   (not just a static screenshot) — confirmed working end-to-end, entirely
   on the secondary monitor
+- Clicking anywhere in a card raises it to front (app-wide event filter in
+  `CardContainer` — see DECISIONS.md)
+- Price Lookup renamed to **Commodity Prices** (module folder + `module_id`
+  + class renamed too) — the old name implied it covered items/ships, but
+  it's commodities only
+- **Find Most Profitable** brute-force scan added to Commodity Prices —
+  client-side scan across every commodity (~150-200 of them) since no real
+  ranking endpoint exists anonymously (`commodities_ranking` deprecated,
+  its replacement needs auth we've ruled out embedding). Chunked via
+  `QTimer` so the UI stays responsive with live progress, 30-min in-memory
+  cache, skips individually-failing commodities rather than aborting.
+  Verified end-to-end via UI Automation: ran a real scan (205 commodities,
+  ~25s), found "Osoian Hides" at an 870,000/283,500 sell/buy margin —
+  genuine result, not a stub
+- `UexRateLimitError` added to `api_client.py` — a distinct, clear message
+  ("UEX rate limit reached — wait a moment, then retry") instead of a
+  generic failure when UEX's own rate limit is hit. Not yet live-triggered
+  (hard to force deliberately without actually spamming UEX) — code path
+  reviewed, not observed firing for real
+- Fixed a real bug hit while testing the rename: `refresh()` treated zero
+  price rows as a hard error, when the existing per-row display logic
+  already handled that gracefully ("no terminals buying/selling"). Some
+  commodities (e.g. whatever sorts alphabetically first) genuinely have no
+  active listings — that's a legitimate state, not a failure
+- Settings menu added: SETTINGS button next to TRAY, opens a themed panel
+  (`_SettingsPanel`) with Window Opacity (moved out of the title bar),
+  Card Opacity (new — card background transparency independent of the
+  window), and Text Size (Small/Normal/Large/Extra Large). Opacity changes
+  apply live; Text Size applies on next launch (labeled as such — live
+  font-rescaling would need every stylesheet rebuilt and reapplied, out of
+  scope for this pass). Verified all three via UI Automation +
+  `config.json` inspection + an actual restart for Text Size (fonts and
+  card sizes visibly larger after relaunch)
+- Config schema: `ui.opacity` renamed to `ui.window_opacity`, added
+  `ui.card_opacity` and `ui.font_scale`
 
 ## Next
 
-- Human review of the running app (this is the current handoff point)
+- Human review of the running app (this is the current handoff point) —
+  especially the new Settings panel, Find Most Profitable, and raise-to-
+  front, none of which have been touched by a human yet
 - Grid-snap drag and per-card resize handle are code-reviewed and
   screenshot-confirmed to render, but not yet mouse-drag-tested by a human
 - Confirm UEX bearer token is genuinely optional for the long term (GET
   endpoints work anonymously today, but that could change) — not blocking
   for now
-- No packaging (PyInstaller) attempted yet — still running from source
+- `UexRateLimitError`'s UI has never actually fired against a real rate
+  limit — worth keeping an eye on the first time it does
 
 ## Environment / process notes
 

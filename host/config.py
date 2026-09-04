@@ -10,7 +10,13 @@ from host.paths import app_root
 CONFIG_PATH = app_root() / "config.json"
 
 DEFAULT_CONFIG = {
-    "ui": {"opacity": 0.92, "always_on_top": True, "window_geometry": {}},
+    "ui": {
+        "window_opacity": 0.92,
+        "card_opacity": 0.94,
+        "font_scale": 1.0,
+        "always_on_top": True,
+        "window_geometry": {},
+    },
     "api": {"uex_token": "", "uex_base_url": "https://api.uexcorp.uk/2.0/"},
     "cards": {},
     "modules": {},
