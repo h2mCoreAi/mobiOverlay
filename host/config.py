@@ -20,6 +20,12 @@ DEFAULT_CONFIG = {
         "pill_geometry": {},
         "hotkey_combo": "",
         "hotkey_display": "",
+        # Debug feature: shows a console window with log output. Only
+        # actually changes anything for the packaged exe (mobioverlay.spec
+        # builds console=False) or a source run with no console already
+        # attached — see host/main.py's _maybe_allocate_console(). Applies
+        # on next launch, same as font_scale.
+        "show_console": False,
     },
     "api": {"uex_token": "", "uex_base_url": "https://api.uexcorp.uk/2.0/"},
     "cards": {},

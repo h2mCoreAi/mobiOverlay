@@ -76,9 +76,10 @@
   dragging; on release the card jumps to that grid-aligned position.
   Grid size and snap colors are in `theme.py` (`GRID_SIZE`, `SNAP_BORDER`,
   `SNAP_FILL`).
-  **User-tested 2026-09-03: doesn't behave as expected.** User has accepted
-  it as-is for now, no changes requested — leave alone unless asked. Exact
-  mismatch not diagnosed (not reproduced/debugged this session).
+  **KNOWN BUG (host, card-grid-snap): doesn't behave as expected —
+  user-tested 2026-09-03.** User has accepted it as-is for now, no changes
+  requested — leave alone unless asked. Exact mismatch not diagnosed (not
+  reproduced/debugged this session).
 - Fixed the window defaulting onto the primary/gaming monitor: the previous
   hardcoded `(100, 100)` fallback landed on whichever screen is primary —
   which is the user's active gaming display. Default launch position (used
@@ -461,8 +462,92 @@
   that) with a themed CONFIRM/DENY popup instead of silently tripling
   the route. Full history in DECISIONS.md.
 
+- **mobi-branding standardized across all 4 card titles** (mobiOverlay,
+  mobiTrade, mobiAim, mobiCommodities, mobiLogistics — "mobi" white,
+  rest blue) — fixed a real bug this exposed (`host/card.py` was forcing
+  `.upper()` on every card title, which would have wrecked the new
+  mixed-case branding; the Logistics Hub route popout already proved the
+  correct mixed-case rendering worked, the card header next to it
+  didn't). Tray picks up the fix automatically, no separate tray change
+  needed. See DECISIONS.md.
+- Logistics Hub's "SELECT REGION" button renamed to "SET SCAN AREA" —
+  user flagged it read as an in-game region, not the OCR capture area.
+- Fixed right-edge text clipping on Logistics Hub's location combo and
+  Trade Route Optimizer's terminal/system combos — none of the
+  `QComboBox` styles reserved room for the drop-down arrow subcontrol.
+
+- **Startup splash screen added** (`host/splash.py`) — investigated the
+  reported startup delay first: confirmed via diagnostic timing it's
+  Logistics Hub's `import easyocr` (2.79s of 3.64s total), not the UEX
+  API. Splash shows the mobiOverlay wordmark + a status line that updates
+  per-loading-stage (including which module is loading), so the pause is
+  now explained instead of looking frozen. See DECISIONS.md.
+
+- **Logistics Hub debug log added** (`logistics_hub_debug.jsonl`,
+  always-on JSON Lines, one entry per scan: raw OCR, candidate phrases
+  w/ role hints, resolved contract, route snapshot) — see DECISIONS.md
+  for the full scoping and format. Code-reviewed/syntax-checked only,
+  not yet live-tested.
+- **Bug fix: Logistics Hub relaunch showed persisted contracts but an
+  empty ROUTE.** `_route_order` is in-memory-only and was never
+  recomputed on card load. Fixed by replanning from persisted contracts
+  in `create_card()`. User-confirmed fixed 2026-09-04.
+- **Debug Console toggle added to Settings** (`ui.show_console`, applies
+  on next relaunch) — opens a real console window via `AllocConsole()`
+  so log output is visible for the packaged windowed exe, where
+  stdout/stderr otherwise go nowhere. No-op when run from an actual
+  terminal (one's already attached). See DECISIONS.md.
+
 ## Next
 
+- **KNOWN BUG (logistics-hub, role-assignment): pickup/dropoff hint
+  tie-break picks the wrong mention.** Found 2026-09-04 auditing
+  `logistics_hub_debug.jsonl` against live UEX data (route/distance logic
+  itself checked out fine — this is a parsing bug upstream of routing).
+  In `_candidate_phrases()` (`modules/logistics_hub/module.py`), the
+  "own-line joined-lookahead" pass (built to catch line-wrapped location
+  names) can tag a location with the *wrong* role at the same priority
+  (`own_line`, 3) as the real keyword line that would tag it correctly —
+  e.g. "Everus Harbor" got tagged `dropoff` from a nearby wrapped
+  "Deliver...to Baijini Point... Everus Harbor..." line before the actual
+  "Collect Tin from Everus Harbor:" line was processed. `add_candidate`'s
+  tie-break only overrides on strictly-greater priority
+  (`if phrase_priority > candidates[idx][2]`), so the first, wrong tag
+  wins. Confirmed real on a live-captured contract (id `21c7811e`): its
+  pickup/dropoff came out backwards, plus a fabricated pickup stop
+  ("Covalex Orison", actually just the sender's signature block
+  resolving to a real but unrelated UEX terminal). Not fixed yet —
+  logged for later; see the full write-up in this session's transcript.
+- **KNOWN BUG (logistics-hub, duplicate-stop): same terminal can appear
+  twice in one contract's pickups/dropoffs.** Found 2026-09-05 re-checking
+  a live route export. A contract mentioning the same real place via two
+  differently-worded raw phrases (e.g. "Seraphim The" and "Seraphim
+  Station", both resolving to terminal id 259) keeps both as separate
+  entries in `_build_contract` instead of merging them by resolved
+  terminal — the route then visits that stop twice for no reason.
+  Related: for this same Seraphim pair (terminal 259) and a same-city
+  terminal (Covalex Orison, id 206, also Crusader/Orison), live
+  `terminals_distances` returns `data: false` (no distance recorded —
+  they're effectively co-located) and `orbits_distances` has no
+  same-orbit self-entry either, so `LocationService.distance()` falls
+  back to the coarse `+5 est.` heuristic instead of treating them as
+  ~0 apart. Not fixed yet — logged for later.
+- **Human check: Logistics Hub debug log.** Run a real scan and confirm
+  `logistics_hub_debug.jsonl` appears next to `config.json` (repo root
+  when running from source) with one valid JSON line containing raw
+  text/candidates/contract/route.
+- **Human check (not yet done, deliberately deferred): Settings >
+  Relaunch fix.** User reported the old process isn't always fully dead
+  before the new one starts. Fixed 2026-09-04 (see DECISIONS.md for full
+  detail): `GlobalHotkey.shutdown()` added (the global keyboard hook was
+  never actually unhooked before), `relaunch()` reordered to clean up
+  *before* spawning the new process (was racing), and `os._exit(0)`
+  added as a hard stop against easyocr/torch's native thread pools
+  possibly delaying interpreter shutdown. Code-reviewed and
+  syntax-checked only — **needs a live test**: run at least one
+  Logistics Hub scan (to actually load torch), then click Relaunch, and
+  confirm via Task Manager that the old process is gone before/as the
+  new one starts. Do this before trusting Relaunch is fixed.
 - **Phased Core Location service** — Phases 1-4 done (see Done above and
   DECISIONS.md for rationale/detail); Phase 3's swap moved up ahead of
   Phase 4 per a later reprioritization:

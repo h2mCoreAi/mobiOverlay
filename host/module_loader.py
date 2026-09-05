@@ -16,6 +16,7 @@ import importlib.util
 import logging
 import pkgutil
 import sys
+import time
 
 from host.api_client import UexApiClient
 from host.config import Config
@@ -27,7 +28,11 @@ logger = logging.getLogger("mobioverlay.module_loader")
 MODULES_ROOT = app_root() / "modules"
 
 
-def discover_modules(api_client: UexApiClient, config: Config) -> list[ModuleBase]:
+def discover_modules(api_client: UexApiClient, config: Config, on_module_loading=None) -> list[ModuleBase]:
+    """`on_module_loading`, if given, is called with each folder name right
+    before that module's file is imported/executed — lets a caller (main.py's
+    splash screen) show which module is loading, since a slow one (e.g.
+    Logistics Hub's `import easyocr`) can otherwise look like a frozen app."""
     loaded: list[ModuleBase] = []
     seen_module_ids: dict[str, str] = {}  # module_id -> folder name that claimed it
     if not MODULES_ROOT.exists():
@@ -39,8 +44,18 @@ def discover_modules(api_client: UexApiClient, config: Config) -> list[ModuleBas
         entry_point = MODULES_ROOT / name / "module.py"
         if not entry_point.exists():
             continue
+        if on_module_loading is not None:
+            on_module_loading(name)
         try:
+            # Temporary diagnostic timing (see the startup-delay investigation
+            # in DECISIONS.md) — a module's own top-level imports (e.g.
+            # Logistics Hub's `import easyocr`, which pulls in PyTorch) run
+            # here, during exec_module, entirely separate from any API call
+            # and before main.py's create_card()/refresh() watchdog exists.
+            load_start = time.monotonic()
             module_class = _load_module_class(name, entry_point)
+            load_elapsed = time.monotonic() - load_start
+            logger.info("modules/%s: import + exec took %.2fs", name, load_elapsed)
             if module_class is None:
                 logger.error("modules/%s/module.py has no MODULE_CLASS", name)
                 continue

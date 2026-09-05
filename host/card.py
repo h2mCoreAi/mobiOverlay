@@ -54,9 +54,14 @@ class _DragHeader(QWidget):
         self.dot.setStyleSheet(f"color: {theme.ACCENT_CYAN}; font-size: {theme.fpx(9)}px;")
         layout.addWidget(self.dot)
 
-        self.title_label = QLabel(title.upper())
+        # Every module title is now rich-text HTML with its own mixed-case
+        # "mobi<Name>" branding (mobi in TEXT_PRIMARY, the rest in
+        # ACCENT_CYAN) — unlike every other label in this app, these must
+        # NOT be forced uppercase, or the branding's deliberate case
+        # (lowercase "mobi") gets stomped back to caps.
+        self.title_label = QLabel(title)
         self.title_label.setObjectName("cardTitle")
-        # Rich-text titles (e.g. Logistics Hub's two-tone "MOBILOGISTICS")
+        # Rich-text titles (e.g. Logistics Hub's two-tone "mobiLogistics")
         # default to Qt::LinksAccessibleByMouse, which intercepts mouse
         # events before this header's own drag handling sees them — same
         # gotcha documented in host/main_window.py's _TitleBar wordmark.

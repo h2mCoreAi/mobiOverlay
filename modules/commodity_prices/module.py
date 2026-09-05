@@ -56,7 +56,13 @@ _ACTION_BTN_STYLE = f"""
 
 class CommodityPricesModule(ModuleBase):
     module_id = "commodity_prices"
-    display_name = "Commodity Prices"
+    # Rich-text mobi-branding, same pattern as Logistics Hub's
+    # display_name (host/card.py's title_label no longer forces
+    # uppercase, so this mixed case survives intact).
+    display_name = (
+        f'<span style="color:{theme.TEXT_PRIMARY};">mobi</span>'
+        f'<span style="color:{theme.ACCENT_CYAN};">Commodities</span>'
+    )
 
     def __init__(self, api_client, config):
         super().__init__(api_client, config)

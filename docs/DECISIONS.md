@@ -913,3 +913,250 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
      `app.setQuitOnLastWindowClosed(False)` — this was latent and would
      have hit the ROUTE popout (or any future module window) too, not
      just this one popup.
+
+- **2026-09-04 — Standardized "mobi<Name>" branding across all 4 module
+  card titles; found and fixed a case bug this exposed.** User request:
+  every card title reads "mobi" in white (`theme.TEXT_PRIMARY`) + the
+  rest in the current blue accent (`theme.ACCENT_CYAN`) — mobiOverlay
+  (main window wordmark), mobiTrade (was "Trade Routes"), mobiAim (was
+  "Crosshair"), mobiCommodities (was "Commodity Prices"), mobiLogistics
+  (Logistics Hub, name unchanged, only the rendering bug below fixed).
+  Found a real bug while doing this: `host/card.py`'s `_DragHeader` was
+  calling `title_label.setText(title.upper())` on every card title.
+  Logistics Hub's title was already rich HTML and already all-uppercase,
+  so `.upper()` was a harmless no-op there — but the target branding is
+  **mixed case** (lowercase "mobi"), so `.upper()` would have silently
+  forced every new mobi-branded title back to all caps. Proof this
+  already mattered before any of this work started: the Logistics Hub
+  route-popout window builds its own title separately
+  (`_open_route_popout`) as mixed-case "mobi"+"Logistics", so the popout
+  already rendered correctly while the card header right next to it
+  showed "MOBILOGISTICS" in full caps — a real, pre-existing mismatch.
+  Fixed by removing the `.upper()` call entirely; every module's
+  `display_name` is now the rich-text HTML directly. The stow Tray needed
+  no separate change — `CardContainer.stowed_cards()` reads back
+  `card.header.title_label.text()` (whatever HTML the header ended up
+  with) and `_TrayRow` renders it as-is, so it picked up the corrected
+  casing for free.
+
+- **2026-09-04 — Renamed Logistics Hub's "SELECT REGION" button to "SET
+  SCAN AREA".** User flagged real ambiguity: "region" reads as an
+  in-game/UEX star-system region, not the screen rectangle being
+  configured for OCR capture. Renamed the button, its status message
+  ("No capture region set — use SET SCAN AREA..."), and the matching
+  code comments/docstring in `modules/logistics_hub/module.py`. No
+  behavior change.
+
+- **2026-09-04 — Fixed dropdown text clipping on the right edge in
+  Logistics Hub's location combo and Trade Route Optimizer's terminal/
+  system combos.** User-reported. Root cause: none of the project's
+  `QComboBox` QSS blocks styled the `QComboBox::drop-down` subcontrol —
+  once a stylesheet sets custom padding/border on `QComboBox`, Qt no
+  longer automatically reserves room for the drop-down arrow the way it
+  does with an unstyled native combo, so the arrow button was painted
+  directly over the last few pixels of text/completer content. Fixed by
+  adding an explicit `QComboBox::drop-down { width: ...px; border: none; }`
+  rule plus a larger right-padding on `QComboBox` itself (enough to clear
+  the arrow) to every combo style block in `modules/logistics_hub/module.py`
+  and `modules/trade_route_optimizer/module.py` — the user only reported
+  Logistics Hub's combo, but Trade Route Optimizer's terminal/system/
+  destination-filter combos share the exact same stylesheet pattern and
+  would have had the identical bug.
+
+- **2026-09-04 — Added a startup splash screen instead of speeding up the
+  slow import.** User reported a "significant delay" on launch; added
+  diagnostic timing first rather than guessing (see the log in this
+  conversation) and confirmed it's NOT the UEX API — `discover_modules()`
+  took 2.80s of a 3.64s total startup, and 2.79s of that was Logistics
+  Hub's unconditional top-level `import easyocr` (pulls in PyTorch),
+  which runs before any window exists. Locations loaded instantly from
+  the on-disk cache; no module's `create_card()`/`refresh()` tripped the
+  existing >2s watchdog. Offered to make the `easyocr` import genuinely
+  lazy (deferred to first SCAN CONTRACT click) instead — user chose a
+  splash screen over that fix. New `host/splash.py`: a themed
+  (`QSplashScreen`, void background, cyan border, rounded corners via
+  `WA_TranslucentBackground`) splash with the two-tone mobiOverlay
+  wordmark baked into the pixmap and a status line via `showMessage()`
+  updated at each startup stage — including per-module ("Loading
+  Logistics Hub...") via a new `on_module_loading` callback param on
+  `discover_modules()`, so the 2.8s pause is now visibly explained
+  rather than looking like a frozen launch. `showMessage()` only takes
+  plain text, so `main.py`'s new `_plain_text()` strips the HTML tags
+  out of a module's rich-text `display_name` before showing it on the
+  splash. `splash.repaint()` is called after every status update since
+  the caller is about to block the event loop with the next slow
+  synchronous step, with no natural repaint opportunity otherwise. The
+  diagnostic timing log lines added for this investigation
+  (`main.py`/`module_loader.py`) were left in place — cheap, and useful
+  if startup regresses again later.
+
+- **2026-09-04 — Added a "Debug Console" toggle to Settings** (`ui.show_console`,
+  default off, applies on next relaunch — same pattern as Text Size).
+  Mainly matters for the packaged exe: `mobioverlay.spec` builds
+  `console=False`, so stdout/stderr normally go nowhere and every
+  `logging`/print call (including the startup-timing diagnostics added
+  earlier this session) is silently dropped with no way to see it without
+  rebuilding. `host/main.py`'s new `_maybe_allocate_console()` uses
+  `ctypes`' `AllocConsole()`/`GetConsoleWindow()` to open a real console
+  window and rebind `sys.stdout`/`stderr`/`stdin` to it when the setting
+  is on — must run before `logging.basicConfig()` (which grabs
+  `sys.stderr` at call time) and before any other import that might log,
+  so `Config` is now imported and read before the PySide6 imports rather
+  than alongside them. Running from an actual terminal already has a
+  console (`GetConsoleWindow()` catches that) so the toggle is a no-op
+  there — it only changes anything for a windowed/no-console launch.
+
+- **2026-09-04 — Added a "by Kestryl" byline to the splash screen,
+  centered below the wordmark.** User request: same two-tone split as
+  everywhere else ("by " white/TEXT_PRIMARY, "Kestryl" in the blue
+  accent), but as its own centered line rather than trailing inline like
+  the main window's title-bar byline. Factored the wordmark's two-tone
+  draw logic out into a shared `_draw_two_tone()` helper in
+  `host/splash.py` since the byline needed the identical
+  white-then-blue/horizontally-centered treatment at a smaller size.
+  Pixmap height bumped 140 -> 150 to fit the extra line above the
+  status-message area at the bottom.
+
+- **2026-09-04 — Bug fix: Logistics Hub was auto-scanning on its own,
+  appending garbage contracts.** User-reported symptom: new contracts
+  appeared with "messed up" data with no SCAN CONTRACT click. Root cause:
+  `host/main.py`'s generic per-module periodic-refresh `QTimer` (every
+  `DEFAULT_REFRESH_SECONDS` = 300s, applies to every module uniformly)
+  calls `module.refresh()` regardless of module type. Logistics Hub's
+  `refresh()` only no-ops on the very first call (`self._started` guard,
+  meant for main.py's one-time initial-fetch call) — every subsequent
+  timer tick ran a real OCR capture of whatever was on screen at that
+  moment (desktop, chat, game menus, anything), built a "contract" out of
+  garbled text, and appended it. This directly contradicts the module's
+  documented on-demand-only design (docs/modules/logistics-hub.md: "No
+  auto-rescan — on-demand SCAN CONTRACT only"), which had only ever
+  disabled the module's own now-removed opt-in auto-rescan toggle, not
+  Core's separate generic refresh timer. Fixed two places: `host/main.py`
+  now skips starting the periodic timer entirely when a module's
+  `refresh_interval_seconds` is falsy, and `LogisticsHubModule.__init__`
+  defaults its own `refresh_interval_seconds` to `0` (via `setdefault`, so
+  an explicit user config value would still win). Syntax-checked both
+  files; not yet live-tested by the user.
+
+- **2026-09-04 — Bug fix: Logistics Hub reversed pickup/dropoff for a
+  real contract** (user pasted a real COPY ROUTE export: "Everus Harbor"
+  showed as the pickup with cargo unknown, "Seraphim" as the dropoff,
+  backwards from the actual contract text). Root cause in
+  `_candidate_phrases()`: OCR's two-column layout wrapped the real
+  dropoff name across a line break ("...SCU of Agricultural Supplies to
+  Everus" / "Harbor above Hurston:"), so the phrase regex (single-line
+  only) never saw "Everus Harbor" intact on the keyworded line. It only
+  resolved later via an unrelated, unhinted repeat mention two lines
+  later — and the existing lookback heuristic (nearest keyword within 2
+  lines back) grabbed a coincidentally-adjacent "Collect...from Seraphim"
+  pickup line and mis-attributed its hint to that mention instead,
+  flipping the roles. Fixed by also re-scanning a line joined with the
+  next one for phrase matches, but *only* when the current line's hint
+  came directly from its own text (`own_line`, not `lookback`/`section`)
+  — trying this unconditionally first backfired: it let a lookback-hinted
+  line's contamination reach one line further and wrongly hinted
+  "Seraphim Station" too. Verified against the user's real pasted OCR
+  text for both the broken contract (Everus Harbor -> dropoff, Seraphim
+  Station -> neutral -> correctly falls back to pickup) and an
+  already-correct multi-dropoff contract from the same export (no
+  regression). Does not retroactively fix contracts already saved in
+  `contracts` config — needs a rescan.
+
+- **2026-09-04 — Two Logistics Hub route/display fixes, user-requested
+  after reviewing a real (now-correct) route export.**
+  1. **SCU quantity now shown alongside every commodity** ("13 SCU
+     Agricultural Supplies" instead of a bare name) — the module extracted
+     commodity names but silently dropped the SCU count that was sitting
+     right there in the same "Deliver N/TOTAL SCU of X to..." line. New
+     `_commodity_quantities()` builds a commodity-name -> total-SCU map
+     once per contract (the "Collect X from Y" pickup line never carries a
+     quantity itself — it's the same cargo moving through both ends, so
+     the map is looked up for both roles). `_extract_commodities()` now
+     returns `(name, qty)` pairs; `_cargo_label()` formats accordingly and
+     still accepts bare strings for contracts saved before this change
+     (old `commodities` lists in `config.json` aren't migrated). Verified
+     against real pasted OCR text for a single-commodity contract and a
+     genuine two-commodity contract (Waste 6 SCU + Scrap 7 SCU, same
+     pickup/dropoff pair) — both quantities correct on both ends.
+  2. **Drop-off now wins ties over pickup in route ordering.** When a
+     station has both a due pickup and a due drop-off at equal travel
+     cost (most commonly "same stop, cost 0" — already standing there),
+     `_plan_route`'s nearest-neighbour `min()` previously picked whichever
+     came first in `nodes`, which happened to always be pickups (built
+     before drop-offs per contract in `_stop_nodes`) — an accident of
+     internal ordering, not a deliberate choice. Per user direction
+     (clear cargo you're already carrying before loading more), the
+     nearest-neighbour cost key now breaks ties by role
+     (`dropoff` before `pickup`) before falling back to list order.
+
+- **2026-09-04 — Settings > Relaunch review, user-reported "the old
+  process isn't always fully dead before the new one starts."** Found
+  two real gaps on inspection (not yet reproduced live):
+  1. `GlobalHotkey` (`host/hotkey.py`) stored the return value of
+     `keyboard.hook()` in `self._hook` but never actually called
+     `keyboard.unhook()` on it anywhere — `clear()` (used both by
+     Settings' own Clear button and, previously, by shutdown) only reset
+     the combo/callback, deliberately leaving the OS-level `WH_KEYBOARD_LL`
+     hook installed since a user might set a new combo later without
+     restarting. That's correct for the Settings Clear case but wrong for
+     process exit — added a separate `GlobalHotkey.shutdown()` that stops
+     the reconcile `QTimer` and actually `keyboard.unhook()`s the hook,
+     called from `closeEvent` and `relaunch()` instead of `clear()`. The
+     OS does remove a dead process's hook automatically, but the old
+     instance was reachable for a bit *before* fully dying (see next
+     item) and would have kept a genuinely live global hook until then.
+  2. `relaunch()` started the new process (`subprocess.Popen`) *before*
+     tearing this instance down (`self.close()` / `quit()`) — meaning
+     both instances could be briefly alive together: two global keyboard
+     hooks racing for the same Stow/Deploy combo, and the new instance
+     reading `config.json` before this one's `closeEvent`-driven
+     `window_geometry` save had landed. Reordered: save geometry + hotkey
+     shutdown now happen first, then the new process is spawned, then
+     this one closes.
+  3. Added `os._exit(0)` as a hard stop at the very end of `relaunch()`,
+     after everything that needs saving is already done. `keyboard`'s own
+     listener thread is daemon (verified in the installed package,
+     `_generic.py`), so it isn't the risk — but easyocr/torch's native
+     (non-Python) thread pools are a known source of slow/stuck CPython
+     interpreter shutdown on Windows once a Logistics Hub scan has
+     actually loaded them, which lines up with the reported symptom.
+     `os._exit()` skips that risk entirely instead of trusting
+     `sys.exit(app.exec())` to return promptly.
+  Code-reviewed and syntax-checked; not yet live-tested (needs a
+  relaunch after running at least one Logistics Hub scan, to actually
+  exercise the torch-loaded case the fix targets).
+
+- 2026-09-04: **Logistics Hub debug log added** (`logistics_hub_debug.jsonl`,
+  always-on, append-only JSON Lines). Purpose: accumulate real usage data
+  the user can hand to an AI later to evaluate whether parsing/routing is
+  holding up. Scoped with the user before building rather than assumed:
+  - Always-on, no Settings toggle — simplest, and avoids forgetting to
+    enable it before a session worth capturing.
+  - Lives at `paths.app_root() / "logistics_hub_debug.jsonl"`, same helper
+    `config.json` uses, for the same reason (must persist outside a frozen
+    build's wiped temp extraction dir).
+  - No size cap/rotation — user manages the file manually; scan-triggered
+    logging won't grow large quickly.
+  One JSON object appended per scan (`LogisticsHubModule._log_scan_debug`,
+  called from `refresh()`), with `note` = `"added"` or `"duplicate_pending"`:
+  timestamp, raw OCR text, every candidate phrase with its role hint and
+  priority (`_candidate_phrases()`'s own output, not re-derived), the
+  built contract dict (pickups/dropoffs/commodities/reward/ambiguous
+  notes), and a route snapshot reusing the existing `_format_route_text()`
+  (the same text COPY ROUTE already produces) rather than a second
+  route-formatting implementation. Write is wrapped in try/except OSError
+  so a log-write failure can never break a scan. Code-reviewed and
+  syntax-checked only — not yet live-tested (needs a real scan to confirm
+  the file actually gets written and is valid JSONL).
+
+- 2026-09-04: **Bug fix: Logistics Hub relaunch showed persisted contracts
+  but an empty ROUTE section.** `self._route_order` is in-memory only
+  (never persisted) and was only ever recomputed by `_plan_route()` inside
+  a scan, a location change, or CLEAR — `create_card()` rendered whatever
+  contracts config.json restored without ever recomputing the route for
+  them. Fixed by calling `_plan_route(contracts)` in `create_card()` right
+  after loading, before the first `_render_results()`, when there are any
+  persisted contracts. Code-reviewed and syntax-checked only — not yet
+  live-tested (needs a relaunch with existing contracts to confirm ROUTE
+  now shows immediately). **User confirmed 2026-09-04: fixed** — relaunch
+  with existing contracts now shows ROUTE immediately.

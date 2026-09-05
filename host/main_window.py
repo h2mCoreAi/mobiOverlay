@@ -334,6 +334,35 @@ class _SettingsPanel(QWidget):
             text_row.control_row.addWidget(btn)
         layout.addWidget(text_row)
 
+        # -- Debug Console --
+        console_row = _SettingsRow(
+            "DEBUG CONSOLE",
+            "Shows a console window with log output. Applies after a relaunch.",
+        )
+        current_show_console = main_window.config.data["ui"].get("show_console", False)
+        console_btn = QPushButton()
+        console_btn.setCheckable(True)
+        console_btn.setChecked(current_show_console)
+        console_btn.setText("ON" if current_show_console else "OFF")
+        console_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {theme.TEXT_MUTED};
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 10px;
+                font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
+            }}
+            QPushButton:checked {{
+                color: {theme.ACCENT_CYAN}; border: 1px solid {theme.BORDER_CYAN};
+            }}
+        """)
+
+        def _on_console_toggled(checked: bool):
+            console_btn.setText("ON" if checked else "OFF")
+            main_window.set_show_console(checked)
+
+        console_btn.toggled.connect(_on_console_toggled)
+        console_row.control_row.addWidget(console_btn)
+        layout.addWidget(console_row)
+
         # -- Relaunch --
         relaunch_row = QWidget()
         relaunch_layout = QHBoxLayout(relaunch_row)
@@ -392,8 +421,8 @@ class _TitleBar(QWidget):
         layout.setContentsMargins(14, 0, 12, 0)
 
         wordmark = QLabel(
-            f'<span style="color:{theme.TEXT_PRIMARY};">MOBI</span>'
-            f'<span style="color:{theme.ACCENT_CYAN};">OVERLAY</span>'
+            f'<span style="color:{theme.TEXT_PRIMARY};">mobi</span>'
+            f'<span style="color:{theme.ACCENT_CYAN};">Overlay</span>'
         )
         wordmark.setObjectName("wordmark")
         # Rich-text QLabels default to Qt::LinksAccessibleByMouse, which
@@ -765,6 +794,10 @@ class MainWindow(QWidget):
         self.config.data["ui"]["font_scale"] = scale
         self.config.save()
 
+    def set_show_console(self, show_console: bool):
+        self.config.data["ui"]["show_console"] = show_console
+        self.config.save()
+
     def show_tray(self):
         panel = _TrayPanel(self)
         btn = self.title_bar.tray_btn
@@ -778,6 +811,14 @@ class MainWindow(QWidget):
         panel.show()
 
     def relaunch(self):
+        # Release this instance's exclusive resources *before* starting the
+        # new one, not after — spawning the new process first (the old
+        # order) left a window where both instances could be alive at
+        # once: two live global keyboard hooks racing for the same Stow/
+        # Deploy hotkey, and the new instance reading config.json before
+        # this one's window_geometry save had actually landed.
+        self._save_window_geometry()
+        self._hotkey.shutdown()
         subprocess.Popen(relaunch_command(), cwd=str(app_root()))
         self.close()
         # Not just self.close(): the Settings panel that owns this button
@@ -785,8 +826,19 @@ class MainWindow(QWidget):
         # still counts as a window), so Qt's quitOnLastWindowClosed never
         # fires and the old process lingers indefinitely. Quit explicitly.
         QApplication.instance().quit()
+        # Belt-and-suspenders against the user-reported symptom this was
+        # written for ("the old process isn't always fully gone before the
+        # new one starts"): everything that must be saved is already done
+        # above, so don't trust a normal interpreter shutdown to finish
+        # promptly from here. Once a Logistics Hub scan has loaded
+        # easyocr/torch, their native (non-Python) thread pools are a
+        # known source of slow or stuck interpreter teardown on Windows —
+        # os._exit() ends the process immediately instead of waiting on
+        # that.
+        import os
+        os._exit(0)
 
-    def closeEvent(self, event):
+    def _save_window_geometry(self):
         # If stowed, self.x()/y()/width()/height() describe the tiny pill,
         # not a size worth reopening at next launch — save the geometry
         # from before it was stowed instead.
@@ -796,5 +848,12 @@ class MainWindow(QWidget):
             x, y, w, h = self.x(), self.y(), self.width(), self.height()
         self.config.data["ui"]["window_geometry"] = {"x": x, "y": y, "width": w, "height": h}
         self.config.save()
-        self._hotkey.clear()
+
+    def closeEvent(self, event):
+        self._save_window_geometry()
+        # Fully releases the OS-level global keyboard hook and its
+        # watchdog timer, not just this app's own combo/callback state —
+        # see `GlobalHotkey.shutdown()`. Safe to call even if `relaunch()`
+        # already called it (idempotent).
+        self._hotkey.shutdown()
         super().closeEvent(event)

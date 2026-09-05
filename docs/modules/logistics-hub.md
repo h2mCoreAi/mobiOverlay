@@ -134,6 +134,16 @@ collision bug that made a shared, endpoint-safe service worth building.
 - No auto-rescan — on-demand SCAN CONTRACT only (removed 2026-09-04, see
   DECISIONS.md)
 
+## Debug log
+
+Always-on, append-only JSON Lines file at `paths.app_root() /
+"logistics_hub_debug.jsonl"` (next to `config.json`, not inside the module
+folder). One JSON object per scan (`_log_scan_debug()`, called from
+`refresh()`): timestamp, raw OCR text, candidate phrases with role
+hint/priority, the built contract, and a route snapshot (reuses
+`_format_route_text()`, the same text COPY ROUTE produces). No cap/rotation
+— user manages the file manually. See DECISIONS.md, 2026-09-04, for scoping.
+
 ## Settings (modules.logistics_hub in config.json)
 
 - `region`: `{x, y, w, h}` of the last selected capture rectangle

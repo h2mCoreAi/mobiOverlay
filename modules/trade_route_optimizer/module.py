@@ -21,15 +21,21 @@ ALL_SYSTEMS = "All Systems"
 _COMBO_STYLE = f"""
     QComboBox {{
         background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
+        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 22px 4px 6px;
         font-family: "{theme.FONT_DISPLAY}"; font-weight: 700; font-size: {theme.fpx(12)}px;
+    }}
+    QComboBox::drop-down {{
+        width: 18px; border: none;
     }}
 """
 _FILTER_COMBO_STYLE = f"""
     QComboBox {{
         background: {theme.BG_VOID}; color: {theme.TEXT_MUTED};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 2px 4px;
+        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 2px 18px 2px 4px;
         font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
+    }}
+    QComboBox::drop-down {{
+        width: 16px; border: none;
     }}
 """
 _INVESTMENT_STYLE = f"""
@@ -50,7 +56,13 @@ _LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; fo
 
 class TradeRouteOptimizerModule(ModuleBase):
     module_id = "trade_route_optimizer"
-    display_name = "Trade Routes"
+    # Rich-text mobi-branding, same pattern as Logistics Hub's
+    # display_name (host/card.py's title_label no longer forces
+    # uppercase, so this mixed case survives intact).
+    display_name = (
+        f'<span style="color:{theme.TEXT_PRIMARY};">mobi</span>'
+        f'<span style="color:{theme.ACCENT_CYAN};">Trade</span>'
+    )
 
     def __init__(self, api_client, config):
         super().__init__(api_client, config)

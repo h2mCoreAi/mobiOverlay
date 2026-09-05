@@ -76,7 +76,13 @@ _OFFSET_LABEL_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MON
 
 class CrosshairModule(ModuleBase):
     module_id = "crosshair"
-    display_name = "Crosshair"
+    # Rich-text mobi-branding, same pattern as Logistics Hub's
+    # display_name (host/card.py's title_label no longer forces
+    # uppercase, so this mixed case survives intact).
+    display_name = (
+        f'<span style="color:{theme.TEXT_PRIMARY};">mobi</span>'
+        f'<span style="color:{theme.ACCENT_CYAN};">Aim</span>'
+    )
 
     def __init__(self, api_client, config):
         super().__init__(api_client, config)

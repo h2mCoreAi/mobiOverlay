@@ -1,10 +1,44 @@
 """mobiOverlay entry point."""
+import ctypes
 import logging
+import re
 import sys
 from pathlib import Path
 
 # Allow `python host/main.py` to resolve the `host` and `modules` packages.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from host.config import Config
+
+
+def _maybe_allocate_console():
+    """Debug feature: Settings > Debug Console (host/config.py's
+    ui.show_console). Only does anything meaningful for the packaged exe
+    (mobioverlay.spec builds console=False, so stdout/stderr normally go
+    nowhere and every log line is silently dropped) or a source run
+    launched with no console already attached (e.g. via a shortcut).
+    Running `python host/main.py` from an actual terminal already has a
+    console — GetConsoleWindow() catches that and this becomes a no-op.
+    Must run before logging.basicConfig() (which grabs sys.stderr at call
+    time) and before anything else prints or logs.
+    """
+    try:
+        show_console = Config().data.get("ui", {}).get("show_console", False)
+    except Exception:
+        show_console = False
+    if not show_console or sys.platform != "win32":
+        return
+    kernel32 = ctypes.windll.kernel32
+    if kernel32.GetConsoleWindow():
+        return  # already attached to one
+    if not kernel32.AllocConsole():
+        return
+    sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+    sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+    sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
+
+
+_maybe_allocate_console()
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFontDatabase
@@ -15,9 +49,9 @@ import time
 from host import theme
 from host.api_client import UexApiClient
 from host.card import Card
-from host.config import Config
 from host.main_window import MainWindow
 from host.module_loader import discover_modules
+from host.splash import show_splash, set_status
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("mobioverlay")
@@ -30,6 +64,13 @@ DEFAULT_REFRESH_SECONDS = 300
 # after the fact so a slow module is visible in the log rather than just
 # manifesting as "the app feels laggy" with no lead.
 SLOW_CALL_WARN_SECONDS = 2.0
+
+
+def _plain_text(html_or_text: str) -> str:
+    """Module display_name values are rich HTML (the mobi<Name> branding —
+    see docs/DECISIONS.md) but QSplashScreen.showMessage() renders plain
+    text only, so a raw display_name would print its literal <span> tags."""
+    return re.sub(r"<[^>]+>", "", html_or_text)
 
 
 def load_fonts():
@@ -87,6 +128,7 @@ def safe_create_card(module, parent):
 
 
 def main():
+    startup_start = time.monotonic()
     app = QApplication(sys.argv)
     # MainWindow uses Qt.Tool (see main_window.py), which Qt excludes from
     # its "last window" tracking — so without this, closing any ordinary
@@ -94,6 +136,10 @@ def main():
     # looks to Qt like the last real window closed, and quits the whole app
     # out from under the still-open, still-Qt.Tool main window.
     app.setQuitOnLastWindowClosed(False)
+
+    splash = show_splash()
+    app.processEvents()
+
     load_fonts()
 
     config = Config()
@@ -108,12 +154,19 @@ def main():
     )
 
     window = MainWindow(config)
-    modules = discover_modules(api_client, config)
+
+    def _on_module_loading(name):
+        set_status(splash, f"Loading {name.replace('_', ' ').title()}...")
+
+    discover_start = time.monotonic()
+    modules = discover_modules(api_client, config, on_module_loading=_on_module_loading)
+    logger.info("discover_modules() took %.2fs total", time.monotonic() - discover_start)
     if not modules:
         logger.warning("No modules loaded — the overlay will show an empty container.")
 
     timers = []  # keep references alive
     for module in modules:
+        set_status(splash, f"Starting {_plain_text(module.display_name)}...")
         card = safe_create_card(module, window.card_container)
         if card is None:
             continue
@@ -127,12 +180,15 @@ def main():
         safe_refresh()  # initial fetch
 
         interval_s = module.settings.get("refresh_interval_seconds", DEFAULT_REFRESH_SECONDS)
-        timer = QTimer()
-        timer.timeout.connect(safe_refresh)
-        timer.start(interval_s * 1000)
-        timers.append(timer)
+        if interval_s:
+            timer = QTimer()
+            timer.timeout.connect(safe_refresh)
+            timer.start(interval_s * 1000)
+            timers.append(timer)
 
     window.show()
+    splash.finish(window)
+    logger.info("Startup (app creation to window.show()) took %.2fs total", time.monotonic() - startup_start)
 
     # Belt-and-suspenders: re-apply sizing once more after the window has
     # actually been shown and painted once. On some runs the very first

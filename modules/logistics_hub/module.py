@@ -45,6 +45,7 @@ pickup — and never visits a drop-off before every pickup on its own
 contract has been visited, since cargo can't be delivered before it's
 been collected.
 """
+import json
 import re
 import time
 import uuid
@@ -72,7 +73,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from host import theme
+from host import paths, theme
 from host.locations import LocationService
 from host.module_base import ModuleBase
 
@@ -96,6 +97,8 @@ except ImportError:
     OCR_AVAILABLE = False
 
 COPY_ROUTE_CONFIRM_MS = 1500  # how long the COPY ROUTE button shows "COPIED" before reverting
+
+DEBUG_LOG_FILENAME = "logistics_hub_debug.jsonl"  # always-on scan history, see docs/DECISIONS.md
 
 # Real UEX distance (LocationService.distance(), see host/locations.py) is
 # the primary travel cost between two resolved locations now — genuine
@@ -127,7 +130,29 @@ _PICKUP_COMMODITY_RE = re.compile(r"\bcollect\s+(.+?)\s+from\s+(.+)", re.I)
 _DROPOFF_COMMODITY_RE = re.compile(r"\bdeliver\s+[\d/]*\s*scu\s+of\s+(.+?)\s+to\s+(.+)", re.I)
 
 
-def _extract_commodities(raw_text: str, location_raw: str, role: str) -> list[str]:
+_SCU_QTY_RE = re.compile(r"\bdeliver\s+\d+/(\d+)\s*scu\s+of\s+(.+?)\s+to\b", re.I)
+
+
+def _commodity_quantities(raw_text: str) -> dict[str, str]:
+    """Map each commodity name to its total SCU count, read from the
+    "Deliver N/TOTAL SCU of X to..." line. The matching "Collect X from Y"
+    pickup line never carries a quantity of its own — it's the same cargo
+    moving through both ends of the same contract, so this is looked up
+    once per contract from whichever line does have it and applied to
+    both roles' display."""
+    qty: dict[str, str] = {}
+    for line in raw_text.splitlines():
+        m = _SCU_QTY_RE.search(line)
+        if m:
+            commodity = re.sub(r"[.:_,;]+$", "", m.group(2)).strip().lower()
+            if commodity:
+                qty[commodity] = m.group(1)
+    return qty
+
+
+def _extract_commodities(
+    raw_text: str, location_raw: str, role: str, qty_by_commodity: dict[str, str] | None = None
+) -> list[tuple[str, str | None]]:
     """What cargo is actually changing hands at one pickup/drop-off — the
     thing the module never surfaced at all before, even though every real
     contract line spells it out ("Collect Silicon from...", "Deliver...of
@@ -148,9 +173,10 @@ def _extract_commodities(raw_text: str, location_raw: str, role: str) -> list[st
     if not loc_key:
         return []
     pattern = _PICKUP_COMMODITY_RE if role == "pickup" else _DROPOFF_COMMODITY_RE
+    qty_by_commodity = qty_by_commodity or {}
 
     lines = raw_text.splitlines()
-    found: list[str] = []
+    found: list[tuple[str, str | None]] = []
     seen: set[str] = set()
     for i, line in enumerate(lines):
         m = pattern.search(line)
@@ -172,7 +198,7 @@ def _extract_commodities(raw_text: str, location_raw: str, role: str) -> list[st
         key = commodity.lower()
         if commodity and key not in seen:
             seen.add(key)
-            found.append(commodity)
+            found.append((commodity, qty_by_commodity.get(key)))
     return found
 
 
@@ -188,8 +214,21 @@ def _extract_commodities(raw_text: str, location_raw: str, role: str) -> list[st
 _CARGO_UNKNOWN = "cargo unknown — check raw OCR text"
 
 
-def _cargo_label(commodities: list[str] | None) -> str:
-    return "/".join(commodities) if commodities else _CARGO_UNKNOWN
+def _cargo_label(commodities: list | None) -> str:
+    """Render one entry's commodity list, with SCU quantity when known
+    ("13 SCU Agricultural Supplies") — bare name only when it isn't (older
+    saved contracts persisted before quantity tracking was added carry
+    plain strings instead of (name, qty) pairs, so both are accepted)."""
+    if not commodities:
+        return _CARGO_UNKNOWN
+    parts = []
+    for c in commodities:
+        if isinstance(c, (list, tuple)):
+            name, qty = c
+        else:
+            name, qty = c, None
+        parts.append(f"{qty} SCU {name}" if qty else name)
+    return "/".join(parts)
 
 
 def _all_commodity_names(raw_text: str) -> set[str]:
@@ -441,6 +480,42 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str, int]]:
                 continue
             add_candidate(m.group(0), hint, priority)
 
+        # A location name itself (not just the flavor text around it) can be
+        # split across a line wrap by the same two-column OCR reordering,
+        # e.g. "...SCU of Agricultural Supplies to Everus" / "Harbor above
+        # Hurston:" — the real name "Everus Harbor" never appears intact on
+        # either line, so the phrase regex above can't see it at all, and
+        # the location only resolves via a *different*, unrelated mention
+        # elsewhere that gets whatever hint lookback happens to guess.
+        # Confirmed real: this silently reversed pickup/dropoff for a
+        # contract whose "Deliver...to X" line wrapped, while the actual
+        # pickup keyword ("Collect...from Y") landed on an adjacent line by
+        # coincidence and lookback attached its hint to the wrapped dropoff
+        # name instead. Re-scan the current line joined with the next one,
+        # reusing the current line's own hint/priority — if the keyword and
+        # its object are on this line (own_line), the reassembled full name
+        # now gets that same trustworthy hint instead of an unrelated
+        # lookback guess. Purely additive: `add_candidate` only replaces an
+        # existing entry on a strictly higher priority, and a bogus joined
+        # phrase simply won't resolve against real UEX data later.
+        #
+        # Restricted to `own_line` on purpose — trying this for every line
+        # (including lookback/section/neutral lines) backfired in practice:
+        # joining a lookback-hinted line with its neighbor let the *same*
+        # contamination this is meant to fix reach one line further than
+        # before, wrongly dragging an unrelated, correctly-neutral phrase
+        # ("Seraphim Station", two lines after the real dropoff keyword)
+        # into that keyword's hint. Only a line whose keyword is directly
+        # on it is trustworthy enough to extend across the wrap.
+        if hint_source == "own_line" and line_idx + 1 < len(raw_lines):
+            joined = f"{line} {raw_lines[line_idx + 1]}"
+            for m in re.finditer(
+                r"[A-Z][a-zA-Z']+(?:\s+[A-Z][a-zA-Z']+){1,3}(?:\s+(?=\S*\d)[A-Za-z0-9-]+)?",
+                joined,
+            ):
+                phrase = " ".join(m.group(0).split())
+                add_candidate(phrase, hint, priority)
+
     return candidates
 
 
@@ -448,7 +523,7 @@ class _RegionSelector(QWidget):
     """Full‑screen transparent widget used to drag‑draw a capture rectangle.
 
     Only shows on the screen where the cursor is at the moment the user
-    clicks “SELECT REGION”.  Coordinates emitted in global desktop space.
+    clicks “SET SCAN AREA”.  Coordinates emitted in global desktop space.
     """
 
     selected = Signal(QRect)
@@ -587,15 +662,22 @@ class LogisticsHubModule(ModuleBase):
     module_id = "logistics_hub"
     # Rich-text, styled like the main window's own wordmark (see
     # host/main_window.py's _TitleBar) — Card's title_label (host/card.py)
-    # renders whatever it's given as HTML, and .upper()'s case change is a
-    # no-op on tag names/hex colors, so this survives that unaffected.
+    # renders whatever it's given as HTML and no longer forces uppercase,
+    # so this mixed-case branding survives intact.
     display_name = (
-        f'<span style="color:{theme.TEXT_PRIMARY};">MOBI</span>'
-        f'<span style="color:{theme.ACCENT_CYAN};">LOGISTICS</span>'
+        f'<span style="color:{theme.TEXT_PRIMARY};">mobi</span>'
+        f'<span style="color:{theme.ACCENT_CYAN};">Logistics</span>'
     )
 
     def __init__(self, api_client, config):
         super().__init__(api_client, config)
+        # This module is on-demand only (SCAN CONTRACT) — the host's generic
+        # periodic-refresh timer would otherwise call refresh() every
+        # DEFAULT_REFRESH_SECONDS and re-OCR whatever's on screen at that
+        # moment (desktop, chat, menus...), silently appending garbage
+        # "contracts". 0 tells host/main.py to skip starting that timer for
+        # this module; explicit user config can still override it.
+        self.settings.setdefault("refresh_interval_seconds", 0)
         self._selector = None
         self._card_widget = None
         self._copy_route_revert_timer: QTimer | None = None
@@ -656,8 +738,11 @@ class LogisticsHubModule(ModuleBase):
             QComboBox {{
                 background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
                 border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
-                padding: 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
+                padding: 4px 22px 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
                 font-size: {theme.fpx(11)}px;
+            }}
+            QComboBox::drop-down {{
+                width: 18px; border: none;
             }}
             """
         )
@@ -683,7 +768,7 @@ class LogisticsHubModule(ModuleBase):
         )
         region_row.addWidget(self._region_label, 1)
 
-        select_btn = QPushButton("SELECT REGION")
+        select_btn = QPushButton("SET SCAN AREA")
         select_btn.setStyleSheet(self._button_style())
         select_btn.clicked.connect(self._select_region)
         region_row.addWidget(select_btn)
@@ -784,6 +869,13 @@ class LogisticsHubModule(ModuleBase):
 
         self._refresh_region_label()
         self._populate_location_combo()
+        # Contracts persist across restarts, but _route_order is in-memory
+        # only and starts empty — without recomputing it here, a relaunch
+        # shows every persisted contract but an empty ROUTE section until
+        # the next scan or location change happens to replan it.
+        contracts = self.settings.get("contracts", [])
+        if contracts:
+            self._route_order = self._plan_route(contracts)
         self._render_results()
         card.apply_size()
         return card
@@ -813,7 +905,7 @@ class LogisticsHubModule(ModuleBase):
             self._status_label.setText(msg)
 
     def _clear_error_state(self):
-        """Make sure the card body (with the SELECT REGION button) is visible
+        """Make sure the card body (with the SET SCAN AREA button) is visible
         even if the host previously put this card into its error state due to
         a missing capture region."""
         card = getattr(self, "_card_widget", None)
@@ -1029,7 +1121,7 @@ class LogisticsHubModule(ModuleBase):
 
         region = self.settings.get("region")
         if not region:
-            self._set_status("No capture region set — use SELECT REGION on the card first.")
+            self._set_status("No capture region set — use SET SCAN AREA on the card first.")
             self._clear_error_state()
             return
         if not OCR_AVAILABLE:
@@ -1046,14 +1138,39 @@ class LogisticsHubModule(ModuleBase):
         if contract is None:
             raise ValueError("No usable text could be OCR'd — try adjusting the region or brightness.")
 
+        candidates = _candidate_phrases(raw_text)
+
         contracts = self.settings.setdefault("contracts", [])
         if any(self._is_likely_duplicate(c, contract) for c in contracts):
             self._pending_duplicate = contract
             self._show_duplicate_popup()
             self._set_status("Duplicate detected — confirm or deny.")
+            self._log_scan_debug(raw_text, candidates, contract, "duplicate_pending")
             return
 
         self._add_contract(contract)
+        self._log_scan_debug(raw_text, candidates, contract, "added")
+
+    def _log_scan_debug(self, raw_text: str, candidates: list[tuple[str, str, int]], contract: dict, note: str) -> None:
+        """Append one JSON line per scan to an always-on debug log, so real
+        usage accumulates into a file the user can hand to an AI later to
+        evaluate whether parsing/routing is holding up. Mirrors the level of
+        detail this session's own live debugging relied on (console output +
+        COPY ROUTE export) — see docs/DECISIONS.md, 2026-09-04."""
+        entry = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "note": note,
+            "raw_text": raw_text,
+            "candidates": [{"phrase": p, "hint": h, "priority": pr} for p, h, pr in candidates],
+            "contract": contract,
+            "route_snapshot": self._format_route_text(),
+        }
+        try:
+            log_path = paths.app_root() / DEBUG_LOG_FILENAME
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except OSError:
+            logger.warning("Failed to write logistics_hub debug log entry", exc_info=True)
 
     def _add_contract(self, contract: dict):
         contracts = self.settings.setdefault("contracts", [])
@@ -1390,7 +1507,7 @@ class LogisticsHubModule(ModuleBase):
         }
 
     @staticmethod
-    def _entry_commodities(raw_text: str, entry: dict, role: str) -> list[str]:
+    def _entry_commodities(raw_text: str, entry: dict, role: str) -> list[tuple[str, str | None]]:
         """Try every name this location is known by — every raw OCR
         spelling that resolved to it (`_aka`, including ones that only
         got there via disambiguation and would otherwise be lost — a
@@ -1406,14 +1523,15 @@ class LogisticsHubModule(ModuleBase):
             for k in (terminal.get("nickname"), terminal.get("name")):
                 if k:
                     keys.append(k)
-        found: list[str] = []
+        qty_by_commodity = _commodity_quantities(raw_text)
+        found: list[tuple[str, str | None]] = []
         seen: set[str] = set()
         for key in keys:
-            for commodity in _extract_commodities(raw_text, key, role):
+            for commodity, qty in _extract_commodities(raw_text, key, role, qty_by_commodity):
                 ck = commodity.lower()
                 if ck not in seen:
                     seen.add(ck)
-                    found.append(commodity)
+                    found.append((commodity, qty))
         return found
 
     # ------------------------------------------------------------------
@@ -1498,9 +1616,21 @@ class LogisticsHubModule(ModuleBase):
                 break
 
             if current_terminal is not None or current_raw is not None:
+                # Tie-break toward drop-off over pickup at equal cost (e.g.
+                # two stops at the same real station, "same stop" cost 0) —
+                # per user direction, clearing cargo you're already carrying
+                # takes priority over loading more while you're standing at
+                # a station that needs both. `min` is stable, so without
+                # this the winner on a tie was just whichever node happened
+                # to come first in `nodes` (pickups are built before
+                # drop-offs per contract in `_stop_nodes`, so pickups won
+                # every tie by accident, not by design).
                 best = min(
                     candidates,
-                    key=lambda idx: self._cost_to_node(contracts, nodes[idx], current_terminal, current_raw),
+                    key=lambda idx: (
+                        self._cost_to_node(contracts, nodes[idx], current_terminal, current_raw),
+                        0 if nodes[idx][1] == "dropoff" else 1,
+                    ),
                 )
             else:
                 # No known starting point at all (location never set) — no

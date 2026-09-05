@@ -180,6 +180,28 @@ class GlobalHotkey(QObject):
         self._state.clear()
         self._callback = None
 
+    def shutdown(self):
+        """Fully releases the OS-level global hook and its watchdog timer —
+        for process exit only. `clear()` above is for the user clearing/
+        reconfiguring the hotkey while the app keeps running (it just
+        blanks the combo so `handle_event` becomes a no-op); it
+        deliberately leaves the hook itself installed since a new combo
+        might be set later without restarting. The hook was previously
+        never explicitly removed at all — Windows does clean up a
+        WH_KEYBOARD_LL hook once its owning process actually dies, but
+        leaving it live through an in-progress, possibly slow shutdown
+        (easyocr/torch's native thread pools can delay interpreter
+        teardown once a scan has run) meant Relaunch could briefly have
+        the old and new instance both holding a live global hook at once.
+        Safe to call more than once."""
+        self._reconcile_timer.stop()
+        if self._hook is not None:
+            try:
+                keyboard.unhook(self._hook)
+            except Exception:
+                pass
+            self._hook = None
+
     def capture_combo(self, on_captured, on_error=None):
         """Blocks (on a background thread) until the user presses and
         releases a key combo, then reports it back via `on_captured` —
