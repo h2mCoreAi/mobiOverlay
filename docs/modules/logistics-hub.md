@@ -17,9 +17,10 @@ order across every accepted contract.
   should start from
 - Output: a running list of contracts (pickups → drop-offs, commodities,
   reward) and a suggested visiting order across all of them
-- On-demand scan only by default (SCAN CONTRACT button) — an opt-in
-  AUTO RESCAN toggle exists but is off by default, per the original design
-  goal of not continuously burning CPU/memory watching a region
+- On-demand scan only (SCAN CONTRACT button) — no auto-rescan, per the
+  original design goal of not continuously burning CPU/memory watching a
+  region (an opt-in auto-rescan toggle existed briefly but was removed
+  2026-09-04, unused)
 
 ## OCR engine
 
@@ -103,16 +104,35 @@ collision bug that made a shared, endpoint-safe service worth building.
   searching by either works
 - SCAN CONTRACT button (flips to "SCANNING…" and disables itself while
   OCR/API work runs, since it's fully synchronous on the GUI thread — no
-  progress signal without a threading redesign), CLEAR button, and COPY
-  ROUTE (exports the full contract list + suggested route + per-edge
-  cost/distance + raw OCR text as plain text, to the clipboard)
-- AUTO RESCAN checkbox (off by default)
-- Scrollable contract list (pickups → drop-offs, commodities, reward) +
-  suggested visiting order; amber warning rows for any still-ambiguous
-  location
+  progress signal without a threading redesign), COPY ROUTE (exports the
+  full contract list + suggested route + per-edge cost/distance + raw OCR
+  text as plain text, to the clipboard; briefly shows "COPIED" on click),
+  and CLEAR (placed away from SCAN/COPY since it's destructive and easy to
+  hit by reflex reaching for the others)
+- A CONTRACTS section (pickups → drop-offs, commodities, reward, each
+  with a per-contract remove button, plus amber warning rows for any
+  still-ambiguous location) in its own dedicated scroll area on the card.
+  Briefly tried as a detached popup window (2026-09-04) — reverted same
+  day: the popup's title bar close button triggered
+  `quitOnLastWindowClosed`, quitting the whole app (the main window's
+  `Qt.Tool` flag excludes it from Qt's "last window" count — fixed at the
+  host level regardless, see DECISIONS.md, but the user also didn't want
+  a popup for this). Landed on a second, independent `QScrollArea` inside
+  the card instead of sharing one with ROUTE below it — the original
+  inline version shared one scroll area with ROUTE and a freshly-scanned
+  contract could leave that viewport scrolled into ROUTE, hiding
+  CONTRACTS; two independent scroll areas can't do that to each other.
+- A ROUTE section (suggested visiting order) inline on the card, in its
+  own scroll area. Each stop is click-toggleable (marks it done/skipped,
+  greyed out with strikethrough) and the whole section can be popped out
+  into its own always-on-top window (no minimize button — closing it
+  returns the view to the card; the underlying route/done-state lives on
+  the module regardless of whether the popout is open)
 - A themed CONFIRM/DENY popup (same `Qt.Popup` pattern as the app's
   Settings/Tray panels) when a scan looks like a duplicate of an
   already-added contract
+- No auto-rescan — on-demand SCAN CONTRACT only (removed 2026-09-04, see
+  DECISIONS.md)
 
 ## Settings (modules.logistics_hub in config.json)
 
@@ -122,7 +142,9 @@ collision bug that made a shared, endpoint-safe service worth building.
   scanned_at, ambiguous, raw_text}`
 - `current_location_name` / `current_location`: the picked starting point
   (display label + full resolved terminal record)
-- `auto_rescan`: bool, default false
+- `route_done`: list of `"{contract_id}:{role}:{index}"` keys for route
+  stops toggled done/skipped (per-stop, not per-contract, since a
+  contract can have several pickups or drop-offs)
 
 ## Done criteria
 

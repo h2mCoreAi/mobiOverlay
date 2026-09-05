@@ -88,6 +88,12 @@ def safe_create_card(module, parent):
 
 def main():
     app = QApplication(sys.argv)
+    # MainWindow uses Qt.Tool (see main_window.py), which Qt excludes from
+    # its "last window" tracking — so without this, closing any ordinary
+    # Qt.Window a module opens (e.g. Logistics Hub's popout/detail windows)
+    # looks to Qt like the last real window closed, and quits the whole app
+    # out from under the still-open, still-Qt.Tool main window.
+    app.setQuitOnLastWindowClosed(False)
     load_fonts()
 
     config = Config()

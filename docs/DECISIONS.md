@@ -861,3 +861,55 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
     a live `commodities_prices` and `commodities_routes` call cross-
     checked against the new nickname map) — not through the Qt UI.
   Phase 5 (shared current-location concept) is next and last.
+
+- **2026-09-04 — Logistics Hub UI/UX polish batch: auto-rescan removed,
+  route popout added, ROUTE renamed from "SUGGESTED VISITING ORDER".**
+  User-requested batch, independent of the location-service phased plan
+  (Phase 5 explicitly not being done). Notable pattern: the ROUTE popout
+  is a separate top-level QWidget (Qt.Window | Qt.WindowStaysOnTopHint,
+  no minimize button) that's just an alternate render target for the same
+  underlying `_route_order`/`route_done` state the card already owns —
+  closing it doesn't lose anything, it just switches `_render_results()`
+  back to rendering into the card's own layout. It's independent of the
+  main window's stow-to-pill mechanism (a resize of the same top-level
+  window, not a separate widget), so popping out and stowing don't
+  interact. Per-route-stop done/skip state is keyed by
+  `"{contract_id}:{role}:{index}"` (not list index) so it survives
+  contract removal/reordering.
+
+- **2026-09-04 — Logistics Hub CONTRACTS list moved out of the card into
+  its own detached window.** Follow-up to the polish batch above: the
+  inline contracts list shared one QScrollArea with the ROUTE section
+  below it, and in live testing a freshly-scanned contract reliably
+  landed the user's view in the ROUTE section instead of showing the new
+  contract — a shared-scroll-position problem, not a data bug (contracts
+  were always saved and correct; a restart showed them fine). Rather than
+  fight scroll-position/auto-scroll-to-top timing in a shared QScrollArea,
+  gave CONTRACTS the same detached-always-on-top-window treatment already
+  built for the ROUTE popout, and factored the shared shell into
+  `_make_always_on_top_window()` so both use the same window flags/scroll
+  setup. Per-contract remove still lives on the same row widget, now
+  inside that window instead of the card.
+
+- **2026-09-04 — Reverted the CONTRACTS detached-window popup; found and
+  fixed a real app-quit bug in the host along the way.** Two problems
+  surfaced in live testing of the previous entry's popup:
+  1. The CONTRACTS list still "disappeared" after a scan — because the
+     button opening it lived inside the same shared QScrollArea as the
+     ROUTE section, so it was just as vulnerable to being scrolled out of
+     view as the original inline list was. Fixed by giving CONTRACTS its
+     own independent `QScrollArea` on the card (separate from ROUTE's),
+     not a popup at all — the user explicitly didn't want the popup
+     approach either.
+  2. Closing the popup via its title-bar X closed the *entire app*. Root
+     cause: `host/main.py`'s `QApplication` never set
+     `quitOnLastWindowClosed`, so Qt's default (`True`) applied — and
+     `MainWindow` (`host/main_window.py`) uses `Qt.Tool`, which Qt
+     excludes from its "last window" tracking. So any ordinary
+     `Qt.Window` a module opens (the popup, and the still-present ROUTE
+     popout) looks like the *only* real window from Qt's point of view;
+     closing it quits the app out from under the still-open, still-
+     Qt.Tool main window. Fixed generally in `host/main.py` with
+     `app.setQuitOnLastWindowClosed(False)` — this was latent and would
+     have hit the ROUTE popout (or any future module window) too, not
+     just this one popup.

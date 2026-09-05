@@ -49,23 +49,25 @@ import re
 import time
 import uuid
 
-from PySide6.QtCore import Qt, QRect, QPoint, QTimer, Signal
+from PySide6.QtCore import Qt, QRect, QRectF, QPoint, QTimer, Signal
 from PySide6.QtGui import (
     QGuiApplication,
     QImage,
     QPainter,
+    QPainterPath,
     QColor,
     QPen,
 )
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QComboBox,
     QCompleter,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QScrollArea,
+    QSizeGrip,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -93,7 +95,7 @@ except ImportError:
     ImageOps = None  # type: ignore
     OCR_AVAILABLE = False
 
-AUTO_RESCAN_MS = 5 * 60 * 1000  # 5 minutes, off by default
+COPY_ROUTE_CONFIRM_MS = 1500  # how long the COPY ROUTE button shows "COPIED" before reverting
 
 # Real UEX distance (LocationService.distance(), see host/locations.py) is
 # the primary travel cost between two resolved locations now — genuine
@@ -583,13 +585,23 @@ class _DuplicatePopup(QWidget):
 
 class LogisticsHubModule(ModuleBase):
     module_id = "logistics_hub"
-    display_name = "Logistics Hub"
+    # Rich-text, styled like the main window's own wordmark (see
+    # host/main_window.py's _TitleBar) — Card's title_label (host/card.py)
+    # renders whatever it's given as HTML, and .upper()'s case change is a
+    # no-op on tag names/hex colors, so this survives that unaffected.
+    display_name = (
+        f'<span style="color:{theme.TEXT_PRIMARY};">MOBI</span>'
+        f'<span style="color:{theme.ACCENT_CYAN};">LOGISTICS</span>'
+    )
 
     def __init__(self, api_client, config):
         super().__init__(api_client, config)
         self._selector = None
-        self._timer = None
         self._card_widget = None
+        self._copy_route_revert_timer: QTimer | None = None
+        self._route_popout: QWidget | None = None
+        self._route_popout_layout: QVBoxLayout | None = None
+        self._route_popout_opacity_slider: QSlider | None = None
         self._reader = None
         # Shared Core service (host/locations.py) — one place resolving/
         # caching UEX location data for every module, not this module's
@@ -698,32 +710,60 @@ class LogisticsHubModule(ModuleBase):
         self._scan_btn.clicked.connect(self._safe_scan)
         action_row.addWidget(self._scan_btn)
 
+        self._copy_route_btn = QPushButton("COPY ROUTE")
+        self._copy_route_btn.setToolTip("Copies the suggested route (and full contract details) to the clipboard as plain text.")
+        self._copy_route_btn.setStyleSheet(self._button_style())
+        self._copy_route_btn.clicked.connect(self._copy_route_to_clipboard)
+        action_row.addWidget(self._copy_route_btn)
+
+        # CLEAR is placed last, away from SCAN/COPY, since it's destructive
+        # and the user has accidentally hit it reaching for the other two.
         clear_btn = QPushButton("CLEAR")
         clear_btn.setStyleSheet(self._button_style())
         clear_btn.clicked.connect(self._clear_contracts)
         action_row.addWidget(clear_btn)
-
-        copy_btn = QPushButton("COPY ROUTE")
-        copy_btn.setToolTip("Copies the suggested route (and full contract details) to the clipboard as plain text.")
-        copy_btn.setStyleSheet(self._button_style())
-        copy_btn.clicked.connect(self._copy_route_to_clipboard)
-        action_row.addWidget(copy_btn)
         layout.addLayout(action_row)
 
-        # ---- optional auto-rescan toggle -----------------------------
-        auto_row = QHBoxLayout()
-        self._auto_check = QCheckBox("AUTO RESCAN")
-        self._auto_check.setStyleSheet(
-            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
-            f"font-size: {theme.fpx(9)}px;"
-        )
-        self._auto_check.setChecked(bool(self.settings.get("auto_rescan")))
-        self._auto_check.toggled.connect(self._toggle_auto_rescan)
-        auto_row.addWidget(self._auto_check)
-        auto_row.addStretch()
-        layout.addLayout(auto_row)
+        # ---- contracts list (own scroll area — see 2026-09-04 DECISIONS ---
+        # entry: this used to share one scroll area with the ROUTE section
+        # below it, and a freshly-scanned contract could leave that shared
+        # viewport scrolled into ROUTE instead, hiding CONTRACTS. Two
+        # independent scroll areas means each keeps its own scroll position
+        # and neither can push the other out of view.
+        contracts_title_row = QHBoxLayout()
+        self._contracts_title = QLabel("CONTRACTS")
+        self._contracts_title.setStyleSheet(self._title_style())
+        contracts_title_row.addWidget(self._contracts_title, 1)
 
-        # ---- scrollable contracts / route list ------------------------
+        # Lives here (not next to the ROUTE title below) and is created
+        # once rather than rebuilt on every _render_results call — it used
+        # to be rebuilt inside the ROUTE section each render, which was
+        # fragile (see DECISIONS.md 2026-09-04: a clear-loop bug orphaned
+        # the old one on every second+ render, leaving a stale copy
+        # floating at its last position on top of the new one).
+        self._tracker_btn = QPushButton("TRACKER")
+        self._tracker_btn.setStyleSheet(self._button_style())
+        self._tracker_btn.clicked.connect(self._toggle_route_popout)
+        self._tracker_btn.setVisible(False)
+        contracts_title_row.addWidget(self._tracker_btn)
+        layout.addLayout(contracts_title_row)
+
+        self._contracts_scroll = QScrollArea()
+        self._contracts_scroll.setWidgetResizable(True)
+        self._contracts_scroll.setStyleSheet(
+            f"QScrollArea {{ background: transparent; border: 1px solid {theme.BORDER_FLAT}; "
+            f"border-radius: {theme.RADIUS}px; }}"
+        )
+        self._contracts_widget = QWidget()
+        self._contracts_layout = QVBoxLayout(self._contracts_widget)
+        self._contracts_layout.setContentsMargins(8, 8, 8, 8)
+        self._contracts_layout.setSpacing(4)
+        self._contracts_scroll.setWidget(self._contracts_widget)
+        self._contracts_scroll.setMinimumHeight(90)
+        self._contracts_scroll.setMaximumHeight(160)
+        layout.addWidget(self._contracts_scroll)
+
+        # ---- scrollable route list --------------------------------------
         self._results_scroll = QScrollArea()
         self._results_scroll.setWidgetResizable(True)
         self._results_scroll.setStyleSheet(
@@ -741,13 +781,6 @@ class LogisticsHubModule(ModuleBase):
 
         self._results_scroll.setMinimumHeight(180)
         self._results_scroll.setMaximumHeight(360)
-
-        # Timer for opt-in 5-minute auto rescanning.
-        self._timer = QTimer(card)
-        self._timer.setInterval(AUTO_RESCAN_MS)
-        self._timer.timeout.connect(self._safe_scan)
-        if self.settings.get("auto_rescan"):
-            self._timer.start()
 
         self._refresh_region_label()
         self._populate_location_combo()
@@ -854,21 +887,12 @@ class LogisticsHubModule(ModuleBase):
     def _current_location_terminal(self) -> dict | None:
         return self.settings.get("current_location")
 
-    def _toggle_auto_rescan(self, enabled: bool):
-        self.settings["auto_rescan"] = bool(enabled)
-        self._save_settings()
-        if enabled:
-            self._timer.start()
-            self._set_status("Auto rescan enabled.")
-        else:
-            self._timer.stop()
-            self._set_status("Auto rescan disabled.")
-
     def _save_settings(self):
         self.config.set_module_settings(self.module_id, self.settings)
 
     def _clear_contracts(self):
         self.settings["contracts"] = []
+        self.settings["route_done"] = []
         self._save_settings()
         self._route_order = []
         self._pending_duplicate = None
@@ -914,7 +938,7 @@ class LogisticsHubModule(ModuleBase):
                     lines.append(f"     | {raw_line}")
         lines.append("")
 
-        lines.append("SUGGESTED VISITING ORDER")
+        lines.append("ROUTE")
         if not self._route_order:
             lines.append("  (none)")
         total_cost = 0.0
@@ -955,6 +979,18 @@ class LogisticsHubModule(ModuleBase):
         QGuiApplication.clipboard().setText(text)
         self._set_status("Route copied to clipboard.")
 
+        if self._copy_route_revert_timer is not None:
+            self._copy_route_revert_timer.stop()
+        self._copy_route_btn.setText("COPIED")
+        self._copy_route_revert_timer = QTimer()
+        self._copy_route_revert_timer.setSingleShot(True)
+        self._copy_route_revert_timer.timeout.connect(self._revert_copy_route_btn)
+        self._copy_route_revert_timer.start(COPY_ROUTE_CONFIRM_MS)
+
+    def _revert_copy_route_btn(self):
+        self._copy_route_btn.setText("COPY ROUTE")
+        self._copy_route_revert_timer = None
+
     def _safe_scan(self):
         # OCR (first call loads an easyocr model — can take several seconds
         # — plus every call after that runs real inference) and the UEX API
@@ -969,7 +1005,6 @@ class LogisticsHubModule(ModuleBase):
         if btn is not None:
             btn.setEnabled(False)
             btn.setText("SCANNING…")
-        self._set_status("Scanning — this can take a few seconds…")
         QApplication.processEvents()
         try:
             self.refresh()
@@ -1582,53 +1617,48 @@ class LogisticsHubModule(ModuleBase):
     # ------------------------------------------------------------------
     # Result rendering
     # ------------------------------------------------------------------
-    def _render_results(self):
-        # Clear any previous contents.
-        while self._results_layout.count():
-            item = self._results_layout.takeAt(0)
+    @staticmethod
+    def _clear_layout(layout: QVBoxLayout | QHBoxLayout):
+        """Remove and delete every item in `layout`, recursing into nested
+        sub-layouts (e.g. route_title_row below, added via addLayout).
+        `takeAt(i).widget()` is None for a sub-layout item, so a shallow
+        clear leaves that sub-layout's widgets orphaned — still alive,
+        still parented to the container, but no longer positioned by any
+        layout — where they float at their last geometry and can visually
+        cover whatever gets laid out over them on the next render."""
+        while layout.count():
+            item = layout.takeAt(0)
             w = item.widget()
             if w is not None:
                 w.deleteLater()
+                continue
+            sub_layout = item.layout()
+            if sub_layout is not None:
+                LogisticsHubModule._clear_layout(sub_layout)
+
+    def _render_results(self):
+        # Clear any previous contents.
+        self._clear_layout(self._results_layout)
 
         contracts = self.settings.get("contracts", [])
+        self._contracts_title.setText(f"CONTRACTS ({len(contracts)})")
+        self._populate_contracts_rows(self._contracts_layout, contracts)
 
-        contracts_title = QLabel(f"CONTRACTS ({len(contracts)})")
-        contracts_title.setStyleSheet(self._title_style())
-        self._results_layout.addWidget(contracts_title)
-
-        if not contracts:
-            self._results_layout.addWidget(self._info_label(
-                "No contracts yet. Frame one mission's pickup/drop-off "
-                "text and click SCAN CONTRACT."
-            ))
-        else:
-            for c in contracts:
-                self._results_layout.addWidget(self._contract_row(c))
-                for note in c.get("ambiguous", []):
-                    self._results_layout.addWidget(self._ambiguous_row(note))
+        self._tracker_btn.setVisible(bool(self._route_order))
+        self._tracker_btn.setText("RETURN TO CARD" if self._route_popout is not None else "TRACKER")
 
         if self._route_order:
-            route_title = QLabel("SUGGESTED VISITING ORDER")
+            route_title = QLabel("ROUTE")
             route_title.setStyleSheet(self._title_style())
             self._results_layout.addWidget(route_title)
 
-            for idx, node in enumerate(self._route_order, start=1):
-                i, role, j = node
-                contract = contracts[i] if i < len(contracts) else None
-                if contract is None:
-                    continue
-                key = "pickups" if role == "pickup" else "dropoffs"
-                items = contract.get(key, [])
-                entry = items[j] if j < len(items) else {}
-                terminal = entry.get("terminal")
-                raw = entry.get("raw", "??")
-                label_text = self._locations.display_name(terminal) if terminal else None
-                display = label_text or f"{raw} (unresolved)"
-                role_tag = "PICKUP" if role == "pickup" else "DROPOFF"
-                cargo_text = f" — {_cargo_label(entry.get('commodities'))}"
-                self._results_layout.addWidget(
-                    self._route_row(f"{idx}. [{role_tag}] {display}{cargo_text}")
-                )
+            if self._route_popout is not None:
+                self._results_layout.addWidget(self._info_label(
+                    "Route is in its own always-on-top Tracker window."
+                ))
+                self._populate_route_rows(self._route_popout_layout, contracts, transparent_bg=True)
+            else:
+                self._populate_route_rows(self._results_layout, contracts)
 
         self._results_layout.addWidget(self._info_label(
             "Best-effort OCR + UEX matching. Verify against the actual "
@@ -1637,6 +1667,266 @@ class LogisticsHubModule(ModuleBase):
 
         if self._card_widget is not None:
             self._card_widget.apply_size()
+
+    def _populate_route_rows(
+        self, target_layout: QVBoxLayout, contracts: list[dict], transparent_bg: bool = False
+    ):
+        while target_layout.count():
+            item = target_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        route_done = set(self.settings.get("route_done", []))
+        for idx, node in enumerate(self._route_order, start=1):
+            i, role, j = node
+            contract = contracts[i] if i < len(contracts) else None
+            if contract is None:
+                continue
+            key = "pickups" if role == "pickup" else "dropoffs"
+            items = contract.get(key, [])
+            entry = items[j] if j < len(items) else {}
+            terminal = entry.get("terminal")
+            raw = entry.get("raw", "??")
+            label_text = self._locations.display_name(terminal) if terminal else None
+            display = label_text or f"{raw} (unresolved)"
+            role_tag = "PICKUP" if role == "pickup" else "DROPOFF"
+            cargo_text = f" — {_cargo_label(entry.get('commodities'))}"
+            route_key = f"{contract.get('id')}:{role}:{j}"
+            target_layout.addWidget(
+                self._route_row(
+                    f"{idx}. [{role_tag}] {display}{cargo_text}",
+                    route_key,
+                    done=route_key in route_done,
+                    transparent_bg=transparent_bg,
+                )
+            )
+
+    def _toggle_route_popout(self):
+        if self._route_popout is not None:
+            self._on_route_popout_closed()
+        else:
+            self._open_route_popout()
+
+    def _make_always_on_top_window(
+        self, title_html: str, on_close, geometry: dict | None, opacity_pct: int
+    ) -> tuple[QWidget, QVBoxLayout, QSlider]:
+        """Shared shell for a detached, always-on-top, frameless window
+        (only the ROUTE popout uses this today — the CONTRACTS list popup
+        was tried and reverted, see DECISIONS.md). Frameless means there's
+        no OS title bar and no OS close button, so both are built here:
+        a small header styled like mobiOverlay's own main window
+        (host/main_window.py's _TitleBar), draggable the same way, with a
+        close button wired to `on_close` instead of a Qt close event.
+
+        Opacity fades only the window's own void background, not the
+        header/content on top of it — same per-pixel-alpha technique as
+        host/main_window.py's MainWindow.paintEvent (setWindowOpacity was
+        tried first and rejected: it dims the *entire* rendered surface
+        uniformly, including text, which is exactly what was asked not to
+        happen)."""
+        win = QWidget()
+        win.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        win.setAttribute(Qt.WA_TranslucentBackground, True)
+        win.resize(420, 480)
+        win.setMinimumSize(240, 160)
+        if geometry:
+            win.setGeometry(geometry["x"], geometry["y"], geometry["w"], geometry["h"])
+
+        paint_state = {"opacity": opacity_pct / 100.0}
+
+        def win_paint_event(event):
+            painter = QPainter(win)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setCompositionMode(QPainter.CompositionMode_Source)
+            painter.fillRect(win.rect(), Qt.transparent)
+            color = QColor(theme.BG_VOID)
+            color.setAlphaF(paint_state["opacity"])
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(win.rect()), theme.RADIUS, theme.RADIUS)
+            painter.fillPath(path, color)
+            # Same border treatment as a Logistics Hub Card (see
+            # card.py's _apply_border) — full opacity regardless of the
+            # window fade above, since chrome (not content) shouldn't wash
+            # out. Stroked on an inset rect, not the fill rect, so the 1px
+            # line isn't half-clipped at the window's true edge.
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+            stroke_path = QPainterPath()
+            stroke_rect = QRectF(win.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+            stroke_path.addRoundedRect(stroke_rect, theme.RADIUS, theme.RADIUS)
+            painter.setPen(QPen(QColor(theme.ACCENT_CYAN), 1))
+            painter.drawPath(stroke_path)
+            painter.end()
+
+        win.paintEvent = win_paint_event
+
+        outer = QVBoxLayout(win)
+        outer.setContentsMargins(1, 1, 1, 1)
+        outer.setSpacing(0)
+
+        header = QWidget()
+        header.setFixedHeight(30)
+        header.setStyleSheet(f"background: {theme.BG_PANEL}; border-bottom: 1px solid {theme.BORDER_FLAT};")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(10, 0, 8, 0)
+
+        title_label = QLabel(title_html)
+        title_label.setTextInteractionFlags(Qt.NoTextInteraction)
+        title_label.setStyleSheet(
+            f"font-family: {theme.FONT_DISPLAY}; font-weight: 700; "
+            f"font-size: {theme.fpx(10)}px; letter-spacing: 1px;"
+        )
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+
+        # Own opacity control — fully local to this window instance, no
+        # shared config, no coupling to the main window's or any card's
+        # opacity setting. Persisted to module settings on close.
+        opacity_slider = QSlider(Qt.Horizontal)
+        opacity_slider.setFixedWidth(70)
+        opacity_slider.setRange(30, 100)
+        opacity_slider.setValue(opacity_pct)
+        opacity_slider.setToolTip("Tracker window opacity (independent of the rest of the UI)")
+
+        def on_opacity_changed(v):
+            paint_state["opacity"] = v / 100.0
+            win.update()
+
+        opacity_slider.valueChanged.connect(on_opacity_changed)
+        header_layout.addWidget(opacity_slider)
+
+        close_btn = QPushButton("✕")
+        close_btn.setObjectName("cardIconBtn")
+        close_btn.setFixedSize(20, 20)
+        close_btn.clicked.connect(on_close)
+        header_layout.addWidget(close_btn)
+
+        drag_state = {"offset": None}
+
+        def header_mouse_press(event):
+            if event.button() == Qt.LeftButton:
+                drag_state["offset"] = event.globalPosition().toPoint() - win.pos()
+
+        def header_mouse_move(event):
+            if drag_state["offset"] is not None:
+                win.move(event.globalPosition().toPoint() - drag_state["offset"])
+
+        def header_mouse_release(event):
+            drag_state["offset"] = None
+
+        header.mousePressEvent = header_mouse_press
+        header.mouseMoveEvent = header_mouse_move
+        header.mouseReleaseEvent = header_mouse_release
+
+        outer.addWidget(header)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(
+            f"""
+            QScrollArea {{ background: transparent; border: 1px solid {theme.BORDER_FLAT};
+                border-radius: {theme.RADIUS}px; }}
+            QScrollBar:vertical {{ background: {theme.BG_VOID}; width: 8px; margin: 2px;
+                border-radius: 4px; }}
+            QScrollBar::handle:vertical {{ background: {theme.BORDER_FLAT}; border-radius: 4px;
+                min-height: 24px; }}
+            QScrollBar::handle:vertical:hover {{ background: {theme.ACCENT_CYAN}; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+            QScrollBar:horizontal {{ height: 0px; }}
+            """
+        )
+        # QScrollArea's internal viewport widget autofills with the
+        # palette's (grey) Base color regardless of the QSS "background:
+        # transparent" above, which only styles the frame — this is what
+        # was showing as an opaque grey card behind every row. Both the
+        # viewport and the content widget it hosts need to opt out too.
+        scroll.viewport().setAutoFillBackground(False)
+        scroll.viewport().setStyleSheet("background: transparent;")
+        content = QWidget()
+        content.setAutoFillBackground(False)
+        content.setStyleSheet("background: transparent;")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(6, 6, 6, 6)
+        content_layout.setSpacing(2)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+
+        grip_row = QHBoxLayout()
+        grip_row.setContentsMargins(0, 0, 4, 2)
+        grip_row.addStretch()
+        size_grip = QSizeGrip(win)
+        size_grip.setFixedSize(14, 14)
+        size_grip.setStyleSheet("background: transparent;")
+
+        def grip_paint_event(event):
+            painter = QPainter(size_grip)
+            painter.setRenderHint(QPainter.Antialiasing)
+            pen = QPen(QColor(theme.ACCENT_CYAN), 1.5)
+            painter.setPen(pen)
+            w, h = size_grip.width(), size_grip.height()
+            # Three diagonal strokes fanning from the bottom-right corner —
+            # the drag-resize affordance, styled to match the window's
+            # cyan chrome instead of the OS's default grey dot grip.
+            for offset in (3, 7, 11):
+                painter.drawLine(w - 2, h - offset, w - offset, h - 2)
+            painter.end()
+
+        size_grip.paintEvent = grip_paint_event
+        grip_row.addWidget(size_grip)
+        outer.addLayout(grip_row)
+
+        return win, content_layout, opacity_slider
+
+    def _open_route_popout(self):
+        geometry = self.settings.get("tracker_geometry")
+        opacity_pct = self.settings.get("tracker_opacity_pct", 100)
+        title_html = (
+            f'<span style="color:{theme.TEXT_PRIMARY};">mobi</span>'
+            f'<span style="color:{theme.ACCENT_CYAN};">Logistics</span>'
+        )
+        popout, content_layout, opacity_slider = self._make_always_on_top_window(
+            title_html, self._on_route_popout_closed, geometry, opacity_pct
+        )
+        self._route_popout_opacity_slider = opacity_slider
+
+        self._route_popout = popout
+        self._route_popout_layout = content_layout
+        popout.show()
+        self._render_results()
+
+    def _on_route_popout_closed(self):
+        if self._route_popout is not None:
+            geo = self._route_popout.geometry()
+            self.settings["tracker_geometry"] = {
+                "x": geo.x(), "y": geo.y(), "w": geo.width(), "h": geo.height(),
+            }
+            if self._route_popout_opacity_slider is not None:
+                self.settings["tracker_opacity_pct"] = self._route_popout_opacity_slider.value()
+            self._save_settings()
+            self._route_popout.close()
+        self._route_popout = None
+        self._route_popout_layout = None
+        self._route_popout_opacity_slider = None
+        self._render_results()
+
+    def _populate_contracts_rows(self, target_layout: QVBoxLayout, contracts: list[dict]):
+        while target_layout.count():
+            item = target_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        if not contracts:
+            target_layout.addWidget(self._info_label(
+                "No contracts yet. Frame one mission's pickup/drop-off "
+                "text and click SCAN CONTRACT."
+            ))
+        else:
+            for c in contracts:
+                target_layout.addWidget(self._contract_row(c))
+                for note in c.get("ambiguous", []):
+                    target_layout.addWidget(self._ambiguous_row(note))
 
     @staticmethod
     def _title_style() -> str:
@@ -1659,26 +1949,82 @@ class LogisticsHubModule(ModuleBase):
         reward = contract.get("reward")
         reward_text = f"  ·  {reward} aUEC" if reward else ""
 
-        row = QLabel(f"{pickups_text} → {dropoffs_text}{reward_text}")
-        row.setWordWrap(True)
-        row.setStyleSheet(
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(4)
+
+        label = QLabel(f"{pickups_text} → {dropoffs_text}{reward_text}")
+        label.setWordWrap(True)
+        label.setStyleSheet(
             f"background: {theme.BG_PANEL}; color: {theme.TEXT_PRIMARY}; "
             f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
             f"padding: 5px 8px; font-family: {theme.FONT_MONO}; "
             f"font-size: {theme.fpx(10)}px;"
         )
+        row_layout.addWidget(label, 1)
+
+        remove_btn = QPushButton("✕")
+        remove_btn.setToolTip("Remove this contract")
+        remove_btn.setFixedWidth(22)
+        remove_btn.setStyleSheet(
+            f"background: {theme.BG_VOID}; color: {theme.ACCENT_AMBER}; "
+            f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
+            f"font-family: {theme.FONT_MONO}; font-size: {theme.fpx(10)}px;"
+        )
+        remove_btn.clicked.connect(lambda: self._remove_contract(contract.get("id")))
+        row_layout.addWidget(remove_btn)
+
         return row
 
-    def _route_row(self, text: str) -> QWidget:
+    def _remove_contract(self, contract_id: str | None):
+        contracts = self.settings.get("contracts", [])
+        self.settings["contracts"] = [c for c in contracts if c.get("id") != contract_id]
+        self._save_settings()
+        if self.settings["contracts"]:
+            self._route_order = self._plan_route(self.settings["contracts"])
+        else:
+            self._route_order = []
+        self._render_results()
+        self._set_status("Contract removed.")
+
+    def _route_row(self, text: str, route_key: str, done: bool, transparent_bg: bool = False) -> QWidget:
         row = QLabel(text)
         row.setWordWrap(True)
-        row.setStyleSheet(
-            f"background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN}; "
-            f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
-            f"padding: 5px 8px; font-family: {theme.FONT_MONO}; "
-            f"font-size: {theme.fpx(10)}px;"
-        )
+        row.setCursor(Qt.PointingHandCursor)
+        row.setToolTip("Click to mark this stop done/skipped")
+        # In the Tracker popout, each row's own solid background would sit
+        # as an opaque "card" on top of the window's faded void, making the
+        # opacity slider barely visible — transparent here so the row's
+        # background fades with the window while the text itself (drawn on
+        # top by Qt, not affected by a background fill) stays fully legible.
+        bg = "transparent" if transparent_bg else theme.BG_VOID
+        if done:
+            row.setStyleSheet(
+                f"background: {bg}; color: {theme.TEXT_DIM}; "
+                f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
+                f"padding: 5px 8px; font-family: {theme.FONT_MONO}; "
+                f"font-size: {theme.fpx(10)}px; text-decoration: line-through;"
+            )
+        else:
+            row.setStyleSheet(
+                f"background: {bg}; color: {theme.ACCENT_CYAN}; "
+                f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
+                f"padding: 5px 8px; font-family: {theme.FONT_MONO}; "
+                f"font-size: {theme.fpx(10)}px;"
+            )
+        row.mousePressEvent = lambda event: self._toggle_route_done(route_key)
         return row
+
+    def _toggle_route_done(self, route_key: str):
+        route_done = set(self.settings.get("route_done", []))
+        if route_key in route_done:
+            route_done.discard(route_key)
+        else:
+            route_done.add(route_key)
+        self.settings["route_done"] = list(route_done)
+        self._save_settings()
+        self._render_results()
 
     def _ambiguous_row(self, text: str) -> QWidget:
         """A location phrase that matched more than one distinct real

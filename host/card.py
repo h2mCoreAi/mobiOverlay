@@ -56,6 +56,11 @@ class _DragHeader(QWidget):
 
         self.title_label = QLabel(title.upper())
         self.title_label.setObjectName("cardTitle")
+        # Rich-text titles (e.g. Logistics Hub's two-tone "MOBILOGISTICS")
+        # default to Qt::LinksAccessibleByMouse, which intercepts mouse
+        # events before this header's own drag handling sees them — same
+        # gotcha documented in host/main_window.py's _TitleBar wordmark.
+        self.title_label.setTextInteractionFlags(Qt.NoTextInteraction)
         layout.addWidget(self.title_label)
         layout.addStretch()
 
