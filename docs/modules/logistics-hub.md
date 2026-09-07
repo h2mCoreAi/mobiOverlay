@@ -60,7 +60,17 @@ collision bug that made a shared, endpoint-safe service worth building.
    candidate-specific suffix search across the raw text, then "was one
    of these options already confirmed elsewhere in this same contract."
    Genuinely unresolvable ambiguity shows as an amber warning row on the
-   card and in the COPY ROUTE export, never a silent guess.
+   card and in the COPY ROUTE export, never a silent guess. A candidate
+   with a real pickup/dropoff hint but zero exact/substring matches gets
+   one more attempt via `LocationService.resolve_fuzzy()` (a stricter,
+   opt-in-only fuzzy match, cutoff 0.85) before being dropped — resolves
+   OCR names garbled just enough to miss substring matching ("Seraphim
+   Staton"), but visibly flagged with the same amber-warning mechanism
+   ("fuzzy-matched to X (NN% confidence) — please verify") rather than
+   silently trusted. Never used for `neutral`-hint candidates, and never
+   folded into `resolve()`/`resolve_all()` themselves — see
+   `host/locations.py`'s docstring for why (other callers have no way to
+   show the uncertainty warning).
 3. Resolved pickups/drop-offs (a contract can have several of *either*)
    get their commodity extracted from "Collect X from Y"/"Deliver...of X
    to Y" lines, searched against every raw OCR spelling that resolved to
@@ -68,16 +78,29 @@ collision bug that made a shared, endpoint-safe service worth building.
    at all, the entry shows an explicit "cargo unknown — check raw OCR
    text" label rather than a silent blank — a blank read as "confirmed
    nothing to carry," which is never actually true for a real contract.
+   A pickup's quantity is the *sum* across every "Deliver...to..." line
+   for that commodity, not just one of them — a single pickup can feed
+   several drop-offs of the same commodity (e.g. 52 SCU Titanium to one
+   station, 50 SCU to another, 102 total to actually collect), confirmed
+   real and under-reported before this was fixed (see DECISIONS.md,
+   2026-09-05). Each drop-off still shows its own individual amount, never
+   the combined total.
 4. Newly-scanned contracts are checked against every already-added one:
    same reward + at least one resolved location in common (not a full
    exact-set match, which real OCR noise varying scan-to-scan can break)
    triggers a themed CONFIRM/DENY popup instead of silently duplicating
    the route.
 5. Route planning is greedy nearest-neighbour from the CURRENT LOCATION
-   pick, followed by a precedence-aware 2-opt improvement pass (fixes
-   backtracking routes the greedy pass alone can produce), with a hard
-   constraint throughout: a drop-off is ineligible until every pickup on
-   its own contract has been visited.
+   pick, followed by alternating precedence-aware 2-opt (segment reversal —
+   fixes backtracking routes the greedy pass alone can produce) and Or-opt
+   (single-stop relocation) improvement passes, run until neither improves
+   further. Or-opt added 2026-09-05: 2-opt alone can't merge two
+   non-adjacent visits to the same real terminal (once as a pickup for one
+   contract, once as a dropoff for another) into a single stop, since that
+   requires moving one node past several others without reversing anything
+   between them — confirmed missed on live data before the fix (see
+   DECISIONS.md). Hard constraint throughout both passes: a drop-off is
+   ineligible until every pickup on its own contract has been visited.
 
 ## UEX endpoints used (via the shared LocationService)
 
@@ -107,8 +130,26 @@ collision bug that made a shared, endpoint-safe service worth building.
   progress signal without a threading redesign), COPY ROUTE (exports the
   full contract list + suggested route + per-edge cost/distance + raw OCR
   text as plain text, to the clipboard; briefly shows "COPIED" on click),
-  and CLEAR (placed away from SCAN/COPY since it's destructive and easy to
+  REPROCESS (re-runs parsing — locations + commodities — against every
+  saved contract's own stored raw OCR text and replans the route, no
+  rescan needed; added 2026-09-05 so a parsing fix can be picked up on
+  contracts already sitting in a session, see DECISIONS.md), and CLEAR
+  (placed away from SCAN/COPY/REPROCESS since it's destructive and easy to
   hit by reflex reaching for the others)
+- An at-a-glance summary line below CONTRACTS' title ("4 contracts ·
+  268,750 aUEC · 143 SCU peak cargo") — added 2026-09-05, always visible
+  without scrolling either list. Peak cargo is the running max along the
+  *planned route* (+SCU on pickup, -SCU on dropoff), not a flat sum of
+  every pickup, since some cargo gets delivered before more is picked up.
+- The card's own ROUTE area shows only a stop count + prompt to use
+  TRACKER — the full stop-by-stop list (with done/skip toggling) lives
+  solely in the Tracker popout now. Briefly tried inline on the card too
+  (a NEXT STOP banner plus the full row list, both 2026-09-05) — reverted
+  same day: went invisible on the card in live testing (root cause not
+  pinned down — a scroll-position fix didn't resolve it) and the Tracker
+  popout is the tool actually used for working a route anyway, so this
+  removes the broken code path instead of continuing to chase it blind.
+  See DECISIONS.md.
 - A CONTRACTS section (pickups → drop-offs, commodities, reward, each
   with a per-contract remove button, plus amber warning rows for any
   still-ambiguous location) in its own dedicated scroll area on the card.
@@ -140,9 +181,26 @@ Always-on, append-only JSON Lines file at `paths.app_root() /
 "logistics_hub_debug.jsonl"` (next to `config.json`, not inside the module
 folder). One JSON object per scan (`_log_scan_debug()`, called from
 `refresh()`): timestamp, raw OCR text, candidate phrases with role
-hint/priority, the built contract, and a route snapshot (reuses
-`_format_route_text()`, the same text COPY ROUTE produces). No cap/rotation
-— user manages the file manually. See DECISIONS.md, 2026-09-04, for scoping.
+hint/priority, the built contract, a per-candidate `resolution_trace` (which
+of the five resolution paths won each `resolved` candidate, or why one was
+`dropped_no_match`/`ambiguous_unresolved` — including a near-miss fuzzy score
+for a dropped candidate even when it missed the cutoff, added 2026-09-05 to
+close the "vanished with zero trace" gap; see DECISIONS.md), a `fuzzy_matches`
+convenience field derived from that trace, a `route_debug` field (greedy
+pre-2-opt route + cost alongside the final route + cost, so a review can tell
+whether 2-opt actually improved anything on that scan), and a route snapshot
+(reuses `_format_route_text()`, the same text COPY ROUTE produces). No
+cap/rotation — user manages the file manually. See DECISIONS.md, 2026-09-04,
+for scoping.
+
+A REPROCESS run also logs one entry (`_log_reprocess_debug()`, added
+2026-09-05) — same shape, but covering every reprocessed contract at once
+(`contracts`, `resolution_traces` as a list of per-contract traces,
+`fuzzy_matches`, `route_debug`, `route_snapshot`) rather than one fresh
+scan's `raw_text`/`candidates`/`contract`, since REPROCESS re-parses
+everything already saved in one pass instead of adding a new contract.
+Without this, a REPROCESS run (or a location change picked up by one) left
+nothing reviewable in the log at all.
 
 ## Settings (modules.logistics_hub in config.json)
 

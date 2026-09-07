@@ -1160,3 +1160,626 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   live-tested (needs a relaunch with existing contracts to confirm ROUTE
   now shows immediately). **User confirmed 2026-09-04: fixed** — relaunch
   with existing contracts now shows ROUTE immediately.
+
+- 2026-09-05: **Fuzzy location fallback added for OCR-garbled names that
+  miss substring matching entirely.** Auditing `logistics_hub_debug.jsonl`
+  against live UEX data surfaced two already-tagged `KNOWN BUG`s in
+  PROGRESS.md (a pickup/dropoff role tie-break, a same-terminal duplicate
+  stop) plus a third, distinct gap: a candidate with a real pickup/dropoff
+  hint but zero exact/substring matches in `LocationService.resolve_all()`
+  was silently dropped — no stop, no warning — whenever OCR garbled a name
+  enough to miss substring matching too (a dropped/altered letter, e.g.
+  "Seraphim Staton"), as opposed to being unreadable.
+  Added `LocationService.resolve_fuzzy()` (`host/locations.py`,
+  `difflib.SequenceMatcher` ratio against the same in-memory name index
+  `resolve_all` already uses) as a deliberately separate, opt-in method —
+  never folded into `resolve()`/`resolve_all()` themselves, since every
+  other caller (Trade Route Optimizer's terminal picker, Commodity Prices'
+  nickname lookup, this module's own CURRENT LOCATION combo) has no way to
+  show an uncertainty warning, and a fuzzy guess there would look exactly
+  as confident as a real match. `_build_contract`'s Pass 1 now tries it
+  only when `resolve_all` found nothing **and** the candidate's hint isn't
+  `neutral` (same gating already used for the ambiguous-match note path) —
+  on a hit, the stop resolves normally (`merge_resolved`, so it still
+  counts as the same real place if another mention already confirmed it
+  unambiguously) and an amber-warning note is appended, reusing the exact
+  same `ambiguous_notes` mechanism/UI already built for multi-match
+  ambiguity, e.g. `"'Baijni Point' (pickup) fuzzy-matched to Baijini Point
+  (96% confidence) — please verify"`.
+  **Cutoff tuned from an initial 0.75 to 0.85 after live verification
+  caught a real false positive**: replaying all 7 real captured contracts
+  from `logistics_hub_debug.jsonl` through the updated `_build_contract`
+  found OCR debris "Tech's Ll" (mangled from "microTech's Ll Lagrange
+  point" — not a location mention at all) scoring 0.77 against an
+  unrelated real shop named "Teach's", which would have added a spurious
+  dropoff stop at the original cutoff. Every genuine OCR-garbled name in
+  the same replay (dropped/altered letters, not debris) scored 0.87+, so
+  0.85 cleanly separates the two without losing any real catch — confirmed
+  by re-running the same 7 contracts: identical pickups/dropoffs list for
+  all 7 (no regression), with two of them now carrying an accurate fuzzy-
+  match warning for a candidate that previously vanished silently, in both
+  cases merging into an *already*-resolved terminal (widening its `_aka`
+  alias set) rather than adding a new stop. Locations-only for this pass,
+  per the phased plan — commodity extraction and an editable
+  correction-combo UI (so a user can override a wrong or low-confidence
+  resolution) are deliberately deferred to later passes.
+
+- 2026-09-05: **Debug log gets a per-candidate resolution trace, closing two
+  remaining blind spots the fuzzy-match feature above didn't cover.** Asked
+  "is there additional debugging that could be added" right after that
+  feature shipped. Two gaps identified: (1) a candidate that misses *both*
+  exact/substring match *and* the fuzzy cutoff still vanishes with zero
+  trace — no record it was ever considered, or how close it came; (2) which
+  of `_build_contract`'s five resolution paths (exact/substring match,
+  suffix disambiguation, "already confirmed elsewhere," fuzzy match) won for
+  a resolved candidate wasn't recorded — only the final outcome was visible.
+  `LocationService.best_fuzzy_match()` (`host/locations.py`) was split out
+  of `resolve_fuzzy()` — same scoring loop, no cutoff applied — so a caller
+  can see the *near-miss* score for a dropped candidate; `resolve_fuzzy()`
+  is now a thin cutoff-enforcing wrapper around it, unchanged for existing
+  callers. `_build_contract()` gained an optional `debug_trace: list[dict] |
+  None = None` out-parameter (only one call site, `refresh()`, so a safe
+  additive signature change) — a trace entry gets appended at each of the
+  six places a candidate's fate is decided across Pass 1/Pass 2, recording
+  `outcome` (`resolved`/`ambiguous_unresolved`/`dropped_no_match`) and,
+  for `resolved`, which `method` won. Deliberately an out-parameter rather
+  than changing `_build_contract`'s return type — keeps the change purely
+  additive/observational with zero risk to the actual resolution logic,
+  `merge_resolved`, or the persisted `config.json` contract schema (the
+  trace is never attached to the contract dict itself, only threaded
+  separately into `_log_scan_debug`). The existing `fuzzy_matches` log field
+  (2026-09-05, earlier the same day) now derives from this trace
+  (`outcome == "resolved" and method == "fuzzy"`) instead of string-matching
+  "fuzzy-matched" in the ambiguous-notes text — same field, sturdier source.
+  **Verified via backend replay of all 7 real contracts in
+  `logistics_hub_debug.jsonl`**: `_build_contract`'s output is byte-for-byte
+  identical whether or not `debug_trace` is passed (confirmed by diffing the
+  returned contract dict, ids/timestamps excluded); trace-entry count
+  exactly equals candidate count for every scan; a genuinely irrelevant
+  candidate ("Chase Hewitt", `neutral` hint) correctly shows
+  `dropped_no_match` with no near-miss lookup attempted, matching the
+  existing neutral-hint gating. Locations-only, same phased scope as the
+  fuzzy-match feature — a runner-up score on a *successful* fuzzy match and
+  a schema/build-version stamp per log entry were both considered and
+  deferred as lower-value follow-ups.
+
+- 2026-09-05: **Debug log gets a route-planning trace too, not just
+  location-parsing.** User's stated goal: get to ~90% confidence the app
+  isn't "doing anything stupid" on routing before switching to spot-checking
+  logs occasionally instead of live-testing every change. The parsing trace
+  above answers "did it resolve locations correctly" but not "did it route
+  them well" — the debug log only ever showed the *final* route, giving no
+  way to tell from the log alone whether `_two_opt` actually improved on the
+  greedy pass or left something on the table. `_plan_route()` gained an
+  optional `route_debug: dict | None = None` out-parameter (same
+  observational-only pattern as `_build_contract`'s `debug_trace`) capturing
+  the greedy route and its cost (via the existing `_route_cost()` helper)
+  *before* handing off to `_two_opt`, alongside the final route/cost after —
+  threaded through `_add_contract` (also gains the same optional param) and
+  into `_log_scan_debug` as a new `route_debug` field. New `_node_label()`
+  helper renders a stop as `"[PICKUP] Baijini Point (contract 0)"` for both
+  the greedy and final order lists, so a reordering is readable directly
+  without cross-referencing node indices. **Verified via the same 7-contract
+  backend replay**: 2-opt genuinely improved 6 of the 7 scans (savings of
+  5-19 cost units), one had nothing to improve (0.0) — confirms the
+  optimization pass is doing real work, not a no-op, on real captured data.
+  `duplicate_pending` log entries get an empty `route_debug` (`{}`), since
+  the route isn't replanned until a contract actually gets added.
+
+- 2026-09-05: **Or-opt added alongside 2-opt — a real routing gap found on
+  live data, planned and fixed the same session.** Reviewing the
+  `route_debug` trace added earlier the same day across several real scans
+  showed the same real terminal (Everus Harbor) visited twice in one
+  route — once as a pickup for one contract, once as a dropoff for
+  another — instead of merging into a single stop, even though merging was
+  legal (precedence-respecting) and cheaper. Root cause: `_plan_route`
+  only ran 2-opt after the greedy pass, and 2-opt's move set (reversing a
+  contiguous sub-segment) structurally cannot express "relocate one node
+  past several others without reversing anything between them" — that's a
+  different move type (Or-opt), not a bug in 2-opt itself. Measured impact
+  on the live case was modest (~5 of ~153 cost units, ≈3%) but structural,
+  not incidental — confirmed it'll recur any time a hub location plays
+  both roles across contracts. New `_or_opt()` (mirrors `_two_opt`'s exact
+  style: repeatedly try one move, keep it if `_route_cost` drops and
+  `_respects_precedence` still holds, run until a full pass finds nothing —
+  both existing helpers reused unchanged). `_plan_route` now alternates
+  2-opt and Or-opt (2-opt first each round, since either pass's moves can
+  open new opportunities for the other) until neither improves, capped at
+  5 rounds as a termination safety net. `route_debug`'s `two_opt_improved_by`
+  field (same-day, not yet relied on anywhere) renamed
+  `optimized_improved_by` to reflect the combined effect, plus a new
+  `rounds_run` count. **Verified**: replayed the exact live 4-contract
+  scenario that exposed the gap — final cost dropped 153 → 148 (matching
+  the manual live-distance calculation done during the original review),
+  Everus Harbor's two visits landed adjacent in the output (merged), 2
+  rounds to converge. Also confirmed the Or-opt inner loop restarts its
+  scan from the top of the current pass immediately after any accepted
+  move (`break` out of both loops) rather than continuing against a stale
+  pre-move sequence — an early draft didn't do this and could have
+  silently discarded an improvement it had just found.
+
+- 2026-09-05: **Three at-a-glance additions to the card, reviewed from a
+  Star Citizen player's perspective mid-session** (user's framing: what's
+  useful to see in a few seconds without reading the whole scrollable
+  list). All three reuse data already computed — no new state, no new API
+  calls: (1) a summary line ("4 contracts · 268,750 aUEC · 143 SCU peak
+  cargo") below the CONTRACTS title, always visible without scrolling
+  either list; (2) peak cargo is deliberately the running max along the
+  *planned route* (`+SCU` on pickup, `-SCU` on dropoff, tracked via a new
+  `_peak_cargo_scu()`), not a flat sum of every pickup — a flat sum
+  overstates the hold size needed whenever some cargo gets delivered
+  before more is picked up, confirmed by hand-tracing the same live
+  4-contract scenario (peak 143, vs. a flat-sum figure that would have
+  been higher); (3) a cyan-accented NEXT STOP banner above the ROUTE list
+  (new `_next_stop_banner()`, distinct from the existing amber
+  `_ambiguous_row`) — the first not-yet-done stop, verified to correctly
+  advance once that stop is marked done. `_describe_stop()`/`_stop_entry()`
+  extracted from what was inline logic in `_populate_route_rows` so the
+  route list, the peak-cargo walk, and the next-stop lookup all share one
+  implementation instead of three. **Verified** via a backend script
+  (`_total_reward`/`_peak_cargo_scu` cross-checked against a hand-computed
+  trace of the same live scenario, both matched exactly) — the actual
+  widgets (`_summary_label`, `_next_stop_banner`) construct real `QLabel`s
+  and can't be exercised without a live `QApplication`, consistent with
+  this project's existing "can't launch the actual Qt UI in this
+  environment" limitation; needs a human glance in the real running app.
+
+- 2026-09-05: **Bug reported: NEXT STOP/ROUTE invisible on the card until
+  the Tracker popout was opened at least once** (same box also made the
+  route stop done/skip toggle look broken — nothing to click, since the
+  rows themselves weren't visible). First attempt: theorized a stale
+  `_results_scroll` scroll position (matching a real, documented
+  2026-09-04 bug in the old shared CONTRACTS/ROUTE scroll area) and reset
+  it to 0 at the end of every `_render_results()` call. **User confirmed
+  live: did not fix it.** Root cause was never actually pinned down — no
+  way to run the real Qt UI in this environment to inspect it further —
+  and continuing to guess blind wasn't converging.
+- 2026-09-05: **Reverted inline ROUTE rendering entirely instead of
+  continuing to chase the bug above.** Per user direction: NEXT STOP isn't
+  a feature that'll get used, and the Tracker popout (confirmed working
+  throughout) is the actual tool for working a route — so the card's
+  ROUTE area now shows only a stop count + "click TRACKER" prompt, no
+  per-row list, no done/skip toggling inline. This removes the whole
+  broken code path (the full stop-by-stop list, the NEXT STOP banner, and
+  the scroll-reset attempt above) rather than fixing it blind. Simpler
+  surface area: the card owns "how many stops, how much reward, how much
+  cargo" (all confirmed working live), the Tracker popout owns "walk the
+  route." `_next_stop_banner()` removed entirely (unused);
+  `_describe_stop()`/`_stop_entry()` kept — still shared between
+  `_populate_route_rows` (popout only, now) and `_peak_cargo_scu()`.
+  Also fielded in the same review: no way to confirm/edit a fuzzy-matched
+  or ambiguous location from the card — this is the already-scoped-out
+  correction-combo UI (see the 2026-09-05 fuzzy-match entry above, "later
+  passes"), not a new finding, reconfirmed still wanted.
+
+- 2026-09-05: **Bug fix: a pickup feeding two drop-offs of the same
+  commodity only counted one of them.** User-reported live: the Tracker
+  showed "PICKUP 50 SCU Titanium" from Ambitious Dream Station, missing
+  that the same contract also delivers 52 SCU of Titanium to a second
+  station (Seraphim) — the pickup actually needs 102 SCU total, not 50.
+  Root cause: `_commodity_quantities()` mapped commodity name -> quantity
+  from every "Deliver N/TOTAL SCU of X to Y" line, but a plain dict
+  assignment (`qty[commodity] = ...`) meant the *second* delivery line for
+  the same commodity name silently overwrote the first instead of adding
+  to it — and `_extract_commodities`'s dedup-by-commodity-name then
+  dropped the second occurrence entirely once resolving the pickup entry.
+  Fixed two ways at once: `_commodity_quantities()` now sums instead of
+  overwrites (correct for the pickup side, which needs the contract-wide
+  total); `_DROPOFF_COMMODITY_RE` extended to capture the SCU quantity
+  directly from its own line (`\bdeliver\s+(?:\d+/)?(\d+)\s*scu\s+of...`),
+  so each drop-off's `_extract_commodities` call uses *that* line's own
+  exact amount instead of looking it up in the (now summed, and therefore
+  wrong for a single delivery) shared dict — otherwise summing would have
+  fixed the pickup but broken every drop-off into showing the combined
+  total instead of its own share. `_all_commodity_names()` updated for the
+  shifted capture group (drop-off commodity is now group 2, group 1 is the
+  quantity). **Verified** against the exact live contract that exposed the
+  bug: pickup now correctly shows `('Titanium', '102')`, the two drop-offs
+  still correctly show `52` and `50` independently — and the peak-cargo
+  summary (2026-09-05, earlier the same day) was silently under-reporting
+  too as a direct consequence (143 instead of the correct 193 SCU for the
+  live 4-contract scenario), now fixed as the same side effect.
+
+- 2026-09-05: **New REPROCESS button — re-parse saved contracts without
+  rescanning.** Direct follow-up to the commodity-quantity fix above: fixing
+  the *code* doesn't fix the 4 contracts already sitting in `config.json`
+  with the old, wrong quantities baked in (`_build_contract` computes
+  commodities once at scan time and persists the result; nothing re-derives
+  it later), and the only existing option was CLEAR + rescan everything
+  from the game — wasteful when every contract's own `raw_text` is already
+  persisted (same text the debug log/COPY ROUTE export already use).
+  New `_reprocess_contracts()` (`modules/logistics_hub/module.py`, right
+  next to `_clear_contracts()`) re-runs `_build_contract()` against each
+  saved contract's own `raw_text` and swaps in the freshly-parsed result,
+  then replans the route — no OCR, no rescan, no additional UEX API calls
+  beyond what `_build_contract` already does (location index is already
+  loaded in-memory). Deliberately preserves each contract's original `id`/
+  `scanned_at` rather than the freshly-rebuilt ones: `route_done` entries
+  are keyed `f"{contract_id}:{role}:{index}"` (`_toggle_route_done`), so
+  keeping the same id is what lets an already-marked-done stop stay
+  correctly matched after reprocessing — this only holds as long as the
+  fix being picked up doesn't change how many pickups/dropoffs a contract
+  has (true for the quantity fix); a future parsing change that adds/
+  removes a stop would leave a stale `route_done` entry pointing at
+  nothing, same outcome CLEAR-and-rescan already has today, not a new
+  failure mode. Wrapped in `_safe_reprocess()`, matching `_safe_scan()`'s
+  try/except-and-status pattern — no busy-button treatment needed since
+  this is pure in-memory regex/lookup work, not OCR or a network call.
+  **Verified**: simulated the exact stale pre-fix state (the real Titanium
+  contract with its pickup quantity hand-corrupted back to the old buggy
+  `50`, plus a `route_done` entry for that same stop) and confirmed
+  reprocessing corrects it to `102`, preserves `id`/`scanned_at` exactly,
+  and the `route_done` entry still matches the reprocessed stop. Button
+  wiring itself (not the underlying logic) can't be click-tested without a
+  live `QApplication` — needs a human check in the real running app, same
+  as this session's other UI-only changes.
+
+- 2026-09-05: **REPROCESS now writes a debug log entry too.** User changed
+  CURRENT LOCATION and ran REPROCESS, then asked to verify it worked —
+  found nothing in `logistics_hub_debug.jsonl` to check, since only
+  `refresh()` (a live scan) ever called `_log_scan_debug`. New
+  `_log_reprocess_debug()` (`modules/logistics_hub/module.py`) writes one
+  entry per REPROCESS run — same shape as a scan's entry, but `contracts`/
+  `resolution_traces` cover every reprocessed contract at once (a list per
+  field) instead of one fresh scan's single `raw_text`/`candidates`/
+  `contract`, since REPROCESS re-parses everything already saved in one
+  pass. Shared the actual file-write/error-handling code with
+  `_log_scan_debug` via a new small `_append_debug_log()` helper rather
+  than duplicating the `try/open/write/except OSError` block a second
+  time. `_reprocess_contracts()` now collects a `debug_trace` list per
+  contract (via `_build_contract`'s existing optional out-param, added
+  2026-09-05 earlier the same day) instead of discarding it. **Verified**:
+  reprocessing 2 contracts (one with a fuzzy-matched pickup) produces
+  exactly one log entry with `note: "reprocessed"`, both contracts'
+  resolution traces present, the fuzzy match correctly surfaced in
+  `fuzzy_matches`, and a populated `route_debug`.
+
+- 2026-09-05: **Trade Route Optimizer's origin picker replaced: system →
+  terminal cascading combo → single searchable combo**, matching Logistics
+  Hub's CURRENT LOCATION picker UX (editable `QComboBox` + `QCompleter` in
+  `PopupCompletion` mode, `Qt.MatchContains`, case-insensitive, labeled via
+  `LocationService.search_label()` so search works by name or short code).
+  User asked for the two pickers to behave the same way. Deliberately kept
+  **terminals-only**, not `LocationService.all_locations()` (which
+  Logistics Hub's combo does use) — `commodities_routes` (the endpoint
+  `refresh()` calls) requires a real `id_terminal_origin`; space stations/
+  outposts/cities aren't valid origins for it, so including them would be
+  a dead-end pick with no way to actually use the selection. Kept the same
+  `type == "commodity"` + `is_available_live` filter the old per-system
+  `_populate_terminals` already applied, just no longer scoped to one
+  system at a time. Settings key renamed `origin_system`/`origin_terminal`
+  → single `origin_terminal_name` (stores the combo's search-label text).
+  See docs/modules/trade-route-optimizer.md for the updated card
+  description.
+
+- 2026-09-05: **`LocationService.friendly_label()` added** — user reported
+  typing "Glen" found mobiLogistics' CURRENT LOCATION (CRU-L5 Beautiful
+  Glen Station) but found nothing in mobiTrade's new origin combo. Root
+  cause: the two combos read the exact same shared cache (confirmed, not a
+  data-divergence bug), but mobiTrade's combo is terminals-only (see the
+  entry above) and the `terminals` record for that same physical place
+  (`id` 22, "Admin - CRU-L5") has no descriptive name of its own — its
+  `name`/`nickname` are both just the bare "CRU-L5" code. The friendly name
+  ("CRU-L5 Beautiful Glen Station") only exists on the sibling
+  `space_stations` record for the same place, which mobiTrade's picker
+  deliberately excludes. `friendly_label(terminal)` in `host/locations.py`
+  looks up a matching non-terminal record by shared (normalized) nickname
+  and borrows its fuller name when the terminal's own name isn't as
+  descriptive — built as a shared `LocationService` helper (not a local
+  mobiTrade-only fix) per user direction, so any current/future
+  terminals-only picker gets the same resolution. Deliberately excludes
+  other `terminals` records from the candidate pool (a same-station
+  facility like "Landing Services - CRU-L5" is textually longer than the
+  real place name but isn't the place's name — an earlier version of this
+  fix picked exactly that facility name by mistake before restricting the
+  lookup to non-terminal endpoints). Verified against the real
+  `locations_cache.json`: 19 of 114 live commodity terminals gained a
+  fuller name (all Lagrange-point stations plus GrimHEX), CRU-L5
+  specifically now labels as "Beautiful Glen Station (CRU-L5)" and matches
+  "glen"; terminals that already had a real name of their own (e.g. "Bud's
+  Growery") are unchanged.
+
+- 2026-09-05: **mobiCommodities' "Find Most Profitable" (and Best Sell/Best
+  Buy) made stock-aware — user caught a real mobiTrade/mobiCommodities
+  disagreement.** mobiCommodities said Compboard was most profitable to buy
+  at Rayari Kaltag and sell at Shubin SM0-22; mobiTrade said Distilled
+  Spirits (sell at MIC-L5) was the best route from the same origin.
+  Investigated live against the real UEX API: `commodities_routes` really
+  does return Distilled Spirits → MIC-L5 as the top route by total profit
+  (3,156,000 aUEC) from Rayari Kaltag — mobiTrade was correct. Compboard is
+  in that same route list, worth only 15,080 aUEC total, because Rayari
+  Kaltag has just 2 SCU (`scu_buy: 2`) of it in stock — huge per-unit
+  margin, negligible achievable total. Root cause:
+  `find_most_profitable()` (`modules/commodity_prices/module.py`) computed
+  a pure `max(price_sell) - min(price_buy)` price gap with no regard for
+  `scu_buy`/`scu_sell` at all. Fixed to rank by
+  `(price_sell - price_buy) * scu_buy` (best buy/sell pairing per
+  commodity), capped by source stock only. **First pass of this fix also
+  gated the SELL side on `scu_sell > 0` and was wrong** — caught before
+  shipping by live-checking the fix against the real data that started
+  this investigation: `scu_sell` reads 0 for Distilled Spirits at MIC-L5
+  (mobiTrade's own correct answer) despite a real `price_sell`, and
+  checked broadly across 5 commodities, `scu_sell` is 0 despite a real
+  sell price 75-95% of the time — UEX just doesn't reliably track
+  sell-side demand capacity the way it tracks source stock (confirmed via
+  `commodities_routes`' own `scu_destination`, which mirrors `scu_origin`
+  rather than reflecting an independently-tracked number). Corrected to
+  gate only on `scu_buy` (BUY side, confirmed live to be 0 only when
+  `price_buy` is also 0 — reliable) and leave the SELL side as a pure
+  price comparison, both in `find_most_profitable()` and the regular Best
+  Sell/Best Buy rows (`_apply_filters()`). Verified against live data
+  before shipping: Distilled Spirits' stock-aware total (3,156,000, best
+  pairing Rayari Kaltag → Admin - MIC-L5) now correctly and exactly
+  matches mobiTrade's `commodities_routes` answer for the same origin;
+  Compboard drops to 52,700.
+
+- 2026-09-05: **mobiTrade's origin picker made optional — "Any Location"
+  search, with a per-system BUY IN filter.** User's ask: a real trader
+  often doesn't have a fixed starting terminal and wants the best trade
+  *anywhere* (or anywhere in a system), then decides where to fly — not
+  the other way around. Requested semantics: no filter + no location =
+  whole game; filter only = that system; location picked = that terminal
+  only (unchanged from before). Confirmed live against the real UEX API
+  before designing anything: `commodities_routes` has **no bulk-origin
+  query** — `id_star_system_origin` alone returns
+  `missing_one_required_inputs`; it strictly requires one of
+  `id_terminal_origin`/`id_planet_origin`/`id_orbit_origin`/`id_commodity`
+  per call. So "Any Location"/BUY IN genuinely means one API call per
+  candidate terminal (up to 114 for the whole game) and merging results —
+  no server-side shortcut exists. Implemented as a manual **SCAN** button
+  (`modules/trade_route_optimizer/module.py`, `_start_scan`/`_scan_step`/
+  `_finish_scan`), ported directly from Commodity Prices' Retrieve Data
+  `QTimer`-throttled scan pattern (same 120ms/~8req/sec pacing, live
+  progress text, skip-on-individual-failure, rate-limit-aware abort, same
+  30-min cache-countdown + "FORCE UPDATE?" confirm) rather than inventing
+  a new mechanism — confirmed with user this should be an explicit manual
+  action, not automatic, since `refresh()` runs synchronously on the
+  host's auto-refresh timer and at startup
+  (`host/main.py`'s `wrap_refresh`/`safe_refresh`, no threading) and a
+  15-30+s scan must never block that path; `refresh()` is simply a no-op
+  while origin is Any Location. Each `commodities_routes` row already
+  carries its own `origin_terminal_name`/`origin_star_system_name`/
+  `origin_planet_name` (confirmed live) — no extra tagging needed to merge
+  rows from many different scanned terminals into one sorted pool.
+  Route rows now show "BUY AT ..." alongside the existing "SELL AT ..."
+  (confirmed with user) since origin is no longer implied by a single
+  picker selection in scan mode — kept in single-terminal mode too, for
+  consistency. Verified the merge/sort logic against real live data: 3
+  real terminals scanned and merged, top result correctly pulled from
+  whichever of the three actually had the best profit (not just the first
+  terminal queried), matching what a real multi-terminal scan will
+  produce.
+
+- 2026-09-05: **Two real bugs in the above, caught by the user immediately
+  after using it for real.**
+  1. **Origin combo's dropdown arrow was clipped/invisible** — the BUY IN
+     filter was placed in the same row as the origin combo, squeezing it
+     enough that the arrow region (reserved via `_COMBO_STYLE`'s
+     `padding`/`drop-down width`) had no room left; the box looked like a
+     plain text field. Fixed by moving BUY IN to its own row below the
+     origin combo, restoring its full width — same root-cause class as the
+     right-edge combo clipping already fixed once before (PROGRESS.md,
+     "Fixed right-edge text clipping..."), just reintroduced by this
+     session's own layout change.
+  2. **A changed MAX INVESTMENT didn't invalidate a prior SCAN's
+     results.** User set a $1M cap and still saw a 54,500,000 profit
+     figure on screen. Confirmed live this profit is real API-level
+     impossible at that cap — scanned 15 real terminals with
+     `investment=1000000`, best genuine result was 447,600; confirmed the
+     `investment` param does correctly cap `commodities_routes`' returned
+     `profit` server-side (Kaltag alone: 3,156,000 uncapped vs 342,849 at
+     $1M). Root cause: unlike SELL IN, which re-slices already-fetched
+     data client-side, `investment` changes what the API itself returns —
+     but nothing invalidated a prior SCAN's rows when investment (or BUY
+     IN) changed afterward, since `refresh()` no-ops in Any Location mode
+     and only the explicit SCAN button actually re-queries. The screen
+     kept showing pre-investment-cap numbers next to a filled-in budget
+     field, which reads as "this is what $1M gets you" when it isn't.
+     Fixed with `_invalidate_scan_results()` — clears displayed rows and
+     sets "RESCAN NEEDED" whenever investment changes (Any Location mode),
+     BUY IN changes, or origin switches back to Any Location from a
+     specific terminal — a fresh SCAN click is required rather than
+     silently trusting stale numbers.
+
+- 2026-09-06: **Fixed the logistics-hub role-assignment KNOWN BUG (logged
+  2026-09-04) — two distinct mechanisms in `_candidate_phrases()`
+  (`modules/logistics_hub/module.py`), found together auditing a fresh
+  debug log against a real live contract (Seraphim Station multi-pickup/
+  multi-dropoff: "Collect Pressurized Ice/Processed Food from Seraphim
+  Station" → deliveries split across Beautiful Glen, Shallow Fields, and
+  Ambitious Dream Station).** App output showed "Ambitious Dream Station"
+  as a *pickup* — it's actually a drop-off, printed under the contract's
+  own "DROP OFF LOCATIONS (ANY ORDER)" section header.
+  1. **The `own_line` joined-lookahead pass (added 2026-09-04 for the
+     "Everus Harbor" line-wrap case) re-scanned the *entire* next line,
+     not just the wrapped portion of the current line's own phrase.**
+     Line "Collect Processed Food from Seraphim Station." (a real
+     own_line pickup keyword) sat directly before the unrelated "Freight
+     elevator at Ambitious Dream Station at Crusader's Ll" line purely by
+     two-column OCR reordering coincidence — the joined re-scan picked up
+     "Ambitious Dream Station" from that second line whole and tagged it
+     `pickup` at the highest priority (`own_line`, 3), permanently
+     locking out any correct later hint for the same phrase. This is
+     exactly the mechanism the original KNOWN BUG entry described for
+     "Everus Harbor"/contract `21c7811e`. Fixed by requiring the regex
+     match to actually straddle the line join (real characters on both
+     sides of the inserted space) before accepting it — a genuinely
+     wrapped name always does; an unrelated phrase sitting entirely
+     inside the next line never does. Purely restricts false positives;
+     the original wrap-catching purpose is untouched (a straddling match
+     still qualifies exactly as before).
+  2. **A second, previously-undocumented mechanism produced the same
+     wrong result even after fix #1**: with the bogus `own_line` hint
+     gone, "Freight elevator at Ambitious Dream Station..." (no keyword
+     of its own) fell to the 2-line backward-lookback check, which still
+     found the same nearby "Collect Processed Food from Seraphim
+     Station." pickup line and wrongly inherited its hint — even though
+     the line is clearly under the active "DROP OFF LOCATIONS (ANY
+     ORDER)" section header opened several lines earlier. The per-line
+     hint logic checked lookback *before* the section fallback, so an
+     incidental nearby keyword (belonging to a different item's flavor
+     text) always won over the much stronger, on-screen structural
+     section signal. Fixed by checking section first whenever one is
+     active and the line looks like a real section row (contains "at" —
+     the same qualifier the section fallback already used); lookback now
+     only runs when no section applies. `HINT_PRIORITY` itself (which
+     hint wins when the *same* phrase is seen twice) is unchanged — this
+     only reorders which check computes a fresh line's *first* hint.
+  **Verified** via a standalone backend script (no QApplication, no
+  network — `LocationService.ensure_loaded()` read the on-disk
+  `locations_cache.json`) against the exact real OCR text of the
+  contract that exposed this: Ambitious Dream Station now resolves as a
+  drop-off, not a pickup. Regression-checked the same way against the
+  session's other two real contracts (Everus Harbor → Baijini Point, and
+  the MIC-L2 Long Forest Station 4-drop-off contract) — both produced
+  identical pickups/dropoffs to their pre-fix output, no change.
+  **Separately noted, not fixed at the time:** the Ambitious Dream Station
+  stop's own commodity came back empty (should be 5 SCU Pressurized Ice)
+  — its source line is split across *three* OCR lines ("Deliver 0/5 SCU
+  of Pressurized" / "to Ambitious Dream" / "Station...") with the word
+  "Ice" itself orphaned elsewhere in the raw text entirely, and both
+  `_PICKUP_COMMODITY_RE`/`_DROPOFF_COMMODITY_RE` were single-line
+  regexes. Confirmed already wrong before this session's role-assignment
+  fix too (same value, unrelated bug). **Fixed later the same session —
+  see the next entry below.**
+
+- 2026-09-06: **Fixed the commodity-extraction gap logged just above,
+  same session.** Two independent problems, both in
+  `modules/logistics_hub/module.py`:
+  1. **A delivery line split by OCR well before its destination even
+     starts is invisible to `_commodity_quantities`/`_extract_commodities`
+     entirely, not just truncated.** Both regexes require "to"/the
+     destination on the *same* line as "SCU of X"; "Deliver 0/5 SCU of
+     Pressurized" has no "to" on its own line at all (it's on the next
+     line, "to Ambitious Dream"), so `pattern.search(line)` simply never
+     matched — the whole delivery vanished, not just its tail. Fixed with
+     a new shared helper, `_find_delivery_match()`: starting from a line,
+     progressively fold in up to 2 following lines and retry the pattern
+     each time, stopping at the first match. Both commodity functions
+     (and the destination-window-widening logic already in
+     `_extract_commodities`, which now widens from the match's actual
+     last consumed line instead of always `i+1`) were switched onto this
+     helper. `_all_commodity_names()` (the "don't treat a commodity name
+     as a location" guard, and now also the completion vocabulary below)
+     deliberately keeps its own single-line-only matching — see #2.
+  2. **Even once the delivery line resolves, its commodity name itself
+     can still be truncated with no reachable fix** — "Pressurized" ends
+     up alone (missing "Ice"), because "Ice" isn't on the very next line
+     either; it's scrambled several lines further down, orphaned among
+     unrelated trailing footer/button text ("ABANDON\nSHARE\nTRACK\nIce\n
+     point\nbring\nalong:"). No amount of nearby-line joining reaches an
+     orphan that far away without a real risk of grabbing the wrong
+     word. Instead of chasing it, complete the truncated name against a
+     *fuller mention of the same commodity already confirmed elsewhere in
+     the same contract* — "Pressurized Ice" is spelled out intact
+     earlier in this very contract, on lines that never got split
+     ("Deliver 0/6 SCU of Pressurized Ice to Beautiful Glen"). New
+     `_complete_commodity_name()`: given a candidate name and the
+     contract's own `_all_commodity_names()` vocabulary, only replaces it
+     when the candidate is a whole-word prefix of *exactly one* longer
+     known name — anything else (already complete, no match, more than
+     one candidate) is left untouched rather than guessed.
+     `_all_commodity_names()` changed its return type from a bare
+     lowercase set to a `{lowercase: original-cased}` dict specifically
+     so the completion has real, correctly-cased text to substitute in —
+     its one existing call site (`_build_contract`'s fallback-dropoff
+     guard) needed no change, since membership testing against a dict
+     already checks its keys. Deliberately kept `_all_commodity_names`
+     single-line-only rather than also switching it onto
+     `_find_delivery_match`: the completion vocabulary needs to only ever
+     contain names *already known complete*, or a truncated fragment
+     found via joining could end up "completing" a different truncated
+     fragment instead of a genuine full name.
+  **Verified** via the same standalone backend script (real OCR text, on-
+  disk `locations_cache.json`, no QApplication/network): the Ambitious
+  Dream Station drop-off now shows `[('Pressurized Ice', '5')]` instead
+  of `[]`, and Seraphim's pickup-side Pressurized Ice total correctly
+  updated from 6 to 11 (6 to Beautiful Glen + 5 to Ambitious Dream) as a
+  direct consequence — both were wired through the same
+  `_commodity_quantities()`/`_extract_commodities()` pipeline, so fixing
+  the extraction fixed the summed total for free. Regression-checked
+  contracts 1 and 3 from the same session (Everus Harbor/Baijini Point;
+  the MIC-L2 Long Forest Station 4-commodity contract) — identical
+  commodity output to pre-fix, no change.
+
+- 2026-09-06: **Fixed a route-cost bug found live: the CURRENT LOCATION
+  picker had resolved to a `terminals`-endpoint kiosk record ("Admin -
+  Seraphim") instead of the `space_stations` record ("Seraphim Station")
+  that every actual pickup/dropoff at that place resolves to — same real
+  place, two different UEX records. `terminal_key()` equality (used for
+  "am I already here?") only compares `(endpoint, id)`, so it didn't
+  recognize them as the same stop; the real-distance lookup between them
+  came back empty (UEX doesn't track a kiosk-to-its-own-station
+  distance), falling back to the coarse "+5 estimate" instead of 0 — that
+  fake cost made a genuinely farther stop (Ambitious Dream Station, real
+  distance 2) look cheaper, sending the route on an avoidable detour.
+  **Fixed at the shared root, not just this one case**: new
+  `LocationService.same_physical_place()` (`host/locations.py`) also
+  recognizes a `terminals` kiosk as the same stop as the
+  `space_stations`/`outposts`/`cities` record it structurally belongs to
+  (via `id_space_station`/`id_outpost`/`id_city`) — a real FK link
+  already present in the data, not a name guess. Wired into
+  `LocationService.distance()` itself (the single shared choke point
+  every module already calls for travel cost), not just Logistics Hub's
+  `_terminal_cost`, so any current or future caller benefits. Confirmed
+  this pattern is dataset-wide, not a one-off: 822 terminal kiosks in the
+  cached location data carry this same structural-parent link, all with
+  their parent record present in the index. Verified it doesn't
+  false-merge two *different* shops sharing the same city (only fires
+  when one side literally *is* the structural parent record). Verified
+  live: cost to the Seraphim pickup dropped from the fake 5 to a correct
+  0, and the route no longer detours to Ambitious Dream Station first.
+
+- 2026-09-06: **Fixed a second commodity-misattribution bug, found the
+  same way (reviewing a fresh live scan against the raw OCR text) as the
+  Ambitious Dream Station one earlier this session.** A contract's Port
+  Tressler drop-off showed 13 SCU Corundum; the raw text clearly says 11
+  ("Deliver 0/11 SCU of Corundum to Port Tressler above microTech:") —
+  13 is actually Everus Harbor's own Corundum amount from a different
+  line. Root cause: `_extract_commodities`'s destination-window-widening
+  (added earlier to recover a destination name split across a line
+  break) appended the *entire* next line and accepted a location match
+  found *anywhere* in it. Here, "Deliver 0/13 SCU of Corundum to Everus
+  Harbor above" is immediately followed, by pure two-column OCR
+  interleaving, by an unrelated "Freight elevator at Port Tressler..."
+  listing line — so Port Tressler's own extraction pass wrongly claimed
+  this Everus-Harbor-bound delivery (stealing its 13 SCU), which also
+  blocked the real 11 SCU Port Tressler line later in the contract via
+  the dedup-by-commodity-name check. The pickup-side total (which sums
+  across every delivery line regardless of destination) was unaffected —
+  only the per-stop breakdown was wrong. Fixed the same way as the
+  earlier `_candidate_phrases` line-wrap bug: a match found only in the
+  widened (next-line) portion is now trusted only if it genuinely
+  straddles the line boundary (part of it already in this line's own
+  destination text) — a match sitting entirely inside the next,
+  unrelated line no longer counts. A same-line match (the common case)
+  is unaffected. Verified against all 3 real contracts in this session's
+  debug log: Port Tressler now correctly shows 11 Corundum, and the
+  other two, already-correct contracts (Baijini Point/Seraphim single-
+  stop; the earlier Seraphim/Shallow Fields/Beautiful Glen/Ambitious
+  Dream 4-stop contract) are unchanged.
+
+- 2026-09-06: **Added `tests/test_logistics_hub_parsing.py`, a permanent
+  regression suite of real captured contracts** — direct response to
+  this session's pattern of fixing one bug, then finding a second,
+  unrelated bug in the same area on the next scan (role-assignment,
+  then a same-place distance bug, then a commodity-misattribution bug,
+  all in `modules/logistics_hub/module.py`/`host/locations.py`). Every
+  fixture is the exact raw OCR text of a contract already hand-verified
+  against its own text during this session, asserting exact pickups/
+  dropoffs/commodities — so a future change can't silently reintroduce
+  an earlier fix's bug without a visible test failure. No framework
+  dependency (plain asserts); run with `python tests/test_logistics_hub_parsing.py`
+  after touching any of `_candidate_phrases`, `_build_contract`,
+  `_extract_commodities`, `_commodity_quantities`, or `host/locations.py`'s
+  resolution/distance logic. 6 fixtures currently, including both bugs
+  found this session (`seraphim_4stop_v1_role_tiebreak_bug`,
+  `mic_l2_long_forest_v2_port_tressler_theft_bug`) — deliberately named
+  so a future failure names which historical bug came back. One
+  additional verified-correct contract (Baijini Point -> Seraphim, 103
+  Stims) was NOT added — its raw OCR text was never captured before the
+  source debug log entry was wiped, and reconstructing it from memory
+  would have meant a "regression fixture" that isn't actually a real
+  capture; add it for real next time that shape recurs. Grow this file
+  every time a new bug is found and fixed, not just at the end of a
+  session — that's what keeps it actually protective.

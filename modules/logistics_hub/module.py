@@ -127,27 +127,92 @@ def _virtual_desktop_rect() -> QRect | None:
 
 
 _PICKUP_COMMODITY_RE = re.compile(r"\bcollect\s+(.+?)\s+from\s+(.+)", re.I)
-_DROPOFF_COMMODITY_RE = re.compile(r"\bdeliver\s+[\d/]*\s*scu\s+of\s+(.+?)\s+to\s+(.+)", re.I)
+# Captures the SCU quantity too (group 1) — unlike the "Collect X from Y"
+# pickup line, which never states its own quantity, each "Deliver N/TOTAL
+# SCU of X to Y" line always does, and it's *this specific delivery's*
+# amount (group 3 is the destination it belongs to).
+_DROPOFF_COMMODITY_RE = re.compile(r"\bdeliver\s+(?:\d+/)?(\d+)\s*scu\s+of\s+(.+?)\s+to\s+(.+)", re.I)
 
 
-_SCU_QTY_RE = re.compile(r"\bdeliver\s+\d+/(\d+)\s*scu\s+of\s+(.+?)\s+to\b", re.I)
+def _find_delivery_match(lines: list[str], start: int, pattern: "re.Pattern", max_join: int = 2):
+    """Search `pattern` starting at `lines[start]`, progressively folding in
+    following lines when it doesn't match yet. A "Collect X from Y" or
+    "Deliver N SCU of X to Y" line can be split by OCR's two-column
+    reordering well before the destination even starts — confirmed real:
+    "Deliver 0/5 SCU of Pressurized" / "to Ambitious Dream" / "Station..."
+    are three separate lines, so a same-line-only search misses the whole
+    delivery, not just its tail. Returns `(match, end_index)`, where
+    `end_index` is the last line folded into the text the match came from
+    (so a caller widening its own search further, e.g. for a still-
+    truncated destination name, knows where to resume); `None` if nothing
+    matched within `max_join` extra lines."""
+    text = lines[start]
+    end = start
+    for _ in range(max_join + 1):
+        m = pattern.search(text)
+        if m:
+            return m, end
+        end += 1
+        if end >= len(lines):
+            return None
+        text = f"{text} {lines[end]}"
+    return None
+
+
+def _complete_commodity_name(commodity: str, known_names: dict[str, str]) -> str:
+    """OCR can split a delivery line badly enough that the commodity's own
+    second word lands nowhere a nearby-line join can reach at all —
+    confirmed real: "...of Pressurized" / "to Ambitious Dream" /
+    "Station..." left the word "Ice" orphaned several lines away entirely,
+    scrambled in with unrelated trailing footer/button text. Rather than
+    chase an orphaned word with no reliable anchor, complete a truncated
+    match against a fuller name of the *same* commodity already confirmed
+    elsewhere in this same contract via a normal, complete, single-line
+    match (`known_names`, from `_all_commodity_names`) — the same
+    commodity is virtually always spelled out intact on at least one of
+    its other pickup/drop-off lines. Only fires when the truncated text
+    isn't already a recognized complete name and is a whole-word prefix of
+    *exactly one* longer known name; any other outcome (already complete,
+    no match, more than one candidate) leaves the text alone rather than
+    guessing."""
+    key = commodity.lower()
+    if key in known_names:
+        return commodity
+    candidates = [
+        original for lower, original in known_names.items()
+        if lower.startswith(key + " ")
+    ]
+    return candidates[0] if len(candidates) == 1 else commodity
 
 
 def _commodity_quantities(raw_text: str) -> dict[str, str]:
-    """Map each commodity name to its total SCU count, read from the
-    "Deliver N/TOTAL SCU of X to..." line. The matching "Collect X from Y"
-    pickup line never carries a quantity of its own — it's the same cargo
-    moving through both ends of the same contract, so this is looked up
-    once per contract from whichever line does have it and applied to
-    both roles' display."""
-    qty: dict[str, str] = {}
-    for line in raw_text.splitlines():
-        m = _SCU_QTY_RE.search(line)
-        if m:
-            commodity = re.sub(r"[.:_,;]+$", "", m.group(2)).strip().lower()
-            if commodity:
-                qty[commodity] = m.group(1)
-    return qty
+    """Map each commodity name to its TOTAL SCU across every "Deliver
+    N/TOTAL SCU of X to..." line mentioning it — summed, not just the last
+    one seen. A single pickup can feed more than one drop-off of the same
+    commodity (confirmed real: one contract collecting Titanium once, then
+    delivering 52 SCU of it to one station and 50 SCU to another — the
+    pickup needs the combined 102, not whichever delivery line happened to
+    be read last). Used only for the pickup side's total; each drop-off
+    gets its own exact per-line quantity directly instead (see
+    `_extract_commodities` below), so this summing never leaks into a
+    drop-off showing the wrong (combined) amount for its own delivery."""
+    lines = raw_text.splitlines()
+    known_names = _all_commodity_names(raw_text)
+    totals: dict[str, int] = {}
+    i = 0
+    while i < len(lines):
+        result = _find_delivery_match(lines, i, _DROPOFF_COMMODITY_RE)
+        if result is None:
+            i += 1
+            continue
+        m, end = result
+        commodity = re.sub(r"[.:_,;]+$", "", m.group(2)).strip()
+        commodity = _complete_commodity_name(commodity, known_names)
+        key = commodity.lower()
+        if key:
+            totals[key] = totals.get(key, 0) + int(m.group(1))
+        i = end + 1
+    return {k: str(v) for k, v in totals.items()}
 
 
 def _extract_commodities(
@@ -172,33 +237,65 @@ def _extract_commodities(
     loc_key = re.sub(r"[^a-z0-9]", "", location_raw.lower())
     if not loc_key:
         return []
-    pattern = _PICKUP_COMMODITY_RE if role == "pickup" else _DROPOFF_COMMODITY_RE
+    is_pickup = role == "pickup"
+    pattern = _PICKUP_COMMODITY_RE if is_pickup else _DROPOFF_COMMODITY_RE
+    # Group layout differs: the pickup line never states its own quantity
+    # (commodity, destination); the drop-off line always does (quantity,
+    # commodity, destination) — see `_DROPOFF_COMMODITY_RE`.
+    commodity_group, dest_group = (1, 2) if is_pickup else (2, 3)
     qty_by_commodity = qty_by_commodity or {}
+    known_names = _all_commodity_names(raw_text)
 
     lines = raw_text.splitlines()
     found: list[tuple[str, str | None]] = []
     seen: set[str] = set()
-    for i, line in enumerate(lines):
-        m = pattern.search(line)
-        if not m:
+    i = 0
+    while i < len(lines):
+        result = _find_delivery_match(lines, i, pattern)
+        if result is None:
+            i += 1
             continue
-        # The location name after "from"/"to" often continues onto the
-        # very next line — OCR line-wrap splits "MIC-LI Shallow Frontier"
-        # from "Station:" — so a match on this line's tail alone can be
-        # truncated right before the part that would actually confirm it's
-        # this location. Widen the search window by one line so a
-        # truncated tail doesn't silently drop the commodity.
-        window = m.group(2)
-        if i + 1 < len(lines):
-            window += " " + lines[i + 1]
-        loc_part = re.sub(r"[^a-z0-9]", "", window.lower())
+        m, end = result
+        i = end + 1
+        # The location name after "from"/"to" often continues past even
+        # whatever line(s) `_find_delivery_match` already folded in — OCR
+        # line-wrap splits "MIC-LI Shallow Frontier" from "Station:" — so a
+        # match on the destination's tail alone can be truncated right
+        # before the part that would actually confirm it's this location.
+        # Widen the search window by one more line so a truncated tail
+        # doesn't silently drop the commodity — but only trust a match that
+        # actually straddles the boundary (some of it already in this
+        # line's own destination text). Confirmed real: "Deliver 0/13 SCU
+        # of Corundum to Everus Harbor above" is immediately followed, by
+        # pure two-column OCR interleaving, by an unrelated "Freight
+        # elevator at Port Tressler..." listing line — accepting a loc_key
+        # match found *anywhere* in the widened text let Port Tressler's
+        # own extraction pass steal this Everus-Harbor-bound delivery
+        # (wrong destination entirely, not just an imprecise one), which
+        # also blocked the real, correct Port Tressler delivery line later
+        # in the contract via the dedup-by-commodity-name check below.
+        base = re.sub(r"[^a-z0-9]", "", m.group(dest_group).lower())
+        if loc_key in base:
+            loc_part = base
+        elif end + 1 < len(lines):
+            widened = re.sub(r"[^a-z0-9]", "", (m.group(dest_group) + " " + lines[end + 1]).lower())
+            idx = widened.find(loc_key)
+            loc_part = widened if idx != -1 and idx < len(base) else base
+        else:
+            loc_part = base
         if loc_key not in loc_part:
             continue
-        commodity = re.sub(r"[.:_,;]+$", "", m.group(1)).strip()
+        commodity = re.sub(r"[.:_,;]+$", "", m.group(commodity_group)).strip()
+        commodity = _complete_commodity_name(commodity, known_names)
         key = commodity.lower()
         if commodity and key not in seen:
             seen.add(key)
-            found.append((commodity, qty_by_commodity.get(key)))
+            # Pickup: the contract-wide total across every drop-off of this
+            # commodity (`qty_by_commodity`, summed in `_commodity_quantities`).
+            # Drop-off: this specific delivery's own amount, straight from
+            # this line's own match — never the pickup's combined total.
+            qty = qty_by_commodity.get(key) if is_pickup else m.group(1)
+            found.append((commodity, qty))
     return found
 
 
@@ -231,27 +328,51 @@ def _cargo_label(commodities: list | None) -> str:
     return "/".join(parts)
 
 
-def _all_commodity_names(raw_text: str) -> set[str]:
-    """Every commodity name mentioned anywhere in the text (normalized,
-    lowercase), regardless of which location it's tied to — used only to
-    keep the "always have a fallback stop" logic in `_build_contract` from
-    grabbing a commodity name and displaying it as if it were an
-    unresolved location. Confirmed real: when a contract's real drop-off
-    text never matches anything ("NB Int. Spaceport" — an abbreviation
-    with no real substring relationship to the actual place, "New
-    Babbage" — see docs/DECISIONS.md), the fallback used to pick the
-    nearest leftover dropoff-hinted candidate with no regard for whether
-    it was actually a place; that leftover was "Ship Ammunition", the
-    commodity being delivered, not a location at all.
+def _entry_scu(entry: dict) -> int:
+    """Total SCU across one pickup/dropoff entry's commodities — same
+    tolerance for missing/non-numeric quantities as `_cargo_label` above
+    (older saved contracts, or a "cargo unknown" entry with no commodities
+    at all), so a stop with unknown cargo just contributes 0 rather than
+    raising. Used by the card's peak-cargo-capacity summary."""
+    total = 0
+    for c in entry.get("commodities") or []:
+        qty = c[1] if isinstance(c, (list, tuple)) and len(c) > 1 else None
+        if qty and str(qty).isdigit():
+            total += int(qty)
+    return total
+
+
+def _all_commodity_names(raw_text: str) -> dict[str, str]:
+    """Every commodity name mentioned anywhere in the text, keyed by its
+    normalized (lowercase) form and mapped to the original-cased spelling
+    it was first seen with. Two uses: (1) keep the "always have a fallback
+    stop" logic in `_build_contract` from grabbing a commodity name and
+    displaying it as if it were an unresolved location — confirmed real:
+    when a contract's real drop-off text never matches anything ("NB Int.
+    Spaceport" — an abbreviation with no real substring relationship to
+    the actual place, "New Babbage" — see docs/DECISIONS.md), the fallback
+    used to pick the nearest leftover dropoff-hinted candidate with no
+    regard for whether it was actually a place; that leftover was "Ship
+    Ammunition", the commodity being delivered, not a location at all.
+    (2) the reference vocabulary `_complete_commodity_name` completes a
+    truncated name against — see that function for why. Deliberately
+    single-line matching only, never `_find_delivery_match`'s multi-line
+    join: a name gathered here needs to already be trustworthy/complete on
+    its own, since it's what a truncated mention elsewhere gets completed
+    against — folding in a *different* truncated mention here could
+    complete one fragment against another instead of a real full name.
     """
-    names: set[str] = set()
-    for pattern in (_PICKUP_COMMODITY_RE, _DROPOFF_COMMODITY_RE):
+    names: dict[str, str] = {}
+    # Commodity is group 1 for the pickup line, group 2 for the drop-off
+    # line (group 1 there is the SCU quantity) — see `_DROPOFF_COMMODITY_RE`.
+    for pattern, commodity_group in ((_PICKUP_COMMODITY_RE, 1), (_DROPOFF_COMMODITY_RE, 2)):
         for line in raw_text.splitlines():
             m = pattern.search(line)
             if m:
-                commodity = re.sub(r"[.:_,;]+$", "", m.group(1)).strip().lower()
-                if commodity:
-                    names.add(commodity)
+                commodity = re.sub(r"[.:_,;]+$", "", m.group(commodity_group)).strip()
+                key = commodity.lower()
+                if key and key not in names:
+                    names[key] = commodity
     return names
 
 
@@ -264,6 +385,20 @@ def _extract_reward(raw_text: str) -> str | None:
     # confirmed real, so accept either as the thousands separator.
     m = re.search(r"(\d{1,3}(?:[,.]\d{3})+)", raw_text)
     return m.group(1).replace(".", ",") if m else None
+
+
+def _total_reward(contracts: list[dict]) -> int:
+    """Sum of every contract's reward (already a comma-grouped string from
+    `_extract_reward` — "87,250"), for the card's at-a-glance summary.
+    Contracts with no parsed reward simply contribute 0."""
+    total = 0
+    for c in contracts:
+        reward = c.get("reward")
+        if reward:
+            digits = reward.replace(",", "")
+            if digits.isdigit():
+                total += int(digits)
+    return total
 
 
 # Real contract panels are full of chrome/flavor text around the actual
@@ -379,30 +514,37 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str, int]]:
             hint = keyword_hints[line_idx]
             hint_source = "own_line"
         else:
-            # No keyword on this exact line — check the last couple of
-            # lines for one before falling back to section/neutral. Nearest
-            # keyword wins if more than one is in range.
+            # No keyword on this exact line. A line under an active DROP
+            # OFF/PICK UP LOCATIONS section that looks like a real location
+            # row is claimed by that section *before* falling back to
+            # backward lookback — the section header is explicit, on-screen
+            # structure ("Freight elevator at X at Y's L# Lagrange point"
+            # always contains "at"; trailing signature/footer text like the
+            # contractor name, "Jr. Logistics Coordinator", the company
+            # name, or ABANDON/SHARE/TRACK never does, so "at" is a safe
+            # qualifier), while lookback is only a proximity guess.
+            # Confirmed real: two-column OCR reordering can land an
+            # unrelated pickup-keyword line (flavor text for a *different*
+            # item) directly before a real drop-off row printed under an
+            # active DROP OFF LOCATIONS header — lookback then claimed that
+            # row as a pickup instead of trusting the section it was
+            # actually under (see DECISIONS.md). Lookback only runs when
+            # no section is active, or the line doesn't look like a
+            # section row (e.g. narrative sentences with no header at all).
             hint = None
-            for back in range(1, KEYWORD_LOOKBACK + 1):
-                idx = line_idx - back
-                if idx < 0:
-                    break
-                if keyword_hints[idx] is not None:
-                    hint = keyword_hints[idx]
-                    hint_source = "lookback"
-                    break
-            if hint is None:
-                if section_hint is not None and re.search(r"\bat\b", line, re.I):
-                    # The section header applies until the panel ends, but
-                    # nothing marks that end explicitly — so don't trust it
-                    # forever. Real list rows under either header ("Freight
-                    # elevator at X at Y's L# Lagrange point") always
-                    # contain "at"; trailing signature/footer text
-                    # (contractor name, "Jr. Logistics Coordinator", the
-                    # company name, ABANDON/SHARE/TRACK buttons) never does.
-                    hint = section_hint
-                    hint_source = "section"
-                else:
+            if section_hint is not None and re.search(r"\bat\b", line, re.I):
+                hint = section_hint
+                hint_source = "section"
+            else:
+                for back in range(1, KEYWORD_LOOKBACK + 1):
+                    idx = line_idx - back
+                    if idx < 0:
+                        break
+                    if keyword_hints[idx] is not None:
+                        hint = keyword_hints[idx]
+                        hint_source = "lookback"
+                        break
+                if hint is None:
                     hint = "neutral"
                     hint_source = "neutral"
         priority = HINT_PRIORITY[hint_source]
@@ -507,12 +649,31 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str, int]]:
         # ("Seraphim Station", two lines after the real dropoff keyword)
         # into that keyword's hint. Only a line whose keyword is directly
         # on it is trustworthy enough to extend across the wrap.
+        #
+        # Also restricted to matches that actually straddle the line break
+        # (some of the match's characters on each side of the join) — a
+        # match sitting entirely inside the next line isn't a wrapped name
+        # at all, just an unrelated phrase that happens to follow this
+        # line, and inheriting this line's own_line hint/priority for it is
+        # its own, separately confirmed real bug: "Collect Processed Food
+        # from Seraphim Station." (own_line pickup) directly followed by
+        # the unrelated "Freight elevator at Ambitious Dream Station at
+        # Crusader's Ll" pulled "Ambitious Dream Station" — a real
+        # drop-off elsewhere in the same contract — in as a bogus pickup at
+        # the highest priority, permanently locking out its correct hint.
+        # A genuinely wrapped name (e.g. "...to Everus" / "Harbor above
+        # Hurston:") always has match characters on both sides of the
+        # join, so this restriction only removes the false case.
         if hint_source == "own_line" and line_idx + 1 < len(raw_lines):
-            joined = f"{line} {raw_lines[line_idx + 1]}"
+            next_line = raw_lines[line_idx + 1]
+            joined = f"{line} {next_line}"
+            boundary = len(line)  # index of the inserted joining space
             for m in re.finditer(
                 r"[A-Z][a-zA-Z']+(?:\s+[A-Z][a-zA-Z']+){1,3}(?:\s+(?=\S*\d)[A-Za-z0-9-]+)?",
                 joined,
             ):
+                if not (m.start() < boundary and m.end() > boundary + 1):
+                    continue
                 phrase = " ".join(m.group(0).split())
                 add_candidate(phrase, hint, priority)
 
@@ -801,6 +962,20 @@ class LogisticsHubModule(ModuleBase):
         self._copy_route_btn.clicked.connect(self._copy_route_to_clipboard)
         action_row.addWidget(self._copy_route_btn)
 
+        # Re-parses every saved contract from its own stored OCR text and
+        # replans the route — no rescan needed. Added 2026-09-05 so a
+        # parsing/quantity fix can be picked up on contracts already sitting
+        # in this session without CLEAR + rescanning them all from the game.
+        reprocess_btn = QPushButton("REPROCESS")
+        reprocess_btn.setToolTip(
+            "Re-parses every saved contract from its own stored OCR text "
+            "(locations + commodities) and replans the route — no rescan "
+            "needed. Useful after a parsing fix."
+        )
+        reprocess_btn.setStyleSheet(self._button_style())
+        reprocess_btn.clicked.connect(self._safe_reprocess)
+        action_row.addWidget(reprocess_btn)
+
         # CLEAR is placed last, away from SCAN/COPY, since it's destructive
         # and the user has accidentally hit it reaching for the other two.
         clear_btn = QPushButton("CLEAR")
@@ -832,6 +1007,20 @@ class LogisticsHubModule(ModuleBase):
         self._tracker_btn.setVisible(False)
         contracts_title_row.addWidget(self._tracker_btn)
         layout.addLayout(contracts_title_row)
+
+        # At-a-glance summary (total reward, peak cargo capacity needed) —
+        # added 2026-09-05 after reviewing the card from a player's
+        # perspective: everything else here needs scrolling through the
+        # contract/route lists to answer "how much am I making" or "what
+        # size cargo hold do I need for this run." Lives outside both
+        # scroll areas so it's visible without touching either. Created
+        # once, text set in `_render_results()`.
+        self._summary_label = QLabel("")
+        self._summary_label.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
+            f"font-size: {theme.fpx(9)}px; letter-spacing: 0.5px;"
+        )
+        layout.addWidget(self._summary_label)
 
         self._contracts_scroll = QScrollArea()
         self._contracts_scroll.setWidgetResizable(True)
@@ -991,6 +1180,59 @@ class LogisticsHubModule(ModuleBase):
         self._render_results()
         self._set_status("Contracts cleared.")
 
+    def _safe_reprocess(self):
+        try:
+            self._reprocess_contracts()
+        except Exception as exc:
+            self._set_status(f"Error: {exc}")
+
+    def _reprocess_contracts(self):
+        """Re-run parsing (locations + commodities) against every saved
+        contract's own stored `raw_text`, in place — no rescan needed. Added
+        2026-09-05 specifically so a parsing bug fix (e.g. the commodity-
+        quantity summing fix the same day) doesn't require CLEAR + rescanning
+        everything from the game; the raw OCR text needed to re-derive a
+        contract is already persisted (same text the debug log/COPY ROUTE
+        export already use), `_build_contract` just never gets called on it
+        again after the initial scan.
+
+        Preserves each contract's original `id`/`scanned_at` rather than
+        taking the freshly-rebuilt ones — `route_done` entries are keyed
+        `f"{contract_id}:{role}:{index}"` (`_toggle_route_done`), so keeping
+        the same id is what lets an already-marked-done stop stay correctly
+        matched after reprocessing, as long as the fix didn't change how many
+        pickups/dropoffs that contract has (true for the quantity fix; a
+        parsing change that adds/removes a stop would leave a stale
+        `route_done` entry pointing at nothing — same outcome CLEAR-and-
+        rescan already has today, not a new failure mode)."""
+        contracts = self.settings.get("contracts", [])
+        if not contracts:
+            self._set_status("No contracts to reprocess.")
+            return
+        rebuilt = []
+        traces: list[list[dict]] = []
+        for old in contracts:
+            trace: list[dict] = []
+            new = self._build_contract(old.get("raw_text", ""), debug_trace=trace)
+            if new is None:
+                # Nothing usable left in the saved text (shouldn't happen —
+                # it parsed once already — but never silently drop a
+                # contract over it) — keep the old entry as-is.
+                rebuilt.append(old)
+                traces.append(trace)
+                continue
+            new["id"] = old.get("id", new["id"])
+            new["scanned_at"] = old.get("scanned_at", new["scanned_at"])
+            rebuilt.append(new)
+            traces.append(trace)
+        self.settings["contracts"] = rebuilt
+        route_debug: dict = {}
+        self._route_order = self._plan_route(rebuilt, route_debug=route_debug)
+        self._log_reprocess_debug(rebuilt, traces, route_debug)
+        self._save_settings()
+        self._render_results()
+        self._set_status(f"Reprocessed {len(rebuilt)} contract(s) from saved OCR text.")
+
     def _format_route_text(self) -> str:
         """Plain-text export of the current contracts + suggested route —
         primarily for debugging (so raw OCR text and resolution status are
@@ -1134,7 +1376,8 @@ class LogisticsHubModule(ModuleBase):
         raw_text = self._ocr(pix)
         logger.info("logistics_hub OCR raw text:\n%s", raw_text)
 
-        contract = self._build_contract(raw_text)
+        debug_trace: list[dict] = []
+        contract = self._build_contract(raw_text, debug_trace=debug_trace)
         if contract is None:
             raise ValueError("No usable text could be OCR'd — try adjusting the region or brightness.")
 
@@ -1145,13 +1388,20 @@ class LogisticsHubModule(ModuleBase):
             self._pending_duplicate = contract
             self._show_duplicate_popup()
             self._set_status("Duplicate detected — confirm or deny.")
-            self._log_scan_debug(raw_text, candidates, contract, "duplicate_pending")
+            # Route is unchanged in this branch (contract isn't added yet),
+            # so there's nothing new to compare — an empty dict, not None,
+            # keeps _log_scan_debug's entry shape consistent either way.
+            self._log_scan_debug(raw_text, candidates, contract, "duplicate_pending", debug_trace, {})
             return
 
-        self._add_contract(contract)
-        self._log_scan_debug(raw_text, candidates, contract, "added")
+        route_debug: dict = {}
+        self._add_contract(contract, route_debug=route_debug)
+        self._log_scan_debug(raw_text, candidates, contract, "added", debug_trace, route_debug)
 
-    def _log_scan_debug(self, raw_text: str, candidates: list[tuple[str, str, int]], contract: dict, note: str) -> None:
+    def _log_scan_debug(
+        self, raw_text: str, candidates: list[tuple[str, str, int]], contract: dict, note: str,
+        debug_trace: list[dict], route_debug: dict,
+    ) -> None:
         """Append one JSON line per scan to an always-on debug log, so real
         usage accumulates into a file the user can hand to an AI later to
         evaluate whether parsing/routing is holding up. Mirrors the level of
@@ -1163,8 +1413,51 @@ class LogisticsHubModule(ModuleBase):
             "raw_text": raw_text,
             "candidates": [{"phrase": p, "hint": h, "priority": pr} for p, h, pr in candidates],
             "contract": contract,
+            # One entry per candidate phrase recording how (or whether) it
+            # resolved — added 2026-09-05 to make every candidate's fate
+            # visible, including ones that get silently dropped (missed both
+            # exact/substring and fuzzy matching) with no trace anywhere else.
+            # See DECISIONS.md, 2026-09-05.
+            "resolution_trace": debug_trace,
+            # Pulled out to the top level for easy grepping, derived from the
+            # trace above (not string-matched against ambiguous_notes text,
+            # which is fragile if that wording ever changes).
+            "fuzzy_matches": [e for e in debug_trace if e.get("outcome") == "resolved" and e.get("method") == "fuzzy"],
+            # Greedy (pre-2-opt) route + cost alongside the final one, so a
+            # log review can tell whether 2-opt actually improved anything
+            # on this scan instead of only seeing the final route in
+            # isolation — added 2026-09-05. Empty on "duplicate_pending"
+            # (route isn't replanned until the contract is actually added).
+            "route_debug": route_debug,
             "route_snapshot": self._format_route_text(),
         }
+        self._append_debug_log(entry)
+
+    def _log_reprocess_debug(
+        self, contracts: list[dict], traces: list[list[dict]], route_debug: dict,
+    ) -> None:
+        """Append one JSON line for a REPROCESS run (added 2026-09-05,
+        alongside the REPROCESS button itself) — mirrors `_log_scan_debug`'s
+        shape but covers every reprocessed contract at once instead of a
+        single fresh scan, since REPROCESS re-parses everything already
+        saved in one pass rather than adding one new contract. Without
+        this, a REPROCESS run (or a location change picked up by it) left
+        no trace anywhere reviewable — only a live scan did."""
+        entry = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "note": "reprocessed",
+            "contracts": contracts,
+            "resolution_traces": traces,
+            "fuzzy_matches": [
+                e for trace in traces for e in trace
+                if e.get("outcome") == "resolved" and e.get("method") == "fuzzy"
+            ],
+            "route_debug": route_debug,
+            "route_snapshot": self._format_route_text(),
+        }
+        self._append_debug_log(entry)
+
+    def _append_debug_log(self, entry: dict) -> None:
         try:
             log_path = paths.app_root() / DEBUG_LOG_FILENAME
             with open(log_path, "a", encoding="utf-8") as f:
@@ -1172,11 +1465,11 @@ class LogisticsHubModule(ModuleBase):
         except OSError:
             logger.warning("Failed to write logistics_hub debug log entry", exc_info=True)
 
-    def _add_contract(self, contract: dict):
+    def _add_contract(self, contract: dict, route_debug: dict | None = None) -> None:
         contracts = self.settings.setdefault("contracts", [])
         contracts.append(contract)
         self._save_settings()
-        self._route_order = self._plan_route(contracts)
+        self._route_order = self._plan_route(contracts, route_debug=route_debug)
         self._render_results()
         self._set_status(
             f"Added contract ({len(contracts)} total) at {time.strftime('%H:%M:%S')}"
@@ -1319,7 +1612,7 @@ class LogisticsHubModule(ModuleBase):
 
         return found if found_count == 1 else None
 
-    def _build_contract(self, raw_text: str) -> dict | None:
+    def _build_contract(self, raw_text: str, debug_trace: list[dict] | None = None) -> dict | None:
         """Build one contract from a scan's OCR text: pull every plausible
         location phrase, resolve each against real UEX terminal data, and
         split the distinct resolved terminals into pickups vs. drop-offs by
@@ -1328,9 +1621,17 @@ class LogisticsHubModule(ModuleBase):
         just as often as one drop-off with several pickups (PICK UP
         LOCATIONS (ANY ORDER)). Falls back to raw, unresolved candidate
         phrases if nothing resolved at all, so a scan still produces
-        something reviewable instead of silently failing."""
+        something reviewable instead of silently failing.
+
+        `debug_trace`, if given, gets one entry appended per candidate
+        recording its resolution outcome (`resolved` + which of the five
+        resolution paths won, `ambiguous_unresolved`, or `dropped_no_match`
+        — the last including a near-miss fuzzy score when one was attempted)
+        for `_log_scan_debug`. Purely additive/observational — never affects
+        which terminal a candidate actually resolves to."""
         candidates = _candidate_phrases(raw_text)  # list of (phrase, hint, priority)
         reward = _extract_reward(raw_text)
+        trace: list[dict] = []
 
         # Resolve every candidate against real UEX data, deduped by
         # terminal id (falling back to normalized text for records with no
@@ -1386,11 +1687,51 @@ class LogisticsHubModule(ModuleBase):
         for text, hint, priority in candidates:
             matches = self._locations.resolve_all(text)
             if not matches:
+                # No exact/substring hit at all — for a candidate that
+                # actually carries a real pickup/dropoff signal (never for
+                # "neutral" text, same gating the ambiguous-note path below
+                # uses), try a fuzzy match rather than silently dropping the
+                # stop. OCR can garble a name just enough to miss substring
+                # matching entirely ("Seraphim Staton") without being
+                # unreadable — resolving it anyway, visibly flagged as
+                # unconfirmed via the same amber-warning mechanism as an
+                # ambiguous match, beats a contract missing a stop outright.
+                if hint != "neutral":
+                    fuzzy = self._locations.resolve_fuzzy(text)
+                    if fuzzy is not None:
+                        location, score = fuzzy
+                        merge_resolved(text, location, hint, priority)
+                        display = self._locations.display_name(location)
+                        trace.append({
+                            "phrase": text, "hint": hint, "outcome": "resolved",
+                            "method": "fuzzy", "matched": display, "score": round(score, 3),
+                        })
+                        if text.lower() not in noted:
+                            noted.add(text.lower())
+                            ambiguous_notes.append(
+                                f"{text!r} ({hint}) fuzzy-matched to {display} "
+                                f"({score:.0%} confidence) — please verify"
+                            )
+                    else:
+                        near_miss = self._locations.best_fuzzy_match(text)
+                        trace.append({
+                            "phrase": text, "hint": hint, "outcome": "dropped_no_match",
+                            "near_miss": (
+                                {"matched": self._locations.display_name(near_miss[0]), "score": round(near_miss[1], 3)}
+                                if near_miss else None
+                            ),
+                        })
+                else:
+                    trace.append({"phrase": text, "hint": hint, "outcome": "dropped_no_match", "near_miss": None})
                 continue
             if len(matches) > 1 and hint != "neutral":
                 pending_ambiguous.append((text, hint, priority, matches))
                 continue
             merge_resolved(text, matches[0], hint, priority)
+            trace.append({
+                "phrase": text, "hint": hint, "outcome": "resolved",
+                "method": "exact_or_substring", "matched": self._locations.display_name(matches[0]),
+            })
 
         # Pass 2: try to disambiguate what's left, now that we know which
         # real places this contract has *already* confirmed unambiguously.
@@ -1408,6 +1749,7 @@ class LogisticsHubModule(ModuleBase):
         #    real places both showing up in one contract by coincidence).
         for text, hint, priority, matches in pending_ambiguous:
             disambiguated = self._disambiguate_by_suffix(text, matches, raw_text)
+            method = "suffix_disambiguation"
             if disambiguated is None:
                 already_confirmed = [
                     m for m in matches
@@ -1415,20 +1757,29 @@ class LogisticsHubModule(ModuleBase):
                 ]
                 if len(already_confirmed) == 1:
                     disambiguated = already_confirmed[0]
+                    method = "already_confirmed_elsewhere"
 
             if disambiguated is not None:
                 merge_resolved(text, disambiguated, hint, priority)
+                trace.append({
+                    "phrase": text, "hint": hint, "outcome": "resolved",
+                    "method": method, "matched": self._locations.display_name(disambiguated),
+                })
                 continue
 
+            options = ", ".join(self._locations.display_name(m) for m in matches[:5])
+            trace.append({"phrase": text, "hint": hint, "outcome": "ambiguous_unresolved", "options": options})
             if text.lower() not in noted:
                 noted.add(text.lower())
-                options = ", ".join(self._locations.display_name(m) for m in matches[:5])
                 ambiguous_notes.append(f"{text!r} ({hint}) could be: {options} — not auto-resolved")
 
         resolved: list[tuple[str, dict, str, set]] = [
             (resolved_by_key[k][0], resolved_by_key[k][1], resolved_by_key[k][2], resolved_by_key[k][4])
             for k in order
         ]
+
+        if debug_trace is not None:
+            debug_trace.extend(trace)
 
         if not resolved and not candidates:
             return None
@@ -1557,7 +1908,7 @@ class LogisticsHubModule(ModuleBase):
     def _node_raw(self, contracts: list[dict], node) -> str:
         return self._node_entry(contracts, node).get("raw", "")
 
-    def _plan_route(self, contracts: list[dict]) -> list[tuple[int, str, int]]:
+    def _plan_route(self, contracts: list[dict], route_debug: dict | None = None) -> list[tuple[int, str, int]]:
         """Visiting order across every contract's pickup and drop-off
         stops: a nearest-neighbour greedy pass to build an initial route,
         then a precedence-aware 2-opt pass to fix the greedy pass's classic
@@ -1587,7 +1938,12 @@ class LogisticsHubModule(ModuleBase):
           the greedy search (and the 2-opt pass afterward) will detour to
           a farther pickup rather than visit a nearer but not-yet-loaded
           drop-off, and 2-opt rejects any reversal that would break it.
-        """
+
+        `route_debug`, if given, gets filled with the greedy route (before
+        2-opt) alongside the final one plus both total costs — added
+        2026-09-05 so a review of the debug log can tell whether 2-opt
+        actually improved anything on a given scan, not just see the final
+        route in isolation."""
         nodes = self._stop_nodes(contracts)
         n = len(nodes)
         if n == 0:
@@ -1647,7 +2003,45 @@ class LogisticsHubModule(ModuleBase):
             current_raw = self._node_raw(contracts, nodes[best])
 
         route = [nodes[i] for i in order]
-        return self._two_opt(contracts, route, start_terminal, start_raw, pickups_needed)
+
+        # Alternate 2-opt (segment reversal) and Or-opt (single-stop
+        # relocation) until neither improves — 2-opt alone can never merge
+        # two non-adjacent visits to the same real terminal (one a pickup
+        # for one contract, one a dropoff for another) into a single stop,
+        # since that requires moving one node past several others without
+        # reversing anything between them, a different move type Or-opt
+        # covers. Confirmed real on live data: Everus Harbor got visited
+        # twice in one route when only 2-opt ran (see DECISIONS.md,
+        # 2026-09-05). Each accepted move in either pass strictly lowers
+        # cost, so this converges fast in practice — the round cap is a
+        # termination safety net, not expected to bind.
+        current = route
+        rounds_run = 0
+        for rounds_run in range(1, 6):
+            after = self._two_opt(contracts, current, start_terminal, start_raw, pickups_needed)
+            after = self._or_opt(contracts, after, start_terminal, start_raw, pickups_needed)
+            if after == current:
+                break
+            current = after
+        final = current
+
+        if route_debug is not None:
+            greedy_cost = self._route_cost(contracts, route, start_terminal, start_raw)
+            final_cost = self._route_cost(contracts, final, start_terminal, start_raw)
+            route_debug["greedy_order"] = [self._node_label(contracts, node) for node in route]
+            route_debug["greedy_cost"] = round(greedy_cost, 1)
+            route_debug["final_order"] = [self._node_label(contracts, node) for node in final]
+            route_debug["final_cost"] = round(final_cost, 1)
+            route_debug["optimized_improved_by"] = round(greedy_cost - final_cost, 1)
+            route_debug["rounds_run"] = rounds_run
+
+        return final
+
+    def _node_label(self, contracts: list[dict], node) -> str:
+        i, role, _j = node
+        terminal = self._node_terminal(contracts, node)
+        name = self._locations.display_name(terminal) if terminal else self._node_raw(contracts, node)
+        return f"[{role.upper()}] {name} (contract {i})"
 
     def _route_cost(
         self, contracts: list[dict], seq: list, start_terminal: dict | None, start_raw: str | None
@@ -1710,6 +2104,56 @@ class LogisticsHubModule(ModuleBase):
                         improved = True
         return best
 
+    def _or_opt(
+        self,
+        contracts: list[dict],
+        seq: list,
+        start_terminal: dict | None,
+        start_raw: str | None,
+        pickups_needed: list[int],
+    ) -> list:
+        """Or-opt local search: repeatedly try relocating a single stop to a
+        different position in the route, keeping the move if it lowers total
+        cost and doesn't put a drop-off before its own contract's pickup.
+        Complements `_two_opt` above, which can only reverse segments — it
+        can never merge two non-adjacent visits to the same real terminal
+        (once as a pickup for one contract, once as a dropoff for another)
+        into one stop, since that means moving one node past several others
+        without reversing anything between them. Confirmed real on live data
+        (see DECISIONS.md, 2026-09-05): Everus Harbor was visited twice in
+        one route, `_two_opt` alone never found the merge. Runs until a full
+        pass finds no improving move — same convergence pattern as
+        `_two_opt`, same cost bound at real session stop-counts."""
+        best = list(seq)
+        best_cost = self._route_cost(contracts, best, start_terminal, start_raw)
+        n = len(best)
+
+        improved = True
+        while improved:
+            improved = False
+            for i in range(n):
+                node = best[i]
+                remaining = best[:i] + best[i + 1:]
+                # Stop scanning j as soon as `best` changes — `node`/
+                # `remaining` were captured from the pre-move sequence, so
+                # continuing to build candidates from them after a move
+                # would silently discard the just-found improvement instead
+                # of building on it. The outer `while improved` loop picks
+                # up any further gains in the next full pass, same as
+                # `_two_opt`'s own convergence pattern.
+                for j in range(len(remaining) + 1):
+                    candidate = remaining[:j] + [node] + remaining[j:]
+                    if not self._respects_precedence(contracts, candidate, pickups_needed):
+                        continue
+                    cost = self._route_cost(contracts, candidate, start_terminal, start_raw)
+                    if cost < best_cost - 1e-9:
+                        best, best_cost = candidate, cost
+                        improved = True
+                        break
+                if improved:
+                    break
+        return best
+
     def _cost_to_node(self, contracts: list[dict], node, from_terminal: dict | None, from_raw: str | None) -> float:
         term_b = self._node_terminal(contracts, node)
         if from_terminal and term_b:
@@ -1717,7 +2161,7 @@ class LogisticsHubModule(ModuleBase):
         return COST_UNRESOLVED + self._text_cost(from_raw or "", self._node_raw(contracts, node))
 
     def _terminal_cost(self, a: dict, b: dict) -> float:
-        if self._locations.terminal_key(a) == self._locations.terminal_key(b):
+        if self._locations.same_physical_place(a, b):
             return COST_SAME_TERMINAL
         distance = self._locations.distance(a, b)
         if distance is not None:
@@ -1774,8 +2218,29 @@ class LogisticsHubModule(ModuleBase):
         self._contracts_title.setText(f"CONTRACTS ({len(contracts)})")
         self._populate_contracts_rows(self._contracts_layout, contracts)
 
+        if contracts:
+            reward = _total_reward(contracts)
+            peak_scu = self._peak_cargo_scu(contracts)
+            plural = "s" if len(contracts) != 1 else ""
+            self._summary_label.setText(
+                f"{len(contracts)} contract{plural} · {reward:,} aUEC · {peak_scu} SCU peak cargo"
+            )
+        else:
+            self._summary_label.setText("")
+
         self._tracker_btn.setVisible(bool(self._route_order))
         self._tracker_btn.setText("RETURN TO CARD" if self._route_popout is not None else "TRACKER")
+
+        # Keep an already-open Tracker popout in sync unconditionally, even
+        # when there are now zero stops — this used to live inside the
+        # `if self._route_order:` block below, which CLEAR (or any other
+        # action that empties the route) skips entirely, silently leaving
+        # the popout showing whatever stale stops it had before the clear
+        # until the next scan happens to repopulate it. Confirmed real
+        # (2026-09-06): clicking CLEAR with the Tracker open looked like
+        # old contracts "weren't fully cleared."
+        if self._route_popout is not None:
+            self._populate_route_rows(self._route_popout_layout, contracts, transparent_bg=True)
 
         if self._route_order:
             route_title = QLabel("ROUTE")
@@ -1786,9 +2251,21 @@ class LogisticsHubModule(ModuleBase):
                 self._results_layout.addWidget(self._info_label(
                     "Route is in its own always-on-top Tracker window."
                 ))
-                self._populate_route_rows(self._route_popout_layout, contracts, transparent_bg=True)
             else:
-                self._populate_route_rows(self._results_layout, contracts)
+                # The full stop-by-stop list used to render inline here too
+                # (with the same per-stop done/skip toggling the Tracker
+                # popout has) — reverted 2026-09-05. It went invisible on
+                # the card (a scroll-position fix for it didn't actually
+                # resolve the report) and the Tracker popout is the tool
+                # actually used for working a route, so simplifying to a
+                # single prompt removes the whole broken code path instead
+                # of continuing to chase it blind (no way to run the real
+                # Qt UI in this environment). See DECISIONS.md.
+                plural = "s" if len(self._route_order) != 1 else ""
+                self._results_layout.addWidget(self._info_label(
+                    f"{len(self._route_order)} stop{plural} planned. "
+                    "Click TRACKER above to view and work the route."
+                ))
 
         self._results_layout.addWidget(self._info_label(
             "Best-effort OCR + UEX matching. Verify against the actual "
@@ -1809,28 +2286,72 @@ class LogisticsHubModule(ModuleBase):
 
         route_done = set(self.settings.get("route_done", []))
         for idx, node in enumerate(self._route_order, start=1):
-            i, role, j = node
-            contract = contracts[i] if i < len(contracts) else None
-            if contract is None:
+            described = self._describe_stop(contracts, node)
+            if described is None:
                 continue
-            key = "pickups" if role == "pickup" else "dropoffs"
-            items = contract.get(key, [])
-            entry = items[j] if j < len(items) else {}
-            terminal = entry.get("terminal")
-            raw = entry.get("raw", "??")
-            label_text = self._locations.display_name(terminal) if terminal else None
-            display = label_text or f"{raw} (unresolved)"
-            role_tag = "PICKUP" if role == "pickup" else "DROPOFF"
-            cargo_text = f" — {_cargo_label(entry.get('commodities'))}"
-            route_key = f"{contract.get('id')}:{role}:{j}"
+            label, route_key = described
             target_layout.addWidget(
                 self._route_row(
-                    f"{idx}. [{role_tag}] {display}{cargo_text}",
+                    f"{idx}. {label}",
                     route_key,
                     done=route_key in route_done,
                     transparent_bg=transparent_bg,
                 )
             )
+
+    def _stop_entry(self, contracts: list[dict], node) -> tuple[dict, str] | None:
+        """The pickup/dropoff entry dict + role a route node points at, or
+        `None` if the node's contract/index no longer exists (shouldn't
+        happen for a route built from the current contract list, but never
+        crash the card over a stale node). Shared lookup behind
+        `_describe_stop` and `_peak_cargo_scu` below — was previously
+        duplicated inline in `_populate_route_rows` only."""
+        i, role, j = node
+        contract = contracts[i] if i < len(contracts) else None
+        if contract is None:
+            return None
+        key = "pickups" if role == "pickup" else "dropoffs"
+        items = contract.get(key, [])
+        entry = items[j] if j < len(items) else {}
+        return entry, role
+
+    def _describe_stop(self, contracts: list[dict], node) -> tuple[str, str] | None:
+        """One route node as `(display_text, route_key)` — `display_text`
+        has no numbering prefix, so both the numbered route list and the
+        unnumbered NEXT STOP banner can use it as-is."""
+        resolved = self._stop_entry(contracts, node)
+        if resolved is None:
+            return None
+        entry, role = resolved
+        i, _role, j = node
+        contract = contracts[i]
+        terminal = entry.get("terminal")
+        raw = entry.get("raw", "??")
+        label_text = self._locations.display_name(terminal) if terminal else None
+        display = label_text or f"{raw} (unresolved)"
+        role_tag = "PICKUP" if role == "pickup" else "DROPOFF"
+        cargo_text = f" — {_cargo_label(entry.get('commodities'))}"
+        route_key = f"{contract.get('id')}:{role}:{j}"
+        return f"[{role_tag}] {display}{cargo_text}", route_key
+
+    def _peak_cargo_scu(self, contracts: list[dict]) -> int:
+        """The largest amount of cargo actually in the hold at any point
+        along the *planned* route — not a flat sum of every pickup, which
+        would overstate the ship size needed whenever some cargo gets
+        dropped off before more is picked up. Walks `self._route_order` in
+        order, +SCU on a pickup, -SCU on a dropoff, tracking the running
+        peak."""
+        current = 0
+        peak = 0
+        for node in self._route_order:
+            resolved = self._stop_entry(contracts, node)
+            if resolved is None:
+                continue
+            entry, role = resolved
+            scu = _entry_scu(entry)
+            current += scu if role == "pickup" else -scu
+            peak = max(peak, current)
+        return peak
 
     def _toggle_route_popout(self):
         if self._route_popout is not None:
@@ -1856,7 +2377,14 @@ class LogisticsHubModule(ModuleBase):
         uniformly, including text, which is exactly what was asked not to
         happen)."""
         win = QWidget()
-        win.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        # WindowDoesNotAcceptFocus: this is Qt.Window (not Qt.Tool like the
+        # main window), which on Windows can grab OS foreground focus both
+        # on first show and whenever an always-on-top window's z-order gets
+        # re-evaluated — plausible cause of the game occasionally losing
+        # focus while this is open. Mouse clicks (slider, close button,
+        # route-stop toggling) are unaffected; only keyboard/foreground
+        # activation is blocked. Added 2026-09-05, see DECISIONS.md.
+        win.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus)
         win.setAttribute(Qt.WA_TranslucentBackground, True)
         win.resize(420, 480)
         win.setMinimumSize(240, 160)

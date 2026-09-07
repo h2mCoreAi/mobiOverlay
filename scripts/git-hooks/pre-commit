@@ -1,0 +1,33 @@
+#!/bin/sh
+# Runs tests/test_logistics_hub_parsing.py before allowing a commit that
+# touches contract-parsing/routing code — a backstop for the "fix one bug,
+# reintroduce an earlier one" pattern this project hit repeatedly on
+# 2026-09-06 (see docs/DECISIONS.md). Only fires when a staged file
+# actually touches the relevant code, so it stays a no-op for unrelated
+# commits.
+#
+# Installed via: cp scripts/git-hooks/pre-commit .git/hooks/pre-commit
+# (not automatic — .git/hooks/ isn't tracked by git, so a fresh clone
+# needs this run once. See CLAUDE.md.)
+
+changed=$(git diff --cached --name-only)
+
+if ! echo "$changed" | grep -qE '^(modules/logistics_hub/module\.py|host/locations\.py|tests/test_logistics_hub_parsing\.py)$'; then
+    exit 0
+fi
+
+echo "pre-commit: logistics_hub parsing/routing code changed — running regression suite..."
+python tests/test_logistics_hub_parsing.py
+status=$?
+
+if [ $status -ne 0 ]; then
+    echo ""
+    echo "pre-commit: regression suite FAILED — commit blocked."
+    echo "Fix the failing fixture(s) above, or if the change is a deliberate"
+    echo "behavior change, update the fixture's expected output in"
+    echo "tests/test_logistics_hub_parsing.py."
+    exit 1
+fi
+
+echo "pre-commit: regression suite passed."
+exit 0

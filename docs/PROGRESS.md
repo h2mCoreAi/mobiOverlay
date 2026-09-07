@@ -497,27 +497,48 @@
   so log output is visible for the packaged windowed exe, where
   stdout/stderr otherwise go nowhere. No-op when run from an actual
   terminal (one's already attached). See DECISIONS.md.
+- **Fuzzy location fallback for Logistics Hub** (`LocationService.resolve_fuzzy()`
+  in `host/locations.py`, cutoff 0.85, wired into `_build_contract`'s Pass 1) —
+  a candidate with a real pickup/dropoff hint but zero exact/substring matches
+  no longer vanishes silently; it's fuzzy-matched and surfaced via the existing
+  amber-warning mechanism instead. Verified against all 7 real contracts in
+  `logistics_hub_debug.jsonl`: no regressions, cutoff tuned up from an initial
+  0.75 after that same replay caught a real false positive. Locations only —
+  see DECISIONS.md, 2026-09-05, for the full design/verification writeup.
+- **mobiTrade's origin picker replaced** with a single searchable combo
+  (matching Logistics Hub's CURRENT LOCATION UX), and `LocationService`
+  gained `friendly_label()` so terminal-only pickers can borrow a sibling
+  station/outpost/city's fuller name — see DECISIONS.md, 2026-09-05.
+- **mobiCommodities' "Find Most Profitable"/Best Sell/Best Buy made
+  stock-aware** — user caught it recommending a commodity with only 2 SCU
+  of real stock over mobiTrade's correctly-ranked top pick from the same
+  terminal. Fixed to weight by `scu_buy` (verified live to be the reliable
+  field; `scu_sell` is not — see DECISIONS.md, 2026-09-05, for the full
+  live-API investigation and the mid-implementation correction).
+- **mobiTrade's origin picker made optional** — new `— Any Location —`
+  sentinel + BUY IN system filter, with a manual SCAN button (multi-
+  terminal, throttled, same pattern as Commodity Prices' Retrieve Data)
+  since `commodities_routes` has no bulk-origin query (confirmed live —
+  see DECISIONS.md, 2026-09-05). Route rows now show BUY AT alongside the
+  existing SELL AT.
+- **FIXED (2026-09-06): the role-assignment KNOWN BUG below** (pickup/
+  dropoff hint tie-break picking the wrong mention) — two distinct
+  mechanisms in `_candidate_phrases()` (`modules/logistics_hub/module.py`)
+  fixed together after a fresh debug log reproduced it live on a real
+  Seraphim/Ambitious Dream Station contract. See DECISIONS.md, 2026-09-06,
+  for the full root-cause/fix/verification writeup.
+- **FIXED (2026-09-06, same session): the Ambitious Dream Station
+  commodity-extraction gap noted alongside the fix above.** A delivery
+  line split by OCR before its destination even starts was invisible to
+  commodity extraction entirely (not just truncated), and a commodity
+  name split even further (its second word orphaned elsewhere in the raw
+  text) is now completed against a fuller mention of the same commodity
+  already confirmed elsewhere in the same contract. New
+  `_find_delivery_match()`/`_complete_commodity_name()` helpers in
+  `modules/logistics_hub/module.py`. See DECISIONS.md, 2026-09-06.
 
 ## Next
 
-- **KNOWN BUG (logistics-hub, role-assignment): pickup/dropoff hint
-  tie-break picks the wrong mention.** Found 2026-09-04 auditing
-  `logistics_hub_debug.jsonl` against live UEX data (route/distance logic
-  itself checked out fine — this is a parsing bug upstream of routing).
-  In `_candidate_phrases()` (`modules/logistics_hub/module.py`), the
-  "own-line joined-lookahead" pass (built to catch line-wrapped location
-  names) can tag a location with the *wrong* role at the same priority
-  (`own_line`, 3) as the real keyword line that would tag it correctly —
-  e.g. "Everus Harbor" got tagged `dropoff` from a nearby wrapped
-  "Deliver...to Baijini Point... Everus Harbor..." line before the actual
-  "Collect Tin from Everus Harbor:" line was processed. `add_candidate`'s
-  tie-break only overrides on strictly-greater priority
-  (`if phrase_priority > candidates[idx][2]`), so the first, wrong tag
-  wins. Confirmed real on a live-captured contract (id `21c7811e`): its
-  pickup/dropoff came out backwards, plus a fabricated pickup stop
-  ("Covalex Orison", actually just the sender's signature block
-  resolving to a real but unrelated UEX terminal). Not fixed yet —
-  logged for later; see the full write-up in this session's transcript.
 - **KNOWN BUG (logistics-hub, duplicate-stop): same terminal can appear
   twice in one contract's pickups/dropoffs.** Found 2026-09-05 re-checking
   a live route export. A contract mentioning the same real place via two
@@ -532,6 +553,14 @@
   same-orbit self-entry either, so `LocationService.distance()` falls
   back to the coarse `+5 est.` heuristic instead of treating them as
   ~0 apart. Not fixed yet — logged for later.
+- **KNOWN BUG (logistics-hub, single-word-city): a location named with one
+  capitalized word never becomes a candidate at all.** Found 2026-09-05 on
+  a live scan. `_candidate_phrases`'s regex requires 2+ capitalized words in
+  a row, so "...Teasa Spaceport in Lorville." never produces "Lorville" as
+  a candidate (single word, preceded by lowercase "in") — only "Teasa
+  Spaceport" is tried, which isn't a real UEX record, so it falls through
+  to an ambiguous guess between two unrelated Lorville shops instead of
+  ever considering the city itself. Not fixed yet — logged for later.
 - **Human check: Logistics Hub debug log.** Run a real scan and confirm
   `logistics_hub_debug.jsonl` appears next to `config.json` (repo root
   when running from source) with one valid JSON line containing raw

@@ -21,6 +21,7 @@ in this module uses `(endpoint, id)`, never a bare id. This was a real,
 silently-wrong bug found and fixed the hard way in Logistics Hub before
 this shared service existed — see docs/DECISIONS.md, 2026-09-04.
 """
+import difflib
 import json
 import logging
 import re
@@ -55,6 +56,7 @@ class LocationService:
         # would mean querying data almost never used.
         self._distance_cache: dict[tuple, float | None] = {}
         self._orbit_tables: dict[tuple, dict | None] = {}
+        self._friendly_names: dict[str, str] | None = None  # normalized nickname -> best display_name, see friendly_label()
 
     # ------------------------------------------------------------------
     # Loading / caching
@@ -66,6 +68,8 @@ class LocationService:
         force_refresh is set."""
         if self._locations is not None and not force_refresh:
             return
+        if force_refresh:
+            self._friendly_names = None
         if not force_refresh and self._load_from_disk():
             return
         self._fetch_from_api()
@@ -178,6 +182,28 @@ class LocationService:
         return (terminal.get("_endpoint"), term_id)
 
     @staticmethod
+    def same_physical_place(a: dict, b: dict) -> bool:
+        """True if `a` and `b` are the same real place even though they're
+        different UEX records — a `terminals` kiosk sitting inside a
+        station/outpost/city links back to that structural record via
+        `id_space_station`/`id_outpost`/`id_city`. Confirmed real: "Admin -
+        Seraphim" (a `terminals` commodity kiosk, id 259) and "Seraphim
+        Station" (the `space_stations` record, id 27) are the same place
+        in-game, but `terminal_key()` treats them as unrelated — a route
+        cost lookup between them then falls back to a coarse distance
+        estimate instead of recognizing "already here," making a genuinely
+        farther stop look cheaper by comparison."""
+        if LocationService.terminal_key(a) == LocationService.terminal_key(b):
+            return True
+        for kiosk, structural, fk in (
+            (a, b, "id_space_station"), (a, b, "id_outpost"), (a, b, "id_city"),
+            (b, a, "id_space_station"), (b, a, "id_outpost"), (b, a, "id_city"),
+        ):
+            if kiosk.get("_endpoint") == "terminals" and kiosk.get(fk) and kiosk.get(fk) == structural.get("id"):
+                return True
+        return False
+
+    @staticmethod
     def display_name(terminal: dict) -> str:
         """Human-readable label for a location record.
 
@@ -216,6 +242,65 @@ class LocationService:
         if looks_like_code and nickname.lower() != display.lower():
             return f"{display} ({nickname})"
         return display
+
+    def _friendly_name_index(self) -> dict[str, str]:
+        """Normalized nickname -> longest known display_name for that
+        nickname, across every endpoint. Built once per session (invalidated
+        alongside the rest of the index on a force_refresh) and cached.
+
+        Exists because a real place's fullest name doesn't always live on
+        its `terminals` record: a terminal's own `name` is sometimes just a
+        bare admin/kiosk label (`"Admin - CRU-L5"`) with a short-code
+        `nickname` (`"CRU-L5"`) and nothing descriptive at all, while a
+        sibling `space_stations`/`outposts`/`cities` record for the exact
+        same physical place (same nickname) carries the actual in-game name
+        (`"CRU-L5 Beautiful Glen Station"`). See `friendly_label()`.
+
+        Deliberately only pulls from the non-`terminals` endpoints: two
+        *different* terminals at the same station (e.g. "Landing Services -
+        CRU-L5", "Live Fire Weapons - CRU-L5") are themselves longer than
+        the real place name but describe a facility, not the place — using
+        "longest name wins" across all endpoints would pick one of those
+        instead of the actual station/outpost/city name."""
+        if self._friendly_names is not None:
+            return self._friendly_names
+        self.ensure_loaded()
+        index: dict[str, str] = {}
+        for row in self._locations or []:
+            if row.get("_endpoint") == "terminals":
+                continue
+            nickname = row.get("nickname") or ""
+            if not nickname:
+                continue
+            key = self.normalize(nickname)
+            candidate = self.display_name(row)
+            if key not in index or len(candidate) > len(index[key]):
+                index[key] = candidate
+        self._friendly_names = index
+        return index
+
+    def friendly_label(self, terminal: dict) -> str:
+        """Like `search_label()`, but for a terminal whose own record has no
+        descriptive name of its own — just a short code repeated as both
+        `name` (kiosk-prefixed) and `nickname`. Borrows the fuller name a
+        sibling non-terminal record has for the same physical place (same
+        normalized nickname) via `_friendly_name_index()`, so a
+        terminals-only picker (e.g. Trade Route Optimizer's origin combo)
+        stays searchable by the place's actual in-game name, not just its
+        short code. Falls back to `search_label()` unchanged whenever the
+        terminal's own name is already at least as descriptive, or it has
+        no nickname to look up."""
+        nickname = terminal.get("nickname") or ""
+        if not nickname:
+            return self.search_label(terminal)
+        own_display = self.display_name(terminal)
+        best = self._friendly_name_index().get(self.normalize(nickname))
+        if not best or len(best) <= len(own_display):
+            return self.search_label(terminal)
+        looks_like_code = " " not in nickname and nickname == nickname.upper()
+        if looks_like_code and nickname.lower() != best.lower():
+            return f"{best} ({nickname})"
+        return best
 
     def resolve(self, text: str) -> dict | None:
         """Best-effort single match — the first hit from `resolve_all`, if
@@ -264,6 +349,60 @@ class LocationService:
                     matches.append(row)
         return matches
 
+    def best_fuzzy_match(self, text: str) -> tuple[dict, float] | None:
+        """The single best-scoring known location name/nickname for `text`,
+        with **no cutoff applied** — `resolve_fuzzy()` below is the cutoff-
+        enforcing wrapper callers should normally use. Exposed separately so
+        a caller building a debug trace can record *how close* a dropped
+        candidate came (e.g. "closest was X at 81%, cutoff is 85%") instead
+        of only ever seeing a bare miss. Returns `(location, score)` (score
+        0-1, `difflib.SequenceMatcher` ratio), or `None` only if the index
+        or `text` itself is empty."""
+        self.ensure_loaded()
+        if not self._name_index:
+            return None
+        norm = self.normalize(text)
+        if not norm:
+            return None
+        best_row: dict | None = None
+        best_score = 0.0
+        matcher = difflib.SequenceMatcher(a=norm)
+        for key, row in self._name_index.items():
+            if not key:
+                continue
+            matcher.set_seq2(key)
+            score = matcher.ratio()
+            if score > best_score:
+                best_score = score
+                best_row = row
+        return (best_row, best_score) if best_row is not None else None
+
+    def resolve_fuzzy(self, text: str, cutoff: float = 0.85) -> tuple[dict, float] | None:
+        """Best-effort fuzzy match against the same name index `resolve_all`
+        uses, for callers willing to accept an unconfirmed guess and surface
+        it as such (see Logistics Hub's `_build_contract`, which appends an
+        amber-warning note alongside any fuzzy resolution). Returns
+        `(location, score)` for the single best-scoring name at or above
+        `cutoff` (0-1, `difflib.SequenceMatcher` ratio), or `None` if nothing
+        clears it.
+
+        Deliberately **not** folded into `resolve()`/`resolve_all()` — every
+        other caller (Trade Route Optimizer's terminal picker, Commodity
+        Prices' nickname lookup, this module's own CURRENT LOCATION combo)
+        has no way to show an uncertainty warning, so a fuzzy guess there
+        would look exactly as confident as a real match. This stays an
+        explicit opt-in for callers that can display that distinction.
+
+        Default cutoff of 0.85 is deliberately strict, not the more common
+        0.6-0.75 range — verified against a real captured contract (see
+        DECISIONS.md): OCR debris "Tech's Ll" (mangled from "microTech's Ll
+        Lagrange point", not a real location at all) scored 0.77 against an
+        unrelated real shop named "Teach's" and would have added a spurious
+        stop at a lower cutoff. Every genuine OCR-garbled name tested so far
+        (dropped/altered letters, not debris) scored 0.87+."""
+        best = self.best_fuzzy_match(text)
+        return best if best and best[1] >= cutoff else None
+
     def search(self, query: str, limit: int = 50) -> list[dict]:
         """All unique locations whose search_label contains `query`
         (case-insensitive substring), for building a picker's filtered
@@ -309,10 +448,10 @@ class LocationService:
         `orbits_distances` (planet/orbit-level, but works for any location
         and covers cross-system pairs too) via each record's `id_orbit`.
         """
-        key_a, key_b = self.terminal_key(a), self.terminal_key(b)
-        if key_a == key_b:
+        if self.same_physical_place(a, b):
             return 0.0
 
+        key_a, key_b = self.terminal_key(a), self.terminal_key(b)
         cache_key = (key_a, key_b)
         if cache_key in self._distance_cache:
             return self._distance_cache[cache_key]

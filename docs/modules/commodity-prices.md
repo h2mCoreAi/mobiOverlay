@@ -59,9 +59,29 @@ replacement, `commodities_averages`, requires a bearer token AND is still
 per-commodity (`id_commodity` required) — not a discovery/ranking query.
 Since the project's hard rule is never embedding our own UEX token in the
 distributed app, "Find Most Profitable" is instead a client-side brute-force
-scan: call `commodities_prices` once per commodity (~100-150 calls), compute
-`max(price_sell) - min(price_buy)` per commodity, pick the winner. See
-docs/DECISIONS.md for the full reasoning that led here.
+scan over data already downloaded by Retrieve Data — see docs/DECISIONS.md
+for the full reasoning that led here.
+
+**Stock-aware, not a bare price margin (2026-09-05 fix).** Originally
+computed `max(price_sell) - min(price_buy)` per commodity — a pure per-unit
+price gap with no regard for how much was actually available to trade.
+Real example that surfaced this: it picked a commodity with a huge margin
+but only 2 SCU of source stock at the cheapest terminal, over a commodity
+with a much smaller per-unit margin but thousands of SCU available (the
+realistically better trade — confirmed by cross-checking Trade Route
+Optimizer's `commodities_routes`-driven answer for the same origin
+terminal, live). Now ranks by
+`(price_sell - price_buy) * scu_buy` (best pairing per commodity), capped
+by the BUY side's `scu_buy` (source stock). **Deliberately not gated by
+`scu_sell`** — checked live across 5 commodities, `scu_sell` (destination
+capacity) is 0 despite a real `price_sell` 75-95% of the time (UEX doesn't
+reliably track sell-side demand caps the way it tracks source stock;
+`commodities_routes`' own `scu_destination` field confirms this — it
+mirrors `scu_origin` rather than an independently-tracked demand number).
+The regular Best Sell/Best Buy rows (`_apply_filters()`) got the same
+`scu_buy > 0` gate on their Best Buy pick, for the same reason — a quoted
+buy price with 0 stock isn't real. Best Sell stays a pure price
+comparison, same reasoning.
 
 ## Card contents
 

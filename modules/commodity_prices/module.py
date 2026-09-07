@@ -103,9 +103,10 @@ class CommodityPricesModule(ModuleBase):
         self.profitable_btn = QPushButton("FIND MOST PROFITABLE")
         self.profitable_btn.setStyleSheet(_ACTION_BTN_STYLE)
         self.profitable_btn.setToolTip(
-            "Finds the biggest sell-minus-buy margin among retrieved data, "
-            "respecting the system filters below. Instant — no new API "
-            "calls. Retrieve Data first."
+            "Finds the commodity with the highest realistically achievable "
+            "profit (price margin × actual source stock) among retrieved "
+            "data, respecting the system filters below. Instant — no new "
+            "API calls. Retrieve Data first."
         )
         self.profitable_btn.setEnabled(False)
         self.profitable_btn.clicked.connect(self.find_most_profitable)
@@ -258,11 +259,19 @@ class CommodityPricesModule(ModuleBase):
         sell_system = self.sell_system.currentText()
         buy_system = self.buy_system.currentText()
 
+        # scu_buy > 0 required alongside price_buy on the BUY side: a
+        # nonzero buy price with 0 source stock is a real UEX shape
+        # (confirmed live, see docs/DECISIONS.md) — quoted but nothing to
+        # actually buy right now. No equivalent scu_sell gate on the SELL
+        # side — checked live, scu_sell (destination capacity) is 0 despite
+        # a real price_sell most of the time (UEX doesn't reliably track
+        # sell-side demand caps the way it tracks source stock), so
+        # requiring it would wrongly reject genuinely good sell terminals.
         sell_rows = [r for r in self._last_rows if r.get("price_sell", 0) > 0]
         if sell_system != ALL_SYSTEMS:
             sell_rows = [r for r in sell_rows if r.get("star_system_name") == sell_system]
 
-        buy_rows = [r for r in self._last_rows if r.get("price_buy", 0) > 0]
+        buy_rows = [r for r in self._last_rows if r.get("price_buy", 0) > 0 and r.get("scu_buy", 0) > 0]
         if buy_system != ALL_SYSTEMS:
             buy_rows = [r for r in buy_rows if r.get("star_system_name") == buy_system]
 
@@ -395,20 +404,37 @@ class CommodityPricesModule(ModuleBase):
         sell_system = self.sell_system.currentText()
         buy_system = self.buy_system.currentText()
 
+        # Stock-aware total profit, not a bare per-unit price margin — a
+        # commodity with a huge margin but only a couple SCU of source
+        # stock isn't actually "most profitable" (real example that
+        # prompted this: a ~10,500/unit margin on a commodity with 2 SCU
+        # in stock at the origin scored ahead of a ~530/unit margin
+        # commodity with 6,000 SCU available, which is obviously the
+        # better trade). Capped by scu_buy (source stock) only — scu_sell
+        # isn't a reliable capacity signal, see the note in
+        # _apply_filters() and docs/DECISIONS.md for the live-API check
+        # that found this.
         results: dict[str, float] = {}
         for name, rows in self._all_commodity_data.items():
             sell_rows = [r for r in rows if r.get("price_sell", 0) > 0]
             if sell_system != ALL_SYSTEMS:
                 sell_rows = [r for r in sell_rows if r.get("star_system_name") == sell_system]
 
-            buy_rows = [r for r in rows if r.get("price_buy", 0) > 0]
+            buy_rows = [r for r in rows if r.get("price_buy", 0) > 0 and r.get("scu_buy", 0) > 0]
             if buy_system != ALL_SYSTEMS:
                 buy_rows = [r for r in buy_rows if r.get("star_system_name") == buy_system]
 
-            if sell_rows and buy_rows:
-                margin = max(r["price_sell"] for r in sell_rows) - min(r["price_buy"] for r in buy_rows)
-                if margin > 0:
-                    results[name] = margin
+            best_total = 0
+            for buy_row in buy_rows:
+                for sell_row in sell_rows:
+                    margin = sell_row["price_sell"] - buy_row["price_buy"]
+                    if margin <= 0:
+                        continue
+                    total = margin * buy_row["scu_buy"]
+                    if total > best_total:
+                        best_total = total
+            if best_total > 0:
+                results[name] = best_total
 
         if not results:
             filter_note = ""
