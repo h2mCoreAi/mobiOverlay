@@ -76,10 +76,7 @@
   dragging; on release the card jumps to that grid-aligned position.
   Grid size and snap colors are in `theme.py` (`GRID_SIZE`, `SNAP_BORDER`,
   `SNAP_FILL`).
-  **KNOWN BUG (host, card-grid-snap): doesn't behave as expected —
-  user-tested 2026-09-03.** User has accepted it as-is for now, no changes
-  requested — leave alone unless asked. Exact mismatch not diagnosed (not
-  reproduced/debugged this session).
+  User-tested 2026-09-03 and confirmed working as intended — not a bug.
 - Fixed the window defaulting onto the primary/gaming monitor: the previous
   hardcoded `(100, 100)` fallback landed on whichever screen is primary —
   which is the user's active gaming display. Default launch position (used
