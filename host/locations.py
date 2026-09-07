@@ -195,11 +195,22 @@ class LocationService:
         farther stop look cheaper by comparison."""
         if LocationService.terminal_key(a) == LocationService.terminal_key(b):
             return True
-        for kiosk, structural, fk in (
-            (a, b, "id_space_station"), (a, b, "id_outpost"), (a, b, "id_city"),
-            (b, a, "id_space_station"), (b, a, "id_outpost"), (b, a, "id_city"),
+        # Each FK only means what it says when `structural` actually comes
+        # from the endpoint it names — `id_space_station` is meaningless
+        # against an `outposts`/`cities` record that happens to reuse the
+        # same bare numeric id (exactly the cross-endpoint id-collision
+        # this whole module's `_endpoint` tagging exists to prevent, see
+        # the module docstring — missed here on the first pass).
+        for kiosk, structural, fk, endpoint in (
+            (a, b, "id_space_station", "space_stations"), (a, b, "id_outpost", "outposts"), (a, b, "id_city", "cities"),
+            (b, a, "id_space_station", "space_stations"), (b, a, "id_outpost", "outposts"), (b, a, "id_city", "cities"),
         ):
-            if kiosk.get("_endpoint") == "terminals" and kiosk.get(fk) and kiosk.get(fk) == structural.get("id"):
+            if (
+                kiosk.get("_endpoint") == "terminals"
+                and structural.get("_endpoint") == endpoint
+                and kiosk.get(fk)
+                and kiosk.get(fk) == structural.get("id")
+            ):
                 return True
         return False
 

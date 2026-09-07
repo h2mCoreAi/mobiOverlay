@@ -260,6 +260,20 @@ DISTANCE_FIXTURES = [
         "terminals", 259, "space_stations", 27, True,
     ),
     (
+        "kiosk_fk_vs_wrong_endpoint_same_id_not_same_place",
+        # Terminal 259 ("Admin - Seraphim") has id_space_station=27, which
+        # correctly means "space_stations id 27" (Seraphim Station). But
+        # `outposts` id 27 is a totally unrelated real place (HDMS-
+        # Woodruff) that just happens to share the same bare numeric id —
+        # exactly the cross-endpoint id-collision this whole module's
+        # `_endpoint` tagging exists to prevent (see module docstring).
+        # A same_physical_place() that checks the FK value against ANY
+        # candidate's `id` without also checking `structural._endpoint`
+        # matches the FK's own named endpoint would wrongly return True
+        # here (caught in code review, 2026-09-06 — see DECISIONS.md).
+        "terminals", 259, "outposts", 27, False,
+    ),
+    (
         "different_shops_same_city_not_same_place",
         # Two different real shops that both happen to sit in Levski
         # (id_city=2) must NOT be treated as the same place as each other.

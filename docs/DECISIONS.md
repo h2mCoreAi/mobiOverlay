@@ -1783,3 +1783,31 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   capture; add it for real next time that shape recurs. Grow this file
   every time a new bug is found and fixed, not just at the end of a
   session — that's what keeps it actually protective.
+
+- 2026-09-06: **Fixed a cross-endpoint id-collision bug in
+  `LocationService.same_physical_place()`, caught by a `/code-review`
+  pass immediately after committing it.** The FK check
+  (`kiosk.get("id_space_station") == structural.get("id")`, etc.) never
+  verified `structural` actually came from the endpoint that FK names —
+  so a `terminals` kiosk with `id_space_station=27` would wrongly match
+  ANY other record with bare `id == 27`, regardless of whether it was
+  really a `space_stations` row. Confirmed real with live cache data:
+  terminal 259 ("Admin - Seraphim", `id_space_station=27`) wrongly
+  matched `outposts` id 27 ("HDMS-Woodruff") — a completely unrelated
+  real place. This is exactly the cross-endpoint id-collision class of
+  bug `host/locations.py`'s own module docstring exists to warn about
+  (see 2026-09-04) — introduced by the same-place fix earlier today
+  despite that. Fixed by also requiring `structural.get("_endpoint") ==
+  endpoint` (the FK's own named endpoint) before accepting the match.
+  Added `kiosk_fk_vs_wrong_endpoint_same_id_not_same_place` to
+  `tests/test_logistics_hub_parsing.py`'s `DISTANCE_FIXTURES` using this
+  exact real pair — confirmed it fails on the pre-fix code and passes
+  after. Four other findings from the same review pass were triaged and
+  deliberately not acted on: a `_reprocess_contracts` `route_done`-
+  staleness edge case (real, but already a documented accepted
+  limitation, just slightly worse than described); a
+  `_find_delivery_match` line-fold edge case (real but narrow, needs a
+  more careful redesign than a quick patch); and two pure-performance
+  redundant-recomputation findings (correct but negligible at this
+  project's actual data scale — single-contract text, 4-8 stops per
+  route).
