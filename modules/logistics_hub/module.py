@@ -140,6 +140,18 @@ CAPACITY_OVERFLOW_CAP = 20
 # small and easy to extend, not treated as authoritative).
 RISKY_SYSTEMS = {"Pyro"}
 
+# Default aUEC/SCU thresholds for the reward-efficiency part of grading —
+# user-editable via the Hauler Profile's GRADING SCALE table
+# (`self.settings["grading_thresholds"]`), these are only the fallback
+# when nothing's been saved yet. First-pass guesses (500/200/80) were
+# checked 2026-09-07 against this project's own 10 real captured contract
+# fixtures and found to be miscalibrated low — every real contract in that
+# set scored "good" or better, real observed range was ~520-4,300 — but
+# rather than guess a second, equally unverified set of numbers, this is
+# now the user's own call to tune, not something hardcoded from research
+# that turned out unreliable.
+DEFAULT_GRADING_THRESHOLDS = {"great": 500, "good": 200, "ok": 80}
+
 # Restricts what EasyOCR can output to characters that can actually appear
 # in a contract panel — letters, digits, and every punctuation mark
 # observed across this session's real captures (periods, commas, colons,
@@ -1097,7 +1109,7 @@ class _HaulerProfilePopup(QWidget):
     click/focus loss, which would silently discard an in-progress edit
     here too); only SAVE closes it."""
 
-    def __init__(self, parent_widget, profile: dict, capacity: int | None, on_save):
+    def __init__(self, parent_widget, profile: dict, capacity: int | None, thresholds: dict | None, on_save):
         super().__init__(None, Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"""
@@ -1176,6 +1188,24 @@ class _HaulerProfilePopup(QWidget):
         self._time_combo = self._add_row(layout, "SESSION TIME", PROFILE_TIME_CHOICES, profile.get("time_budget"))
         self._region_combo = self._add_row(layout, "REGION", PROFILE_REGION_CHOICES, profile.get("region_pref"))
 
+        # GRADING SCALE — added 2026-09-07 per user direction, replacing
+        # hardcoded aUEC/SCU thresholds that turned out to be miscalibrated
+        # against this project's own real captured contracts (see
+        # docs/DECISIONS.md). User-tunable instead of guessed a second
+        # time. `_grade_contract()` reads `self.settings["grading_
+        # thresholds"]` fresh on every scan — saving here takes effect on
+        # the very next scan, no restart needed.
+        scale_title = QLabel("GRADING SCALE (aUEC/SCU)")
+        scale_title.setStyleSheet(
+            f"color: {theme.ACCENT_CYAN}; font-family: {theme.FONT_DISPLAY}; "
+            f"font-weight: 800; font-size: {theme.fpx(10)}px; letter-spacing: 1px;"
+        )
+        layout.addWidget(scale_title)
+        merged_thresholds = {**DEFAULT_GRADING_THRESHOLDS, **(thresholds or {})}
+        self._great_edit = self._add_number_row(layout, "GREAT ≥", merged_thresholds["great"])
+        self._good_edit = self._add_number_row(layout, "GOOD ≥", merged_thresholds["good"])
+        self._ok_edit = self._add_number_row(layout, "OK ≥", merged_thresholds["ok"])
+
         save_btn = QPushButton("SAVE")
         save_btn.setStyleSheet(
             f"background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN}; "
@@ -1214,6 +1244,31 @@ class _HaulerProfilePopup(QWidget):
         layout.addLayout(row)
         return combo
 
+    def _add_number_row(self, layout: QVBoxLayout, label_text: str, value: int) -> QLineEdit:
+        row = QHBoxLayout()
+        label = QLabel(label_text)
+        label.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
+            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
+        )
+        row.addWidget(label)
+
+        edit = QLineEdit(str(value))
+        edit.setValidator(QIntValidator(0, 1_000_000, edit))
+        edit.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
+                padding: 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
+                font-size: {theme.fpx(11)}px;
+            }}
+            """
+        )
+        row.addWidget(edit, 1)
+        layout.addLayout(row)
+        return edit
+
     def _save(self):
         capacity_text = self._capacity_edit.text().strip()
         self._on_save(
@@ -1225,6 +1280,11 @@ class _HaulerProfilePopup(QWidget):
                 "region_pref": self._region_combo.currentText(),
             },
             int(capacity_text) if capacity_text else None,
+            {
+                "great": int(self._great_edit.text() or DEFAULT_GRADING_THRESHOLDS["great"]),
+                "good": int(self._good_edit.text() or DEFAULT_GRADING_THRESHOLDS["good"]),
+                "ok": int(self._ok_edit.text() or DEFAULT_GRADING_THRESHOLDS["ok"]),
+            },
         )
         self.close()
 
@@ -1633,7 +1693,8 @@ class LogisticsHubModule(ModuleBase):
         # `_grade_contract()` already uses for the same field.
         profile = self.settings.get("hauler_profile") or {}
         capacity = self.settings.get("cargo_capacity_scu")
-        popup = _HaulerProfilePopup(self._card_widget, profile, capacity, self._on_profile_saved)
+        thresholds = self.settings.get("grading_thresholds")
+        popup = _HaulerProfilePopup(self._card_widget, profile, capacity, thresholds, self._on_profile_saved)
         # Same reference-keeping fix as _review_popup below — a real
         # Qt.Window has no implicit reference keeping it alive once this
         # method returns.
@@ -1642,9 +1703,10 @@ class LogisticsHubModule(ModuleBase):
         popup.move(anchor)
         popup.show()
 
-    def _on_profile_saved(self, profile: dict, capacity: int | None):
+    def _on_profile_saved(self, profile: dict, capacity: int | None, thresholds: dict):
         self.settings["hauler_profile"] = profile
         self.settings["cargo_capacity_scu"] = capacity
+        self.settings["grading_thresholds"] = thresholds
         self._save_settings()
         self._set_status(f"Profile saved: {profile.get('ship') or 'no ship set'}.")
         self._profile_popup = None
@@ -3367,18 +3429,22 @@ class LogisticsHubModule(ModuleBase):
             cap_ceiling = min(cap_ceiling, GRADE_CAP_ON_WARNING)
             reasons.append(f"{', '.join(overlapping)} already queued elsewhere")
 
+        # Read fresh every call (not cached anywhere) so a change saved in
+        # the Hauler Profile's GRADING SCALE table takes effect on the
+        # very next scan, no restart needed.
+        thresholds = self.settings.get("grading_thresholds") or DEFAULT_GRADING_THRESHOLDS
         reward_digits = (contract.get("reward") or "").replace(",", "")
         reward_val = int(reward_digits) if reward_digits.isdigit() else 0
         scu = sum(_entry_scu(e) for e in contract.get("pickups", []))
         if reward_val and scu:
             per_scu = reward_val / scu
-            if per_scu >= 500:
+            if per_scu >= thresholds.get("great", DEFAULT_GRADING_THRESHOLDS["great"]):
                 points += 25
                 reasons.append(f"{per_scu:.0f} aUEC/SCU (great)")
-            elif per_scu >= 200:
+            elif per_scu >= thresholds.get("good", DEFAULT_GRADING_THRESHOLDS["good"]):
                 points += 10
                 reasons.append(f"{per_scu:.0f} aUEC/SCU (good)")
-            elif per_scu >= 80:
+            elif per_scu >= thresholds.get("ok", DEFAULT_GRADING_THRESHOLDS["ok"]):
                 reasons.append(f"{per_scu:.0f} aUEC/SCU (ok)")
             else:
                 points -= 15

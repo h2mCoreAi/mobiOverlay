@@ -2485,3 +2485,34 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   capacity field through the real popup widget. 27/27 checks pass;
   verified live (offscreen, real fonts) that the field renders correctly
   positioned and `config.json` stayed untouched (hash-verified).
+
+- 2026-09-07: **aUEC/SCU grading thresholds made user-editable — the
+  hardcoded 500/200/80 numbers were checked against this project's own 10
+  real captured contract fixtures and found miscalibrated low** (real
+  range observed: ~520-4,300 aUEC/SCU; every real fixture scored "good"
+  or better under the old scale, the "ok"/"low" bands never fired in
+  practice). Rather than guess a second, equally unverified replacement
+  scale, per user direction this is now the user's own call: a new
+  **GRADING SCALE** table in the Hauler Profile popup (three fields —
+  GREAT ≥ / GOOD ≥ / OK ≥, defaulting to the original 500/200/80 via
+  `DEFAULT_GRADING_THRESHOLDS`), saved to
+  `self.settings["grading_thresholds"]` through the same SAVE button as
+  the rest of the profile.
+
+  **Applies without a restart, by construction, not by any special
+  wiring**: `_grade_contract()` already reads every setting fresh on each
+  call (same as `hauler_profile`/`cargo_capacity_scu`) rather than caching
+  anything — saving a new threshold just changes what the *next* scan's
+  `self.settings.get("grading_thresholds")` read returns. New regression
+  check `grading_thresholds_apply_without_restart` calls `_grade_contract()`
+  twice on the same contract in the same module instance, before and
+  after mutating the setting, and confirms the aUEC/SCU label actually
+  changes ("great" → "low" once the thresholds are pushed far past the
+  contract's real number) with no reload of any kind in between.
+
+  Verified live: opened the real popup, confirmed the table renders with
+  the correct defaults; edited the three fields and clicked the real SAVE
+  button, then called `_grade_contract()` again on the same real fixture
+  contract in the same running module instance — 522 aUEC/SCU scored 90%
+  ("great") before, 65% ("ok") immediately after, no restart. 28/28
+  regression checks pass; `config.json` confirmed untouched (hash-verified).

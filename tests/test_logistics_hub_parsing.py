@@ -540,6 +540,25 @@ def run_grading_checks() -> tuple[int, int]:
         failures += 1
         print(f"    expected an uncapped grade with no warning reasons; got {(grade, reason)!r}")
 
+    # 2026-09-07: GRADING SCALE thresholds are user-editable and must take
+    # effect immediately, no restart — `_grade_contract()` reads
+    # `self.settings["grading_thresholds"]` fresh every call rather than
+    # caching it anywhere. Verified here by mutating settings directly
+    # (equivalent to what SAVE does) and confirming the very next
+    # `_grade_contract()` call reflects it.
+    name = "grading_thresholds_apply_without_restart"
+    total += 1
+    _grade, reason_before, _capped = mod._grade_contract(contract, [])
+    mod.settings["grading_thresholds"] = {"great": 1_000_000, "good": 999_999, "ok": 999_998}
+    _grade, reason_after, _capped = mod._grade_contract(contract, [])
+    ok = "(great)" in reason_before and "(low)" in reason_after
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    expected the aUEC/SCU label to change once thresholds changed; "
+              f"before={reason_before!r} after={reason_after!r}")
+    del mod.settings["grading_thresholds"]
+
     tmp_path.unlink(missing_ok=True)
     return failures, total
 
@@ -722,15 +741,23 @@ def run_ui_state_checks() -> tuple[int, int]:
         popup._risk_combo.setCurrentText("Moderate")
         popup._time_combo.setCurrentText("Quick (<30 min)")
         popup._region_combo.setCurrentText("Willing to cross jump points")
+        popup._great_edit.setText("2000")
+        popup._good_edit.setText("1000")
+        popup._ok_edit.setText("500")
         popup._save()
         app.processEvents()
         saved = mod.settings.get("hauler_profile", {})
-        ok = saved == {
-            "ship": "Hull C", "goal": "Profit", "risk": "Moderate",
-            "time_budget": "Quick (<30 min)", "region_pref": "Willing to cross jump points",
-        } and mod.settings.get("cargo_capacity_scu") == 512
+        ok = (
+            saved == {
+                "ship": "Hull C", "goal": "Profit", "risk": "Moderate",
+                "time_budget": "Quick (<30 min)", "region_pref": "Willing to cross jump points",
+            }
+            and mod.settings.get("cargo_capacity_scu") == 512
+            and mod.settings.get("grading_thresholds") == {"great": 2000, "good": 1000, "ok": 500}
+        )
         if not ok:
-            print(f"    unexpected saved profile/capacity: {saved}, {mod.settings.get('cargo_capacity_scu')!r}")
+            print(f"    unexpected saved state: profile={saved}, capacity={mod.settings.get('cargo_capacity_scu')!r}, "
+                  f"thresholds={mod.settings.get('grading_thresholds')!r}")
     except Exception as exc:
         ok = False
         print(f"    profile popup raised: {exc!r}")

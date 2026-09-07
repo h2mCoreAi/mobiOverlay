@@ -626,6 +626,14 @@
   settings key, only the UI location changed. 27/27 regression checks
   pass. See DECISIONS.md, 2026-09-07.
 
+- **aUEC/SCU grading thresholds are now user-editable** — the hardcoded
+  500/200/80 numbers were checked against this project's own real
+  captured contracts and found miscalibrated low, so rather than guess a
+  replacement scale, it's now a GRADING SCALE table in the Hauler
+  Profile popup. Applies on the very next scan, no restart (grading
+  already reads settings fresh every call). 28/28 regression checks
+  pass. See DECISIONS.md, 2026-09-07.
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one
