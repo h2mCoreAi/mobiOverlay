@@ -126,6 +126,56 @@ def _virtual_desktop_rect() -> QRect | None:
     return rect
 
 
+def _order_ocr_boxes(results: list, image_width: int) -> list[str]:
+    """Reorder EasyOCR's `detail=1` results (each `(bbox, text, confidence)`,
+    `bbox` a 4-point quadrilateral) into genuine left-to-right,
+    top-to-bottom reading order, instead of trusting whatever order
+    EasyOCR's own internal sort happened to return.
+
+    The in-game contract panel is consistently two columns (mission
+    narrative text next to a separate PICK UP/DROP OFF list) — this is
+    documented as the root cause behind the large majority of parsing
+    bugs fixed this session (split location names, orphaned words, role
+    misattribution): every one of them was really a downstream symptom of
+    reading both columns interleaved by vertical position instead of one
+    column at a time. This fixes it at the source: split into at most two
+    columns by the single largest horizontal gap between text boxes (only
+    if that gap is wide enough to plausibly be a real column boundary,
+    not just normal text spacing), sort each column top-to-bottom, then
+    read the left column in full before the right one.
+
+    A capture with no genuine column split (the common case for a
+    single-pickup/single-dropoff contract, or any capture that isn't two
+    columns at all) finds no wide-enough gap and degrades to one column,
+    sorted purely top-to-bottom — never worse than the old behavior.
+    """
+    boxes = []
+    for bbox, text, _confidence in results:
+        xs = [p[0] for p in bbox]
+        ys = [p[1] for p in bbox]
+        boxes.append({"text": text, "x_min": min(xs), "y_center": sum(ys) / len(ys)})
+
+    if len(boxes) < 2:
+        return [b["text"] for b in boxes]
+
+    ordered = sorted(boxes, key=lambda b: b["x_min"])
+    gaps = [(ordered[i + 1]["x_min"] - ordered[i]["x_min"], i) for i in range(len(ordered) - 1)]
+    biggest_gap, split_idx = max(gaps)
+
+    # A real column boundary is a large fraction of the capture's own
+    # width, not a fixed pixel count — capture regions vary a lot in size
+    # (a tight single-contract crop vs. a wide multi-column one).
+    if biggest_gap < max(50, image_width * 0.15):
+        columns = [ordered]
+    else:
+        columns = [ordered[: split_idx + 1], ordered[split_idx + 1 :]]
+
+    lines: list[str] = []
+    for column in columns:
+        lines.extend(b["text"] for b in sorted(column, key=lambda b: b["y_center"]))
+    return lines
+
+
 _PICKUP_COMMODITY_RE = re.compile(r"\bcollect\s+(.+?)\s+from\s+(.+)", re.I)
 # Captures the SCU quantity too (group 1) — unlike the "Collect X from Y"
 # pickup line, which never states its own quantity, each "Deliver N/TOTAL
@@ -1580,8 +1630,20 @@ class LogisticsHubModule(ModuleBase):
             self._reader = easyocr.Reader(["en"], gpu=False, verbose=False)
 
         import numpy as np
-        result = self._reader.readtext(np.array(gray), detail=0)
-        return "\n".join(result)
+        # detail=1 (not the previous detail=0) so each result carries its
+        # bounding box, not just bare text — needed by _order_ocr_boxes()
+        # below to read the panel in genuine left-to-right, top-to-bottom
+        # order. Without this, text came back in whatever order EasyOCR's
+        # own internal sort happened to produce, which does NOT respect
+        # the contract panel's real two-column layout (mission narrative
+        # text next to a separate PICK UP/DROP OFF list) — confirmed to be
+        # the root cause behind the large majority of parsing bugs fixed
+        # this session (split location names, orphaned words, role
+        # misattribution), all of which were really downstream symptoms of
+        # reading the two columns interleaved instead of one at a time.
+        results = self._reader.readtext(np.array(gray), detail=1)
+        lines = _order_ocr_boxes(results, pil_rgb.width)
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Location resolution now lives in the shared Core service

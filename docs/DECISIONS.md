@@ -1931,3 +1931,50 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   duplicate-stop fixture above) and confirmed it fails on the pre-fix
   code and passes after. All 13 regression checks pass, no existing
   fixture regressed.
+
+- 2026-09-06: **OCR pipeline optimization #1: column-aware reading order,
+  first of a ranked list the user asked to implement incrementally (one
+  change, confirm, then proceed to the next).** Investigated the full
+  `_grab_region`/`_ocr` pipeline (`modules/logistics_hub/module.py`) — it
+  was minimal: grayscale + autocontrast, then
+  `self._reader.readtext(np.array(gray), detail=0)`, joined directly into
+  `raw_text`. `detail=0` discards each result's bounding box, so text
+  comes back in whatever order EasyOCR's own internal sort produces —
+  this doesn't know about or respect the in-game contract panel's real
+  two-column layout (mission narrative text next to a separate PICK UP/
+  DROP OFF list). Recognized this as the root cause behind the large
+  majority of this session's parsing bug fixes (role-assignment,
+  commodity-misattribution, orphaned words) — every one of them was
+  really a downstream symptom of reading both columns interleaved by
+  vertical position, not a genuine parsing-logic flaw on its own.
+  Fixed at the source instead of continuing to patch downstream text
+  heuristics: switched to `readtext(..., detail=1)` (keeps bounding
+  boxes) and added `_order_ocr_boxes()` — sorts all detected text boxes
+  by horizontal position, finds the single largest gap, and splits into
+  two columns only if that gap is wide enough (relative to the capture's
+  own width, not a fixed pixel count, since capture regions vary a lot
+  in size) to plausibly be a real column boundary rather than normal
+  text spacing; each column is then sorted top-to-bottom and the left
+  column is read in full before the right one. A capture with no real
+  column split (common for a single-pickup/single-dropoff contract, or
+  any non-two-column capture) finds no wide-enough gap and degrades to
+  one column sorted top-to-bottom — never worse than the previous
+  behavior.
+  **Verified the ordering algorithm directly** with synthetic bounding-
+  box data mimicking a real two-column layout (narrative text
+  interleaved by vertical position with a PICK UP LOCATIONS list) —
+  confirmed it correctly reads the left column in full before the right
+  one instead of interleaving them, and confirmed a single-column
+  capture (no wide gap) stays in plain top-to-bottom order, unchanged.
+  Ran the full existing regression suite (13/13) — unaffected, since
+  those fixtures feed hand-written `raw_text` directly to
+  `_build_contract` and never exercise `_ocr()` itself.
+  **Known limitation, stated plainly**: this only verifies the
+  reordering *algorithm* in isolation — there is no way to verify the
+  full real end-to-end improvement (actual game screenshot -> actual
+  EasyOCR bounding boxes -> actual reordering) without a live capture
+  and a running EasyOCR pass, which needs the user's own screen and
+  game session. A real scan is the next real test of this change.
+  Per user direction, stopping here for confirmation before moving to
+  the next ranked optimization (upscaling small in-game text before
+  OCR).

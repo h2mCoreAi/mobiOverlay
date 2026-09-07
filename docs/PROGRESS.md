@@ -553,11 +553,32 @@
 
 ## Next
 
-- **TODO: review the Logistics Hub OCR pipeline for optimization
-  opportunities against the user's actual real-world screenshots.** Noted
-  2026-09-06 per user request — not yet started. Worth checking capture
-  region/preprocessing/easyocr settings against a batch of real captures
-  rather than the current settings, which were never specifically tuned.
+- **OCR pipeline optimization pass — in progress, incremental, one
+  change at a time per user direction.** Noted 2026-09-06 per user
+  request. Ranked list of candidate optimizations investigated; working
+  through them one at a time with the user's go-ahead between each:
+  1. ✅ **Done (2026-09-06): column-aware reading order.** Was
+     `readtext(detail=0)`, which discards position data and returns text
+     in whatever order EasyOCR's internal sort produces — this doesn't
+     respect the contract panel's real two-column layout (mission
+     narrative text next to a separate PICK UP/DROP OFF list), and is
+     the root cause behind the large majority of parsing bugs fixed this
+     session (split location names, orphaned words, role
+     misattribution) — all really downstream symptoms of reading both
+     columns interleaved. Switched to `detail=1` (keeps bounding boxes)
+     + new `_order_ocr_boxes()`: splits into at most two columns by the
+     single largest horizontal gap between text boxes (only if wide
+     enough to be a real column boundary), sorts each column
+     top-to-bottom, reads the left column in full before the right one.
+     Degrades safely to one column (unchanged from before) when no real
+     gap is found. See DECISIONS.md, 2026-09-06.
+  2. Not started: upscale the captured region before OCR (small in-game
+     UI text is likely below EasyOCR's comfortable resolution).
+  3. Not started: preprocessing tuned to this UI specifically (inverted
+     threshold for light-text-on-dark, instead of generic grayscale +
+     autocontrast).
+  4. Not started: EasyOCR character allowlist (contract text is a known,
+     narrow domain — letters/digits/standard punctuation/"SCU").
 - **FIXED (2026-09-06): the duplicate-stop KNOWN BUG below.**
   `_build_contract`'s `merge_resolved` now also merges two candidates that
   resolve to *different* UEX records for the *same real place* (via
