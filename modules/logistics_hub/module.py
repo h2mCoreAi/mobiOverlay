@@ -1005,8 +1005,12 @@ class _ReviewPopup(QWidget):
             )
             good_btn.setStyleSheet(small_btn_style)
             bad_btn.setStyleSheet(small_btn_style)
-            good_btn.clicked.connect(lambda _checked, t=terminal, g=good_btn, b=bad_btn: self._rate(t, True, g, b))
-            bad_btn.clicked.connect(lambda _checked, t=terminal, g=good_btn, b=bad_btn: self._rate(t, False, g, b))
+            good_btn.clicked.connect(
+                lambda _checked, t=terminal, lbl=label_text, g=good_btn, b=bad_btn: self._rate(t, True, lbl, g, b)
+            )
+            bad_btn.clicked.connect(
+                lambda _checked, t=terminal, lbl=label_text, g=good_btn, b=bad_btn: self._rate(t, False, lbl, g, b)
+            )
             row.addWidget(good_btn)
             row.addWidget(bad_btn)
             layout.addLayout(row)
@@ -1028,14 +1032,14 @@ class _ReviewPopup(QWidget):
         btn_row.addWidget(reject_btn)
         layout.addLayout(btn_row)
 
-    def _rate(self, terminal: dict, good: bool, good_btn: QPushButton, bad_btn: QPushButton):
+    def _rate(self, terminal: dict, good: bool, label: str, good_btn: QPushButton, bad_btn: QPushButton):
         # Saves immediately, doesn't close the popup — you can rate several
         # locations before deciding ACCEPT/REJECT. Doesn't affect *this*
         # popup's already-shown grade (recomputing live isn't worth the
         # complexity for a rating that mainly pays off on the *next* scan
         # of the same location) — just disables the row so it's clear the
         # answer was recorded.
-        self._on_rate(terminal, good)
+        self._on_rate(terminal, good, label)
         good_btn.setEnabled(False)
         bad_btn.setEnabled(False)
 
@@ -1189,6 +1193,15 @@ class LogisticsHubModule(ModuleBase):
         self._locations = LocationService(api_client)
         self._location_choices: dict[str, dict] = {}  # display name -> terminal row, for the picker
         self._pending_scan: dict | None = None  # scanned, awaiting ACCEPT/REJECT in the review popup
+        # Debug-log context for the currently-open review popup — set in
+        # `refresh()`/`_show_review_popup()`, read back by
+        # `_log_review_outcome()` when ACCEPT/REJECT is actually clicked
+        # (which happens later, asynchronously, so it can't be logged in
+        # the same call that shows the popup). See docs/DECISIONS.md,
+        # 2026-09-07.
+        self._pending_grade: tuple[str | None, str, bool] | None = None
+        self._pending_unrated_names: list[str] = []
+        self._pending_ratings_given: list[dict] = []
         # A "node" is one stop to visit: (contract_index, "pickup"/"dropoff",
         # index within that role's list) — a contract can have several
         # pickups or several drop-offs (real panels use both DROP OFF
@@ -1823,13 +1836,22 @@ class LogisticsHubModule(ModuleBase):
         contracts = self.settings.setdefault("contracts", [])
         self._pending_scan = contract
         duplicate = any(self._is_likely_duplicate(c, contract) for c in contracts)
-        self._show_review_popup(contract, duplicate)
+        # Computed once here (not inside _show_review_popup) so the popup
+        # and the debug log entry below always agree on the same grade —
+        # _grade_contract() calls _plan_route() twice, not worth doing
+        # again just to log it.
+        self._pending_grade = self._grade_contract(contract, contracts)
+        self._show_review_popup(contract, duplicate, self._pending_grade)
         self._set_status("Review the scan — ACCEPT or REJECT.")
-        self._log_scan_debug(raw_text, candidates, contract, "pending_review", debug_trace, {})
+        self._log_scan_debug(
+            raw_text, candidates, contract, "pending_review", debug_trace, {},
+            grade=self._pending_grade,
+        )
 
     def _log_scan_debug(
         self, raw_text: str, candidates: list[tuple[str, str, int]], contract: dict, note: str,
         debug_trace: list[dict], route_debug: dict,
+        grade: tuple[str | None, str, bool] | None = None,
     ) -> None:
         """Append one JSON line per scan to an always-on debug log, so real
         usage accumulates into a file the user can hand to an AI later to
@@ -1859,6 +1881,13 @@ class LogisticsHubModule(ModuleBase):
             # (route isn't replanned until the contract is actually added).
             "route_debug": route_debug,
             "route_snapshot": self._format_route_text(),
+            # Confirm-gate/grading fields — added 2026-09-07 so a review
+            # popup's decision can actually be reconstructed from the log
+            # later instead of only seeing raw text/parsing. `None` when
+            # grading wasn't run for this entry (e.g. REPROCESS).
+            "grade": grade[0] if grade else None,
+            "grade_reason": grade[1] if grade else None,
+            "grade_capped": grade[2] if grade else None,
         }
         self._append_debug_log(entry)
 
@@ -1935,7 +1964,7 @@ class LogisticsHubModule(ModuleBase):
             return LocationService.terminal_key(terminal)
         return entry.get("raw", "").lower()
 
-    def _show_review_popup(self, contract: dict, duplicate: bool):
+    def _show_review_popup(self, contract: dict, duplicate: bool, grade_info: tuple[str | None, str, bool]):
         pickups_text = self._entry_names(contract.get("pickups", []), self._locations.display_name)
         dropoffs_text = self._entry_names(contract.get("dropoffs", []), self._locations.display_name)
         reward = contract.get("reward")
@@ -1951,8 +1980,7 @@ class LogisticsHubModule(ModuleBase):
             "(same reward, shares a location)." if duplicate else None
         )
 
-        existing_contracts = self.settings.get("contracts", [])
-        grade, grade_reason, grade_capped = self._grade_contract(contract, existing_contracts)
+        grade, grade_reason, grade_capped = grade_info
 
         ship = (self.settings.get("hauler_profile") or {}).get("ship", "").strip()
         ratings = self.settings.get("ship_location_ratings", {})
@@ -1966,22 +1994,54 @@ class LogisticsHubModule(ModuleBase):
                 seen_keys.add(key)
                 unrated_terminals.append((self._locations.display_name(terminal), terminal))
 
+        # Recorded here (not just saved to the ratings DB) so
+        # _log_review_outcome() can put "what was asked, what was
+        # answered" into the debug log when ACCEPT/REJECT is clicked —
+        # added 2026-09-07.
+        self._pending_unrated_names = [name for name, _t in unrated_terminals]
+        self._pending_ratings_given = []
+
+        def on_rate(terminal: dict, good: bool, label: str):
+            self._rate_compatibility(ship, terminal, good)
+            self._pending_ratings_given.append({"location": label, "rating": "good" if good else "bad"})
+
         popup = _ReviewPopup(
             self._card_widget, summary_text, duplicate_warning,
             grade, grade_reason, grade_capped, unrated_terminals,
-            lambda terminal, good: self._rate_compatibility(ship, terminal, good),
-            self._on_review_accept, self._on_review_reject,
+            on_rate, self._on_review_accept, self._on_review_reject,
         )
         anchor = self._scan_btn.mapToGlobal(self._scan_btn.rect().bottomLeft())
         popup.move(anchor)
         popup.show()
 
+    def _log_review_outcome(self, contract: dict, outcome: str) -> None:
+        """Appended when ACCEPT/REJECT is actually clicked — separate from
+        the 'pending_review' entry `_log_scan_debug` writes at scan time,
+        since that entry is written before the user has seen the popup
+        and can't know the outcome yet. Added 2026-09-07 alongside the
+        grading/compatibility-DB feature so a real session's decisions
+        (not just its OCR/parsing) show up in the debug log."""
+        entry = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "note": f"review_{outcome}",
+            "contract_id": contract.get("id"),
+            "grade": self._pending_grade[0] if self._pending_grade else None,
+            "grade_reason": self._pending_grade[1] if self._pending_grade else None,
+            "grade_capped": self._pending_grade[2] if self._pending_grade else None,
+            "compatibility_prompts_shown": self._pending_unrated_names,
+            "compatibility_ratings_given": self._pending_ratings_given,
+        }
+        self._append_debug_log(entry)
+
     def _on_review_accept(self):
         if self._pending_scan is not None:
+            self._log_review_outcome(self._pending_scan, "accepted")
             self._add_contract(self._pending_scan)
         self._pending_scan = None
 
     def _on_review_reject(self):
+        if self._pending_scan is not None:
+            self._log_review_outcome(self._pending_scan, "rejected")
         self._pending_scan = None
         self._set_status("Contract not added.")
 

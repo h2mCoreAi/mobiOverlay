@@ -594,6 +594,14 @@
   (a reward-format crash, a None-profile crash, and a cap that wasn't
   visually distinct) — none were catchable by logic-only tests alone.
 
+- **Debug log extended for the confirm-gate/grading feature** — the scan-
+  time entry now carries grade/reason/capped, and a new entry logs the
+  actual ACCEPT/REJECT outcome plus which locations were shown for a
+  compatibility rating and what was answered. Found and fixed a test-
+  hygiene bug along the way (tests were appending fake entries into the
+  real debug log — now isolated). 26/26 regression checks pass. See
+  DECISIONS.md, 2026-09-07.
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one

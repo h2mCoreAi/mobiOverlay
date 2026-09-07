@@ -556,6 +556,13 @@ def run_ui_state_checks() -> tuple[int, int]:
     api_client = UexApiClient(config.data["api"]["uex_base_url"], config.data["api"]["uex_token"])
     mod = LogisticsHubModule(api_client, config)
     mod._locations.ensure_loaded()
+    # `_append_debug_log()` writes to the real logistics_hub_debug.jsonl
+    # unconditionally (it doesn't go through Config, so the temp Config
+    # above doesn't isolate it) — this suite calling _on_review_accept/
+    # _on_review_reject below would otherwise append fake test entries
+    # into the user's real debug log every run. Collect in memory instead.
+    debug_log_entries: list[dict] = []
+    mod._append_debug_log = debug_log_entries.append
     container = CardContainer(config)
     mod.create_card(container)
 
@@ -588,7 +595,9 @@ def run_ui_state_checks() -> tuple[int, int]:
     contract2 = mod._build_contract(FIXTURES[1][1])
     try:
         mod._pending_scan = contract2
-        mod._show_review_popup(contract2, duplicate=True)  # duplicate=True exercises the warning-row branch too
+        grade_info = mod._grade_contract(contract2, mod.settings.get("contracts", []))
+        mod._pending_grade = grade_info
+        mod._show_review_popup(contract2, True, grade_info)  # duplicate=True exercises the warning-row branch too
         app.processEvents()
         ok = True
     except Exception as exc:
@@ -629,6 +638,36 @@ def run_ui_state_checks() -> tuple[int, int]:
         failures += 1
         print(f"    expected contract count {before_count}->{before_count + 1} and _pending_scan cleared; "
               f"got count={after_count}, pending={mod._pending_scan!r}")
+
+    # 2026-09-07: ACCEPT/REJECT should each log a "review_<outcome>" debug
+    # entry carrying the grade shown and any compatibility ratings given —
+    # added so a real session's decisions are actually reconstructable
+    # from the debug log, not just its OCR/parsing. Uses the in-memory
+    # `debug_log_entries` collector set up above (never the real file).
+    name = "review_outcome_logs_grade_and_ratings"
+    total += 1
+    debug_log_entries.clear()
+    mod.settings["hauler_profile"] = {"ship": "Hull C"}
+    contract3 = mod._build_contract(FIXTURES[0][1])
+    pickup_terminal = contract3["pickups"][0]["terminal"]
+    grade_info = mod._grade_contract(contract3, mod.settings.get("contracts", []))
+    mod._pending_scan = contract3
+    mod._pending_grade = grade_info
+    mod._pending_unrated_names = [mod._locations.display_name(pickup_terminal)]
+    mod._pending_ratings_given = [{"location": mod._locations.display_name(pickup_terminal), "rating": "good"}]
+    mod._on_review_accept()
+    logged = next((e for e in debug_log_entries if e.get("note") == "review_accepted"), None)
+    expected_ratings = [{"location": mod._locations.display_name(pickup_terminal), "rating": "good"}]
+    ok = (
+        logged is not None
+        and logged.get("grade") == grade_info[0]
+        and logged.get("compatibility_ratings_given") == expected_ratings
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    expected a 'review_accepted' entry with grade={grade_info[0]!r} and the rating given; "
+              f"got {logged!r}")
 
     # 2026-09-07 (Part 2): Hauler Profile popup — actually construct and
     # save it (same lesson as review_popup_renders_without_crashing above:

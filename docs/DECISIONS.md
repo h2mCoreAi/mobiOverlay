@@ -2334,3 +2334,53 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   from the start of this session's conversation, working end-to-end.
   25/25 regression checks pass; real `config.json` confirmed untouched
   by any of this (hash-verified, same discipline as Parts 1–2).
+
+- 2026-09-07: **Debug log extended to cover the confirm-gate/grading
+  feature** — per user request, so a live-testing report is actually
+  diagnosable from the log instead of relying on a description after the
+  fact. The `pending_review` entry `_log_scan_debug()` writes at scan time
+  now also carries `grade`/`grade_reason`/`grade_capped`. A new
+  `_log_review_outcome()` appends a second entry (`review_accepted` or
+  `review_rejected`, keyed by `contract_id`) when ACCEPT/REJECT is
+  actually clicked — the scan-time entry can't know the outcome yet, since
+  that happens later, asynchronously, once the user has actually looked at
+  the popup. That second entry also carries which locations were shown
+  for a compatibility rating (`compatibility_prompts_shown`) and which
+  ones actually got rated during that popup (`compatibility_ratings_given`,
+  `[{"location": ..., "rating": "good"|"bad"}, ...]`) — so "why did it ask
+  me about X again" or "did my BAD rating actually save" are answerable
+  from the log alone.
+
+  Grade is computed once in `refresh()` (not recomputed separately for
+  the popup vs. the log) and threaded through as a `(grade, reason,
+  capped)` tuple, so the popup and the log entry can never disagree about
+  what was actually shown — `_show_review_popup()`'s signature changed to
+  take this precomputed tuple instead of calling `_grade_contract()`
+  itself.
+
+  **Found a real test-hygiene bug while wiring this up, same category as
+  the config.json one from Parts 1–2 but for the debug log instead**:
+  `_append_debug_log()` writes to `paths.app_root() / DEBUG_LOG_FILENAME`
+  unconditionally — it doesn't go through `Config` at all, so the
+  isolated temp-`Config` pattern `run_ui_state_checks()` already used
+  didn't isolate it. Running the test suite was silently appending fake
+  `review_accepted`/`review_rejected` entries into the real
+  `logistics_hub_debug.jsonl` on every run. Lower stakes than the
+  config.json case (this file is explicitly disposable — the user has
+  already asked to delete it once this session with no concern raised),
+  but still not clean. Fixed by monkeypatching
+  `mod._append_debug_log = debug_log_entries.append` in
+  `run_ui_state_checks()` — an in-memory list instead of the real file —
+  and adding `review_outcome_logs_grade_and_ratings`, a new regression
+  check that reads back from that in-memory list to confirm the logged
+  fields are actually correct, not just that nothing crashed.
+
+  Verified live: ran the real production code path end-to-end offscreen
+  (real fonts, real fixture contract, a real prior BAD rating for Hull C
+  at one location) with the actual debug log enabled, inspected the two
+  resulting real JSONL entries by hand, confirmed both carry the correct
+  grade/reason/capped and the second correctly lists the still-unrated
+  location with an empty ratings-given list (nothing was rated during
+  that particular run) — then deleted the disposable log file. 26/26
+  regression checks pass; `config.json` confirmed untouched throughout
+  (hash-verified before/after).
