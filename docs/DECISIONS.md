@@ -2384,3 +2384,41 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   that particular run) — then deleted the disposable log file. 26/26
   regression checks pass; `config.json` confirmed untouched throughout
   (hash-verified before/after).
+
+- 2026-09-07: **Two real bugs found from the user's first live testing
+  session, both fixed.** Debug log review (see the two entries above,
+  timestamped 15:13–15:17) confirmed compatibility ratings *were* saving
+  correctly, but the user reported: (1) clicking ✅/❌ didn't visibly
+  confirm anything happened, and (2) leaving the review popup open and
+  clicking elsewhere (e.g. this chat) made it silently vanish — explaining
+  the 4 scans before one was actually accepted, since each earlier popup
+  had closed unseen.
+  1. **Root cause of (2): `_ReviewPopup`/`_HaulerProfilePopup` used the
+     `Qt.Popup` window flag**, which auto-closes on any outside click or
+     focus loss — fine for the old duplicate-confirm popup (answered
+     immediately) but wrong for a decision that might need the user to
+     look elsewhere first. Switched both to a real `Qt.Window |
+     FramelessWindowHint | WindowStaysOnTopHint` window — only ACCEPT/
+     REJECT (or SAVE) closes it now.
+  2. **That fix introduced a new bug, caught by the regression suite
+     before it shipped**: a plain `Qt.Window` with no parent has no
+     implicit reference keeping it alive (`Qt.Popup` apparently did, via
+     Qt's internal active-popup tracking) — the popup was garbage-
+     collected by Python immediately after the showing method returned,
+     before a user could ever see it.
+     `profile_popup_handles_none_profile`/`profile_popup_saves_all_five_
+     fields` failed immediately after the window-flag change, exactly as
+     designed to catch this. Fixed by holding an explicit
+     `self._review_popup`/`self._profile_popup` reference, cleared in
+     each outcome handler (ACCEPT/REJECT/SAVE).
+  3. **Fix for (1): the chosen ✅/❌ button now gets a colored 2px border
+     (cyan for good, amber for bad) instead of just greying out
+     identically to the other one**, which gave no visual indication
+     either button had registered.
+
+  Verified: 26/26 regression checks still pass after both fixes; live-
+  verified offscreen (real fonts) that the popup survives a simulated
+  Python GC pass (the exact failure mode of bug 2) and that the clicked
+  button renders visibly distinct from its sibling (screenshot-confirmed).
+  Real `config.json`/debug log both confirmed unaffected by any of this
+  testing.

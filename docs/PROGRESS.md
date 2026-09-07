@@ -602,6 +602,15 @@
   real debug log — now isolated). 26/26 regression checks pass. See
   DECISIONS.md, 2026-09-07.
 
+- **Two real bugs from first live testing, both fixed**: the review/
+  profile popups used `Qt.Popup`, which closed the moment you clicked
+  away (e.g. to this chat) — switched to a real always-on-top window that
+  only closes on ACCEPT/REJECT/SAVE. That fix briefly introduced a
+  garbage-collection bug (caught by the regression suite, not by you),
+  now also fixed. Also: clicking a compatibility rating button now shows
+  a colored border on the chosen one instead of just greying both out
+  identically. See DECISIONS.md, 2026-09-07.
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one

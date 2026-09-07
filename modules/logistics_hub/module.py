@@ -921,7 +921,14 @@ class _ReviewPopup(QWidget):
         grade: str | None, grade_reason: str, grade_capped: bool,
         unrated_terminals: list[tuple[str, dict]], on_rate, on_accept, on_reject,
     ):
-        super().__init__(parent_widget, Qt.Popup)
+        # A real top-level window, not Qt.Popup — added 2026-09-07 after a
+        # live test showed Qt.Popup auto-closes on any outside click or
+        # focus loss (e.g. tabbing away to check something), silently
+        # discarding an in-progress compatibility rating and forcing a
+        # rescan. This decision needs to survive that; only ACCEPT/REJECT
+        # should ever close it. Positioned manually below (popup.move()),
+        # same as before.
+        super().__init__(None, Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_StyledBackground, True)
         border_color = theme.ACCENT_AMBER if duplicate_warning else theme.BORDER_FLAT
         self.setStyleSheet(f"""
@@ -1042,6 +1049,23 @@ class _ReviewPopup(QWidget):
         self._on_rate(terminal, good, label)
         good_btn.setEnabled(False)
         bad_btn.setEnabled(False)
+        # 2026-09-07: both buttons used to just grey out identically on
+        # click, with no way to tell which one had actually registered
+        # (a live test confirmed the click did work, but looked like it
+        # hadn't). The chosen button now stays bright with a colored
+        # border; the other visibly dims further than Qt's default
+        # disabled look.
+        chosen, other = (good_btn, bad_btn) if good else (bad_btn, good_btn)
+        chosen_color = theme.ACCENT_CYAN if good else theme.ACCENT_AMBER
+        chosen.setStyleSheet(
+            f"background: {theme.BG_VOID}; border: 2px solid {chosen_color}; "
+            f"border-radius: {theme.RADIUS}px; padding: 2px 6px; font-size: {theme.fpx(10)}px;"
+        )
+        other.setStyleSheet(
+            f"background: {theme.BG_VOID}; border: 1px solid {theme.BORDER_FLAT}; "
+            f"border-radius: {theme.RADIUS}px; padding: 2px 6px; font-size: {theme.fpx(10)}px; "
+            f"color: {theme.TEXT_DIM};"
+        )
 
     def _accept(self):
         self._on_accept()
@@ -1057,11 +1081,13 @@ class _HaulerProfilePopup(QWidget):
     added 2026-09-07 (Part 2 of the confirm-gate/grading plan, see
     docs/DECISIONS.md). Not re-asked per scan; a later grading pass reads
     these five fields from `self.settings["hauler_profile"]` to score a
-    freshly-scanned contract. Same themed `Qt.Popup` shell as
-    `_ReviewPopup`/the old `_DuplicatePopup`."""
+    freshly-scanned contract. Real top-level window, not Qt.Popup — same
+    2026-09-07 fix as `_ReviewPopup` (Qt.Popup auto-closes on any outside
+    click/focus loss, which would silently discard an in-progress edit
+    here too); only SAVE closes it."""
 
     def __init__(self, parent_widget, profile: dict, on_save):
-        super().__init__(parent_widget, Qt.Popup)
+        super().__init__(None, Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             _HaulerProfilePopup {{
@@ -1202,6 +1228,12 @@ class LogisticsHubModule(ModuleBase):
         self._pending_grade: tuple[str | None, str, bool] | None = None
         self._pending_unrated_names: list[str] = []
         self._pending_ratings_given: list[dict] = []
+        # Both now real Qt.Window widgets (2026-09-07 fix, see _ReviewPopup/
+        # _HaulerProfilePopup) — need an explicit reference held somewhere
+        # or they're garbage-collected the instant the showing method
+        # returns, since (unlike Qt.Popup) nothing else keeps one alive.
+        self._review_popup: QWidget | None = None
+        self._profile_popup: QWidget | None = None
         # A "node" is one stop to visit: (contract_index, "pickup"/"dropoff",
         # index within that role's list) — a contract can have several
         # pickups or several drop-offs (real panels use both DROP OFF
@@ -1601,6 +1633,10 @@ class LogisticsHubModule(ModuleBase):
         # `_grade_contract()` already uses for the same field.
         profile = self.settings.get("hauler_profile") or {}
         popup = _HaulerProfilePopup(self._card_widget, profile, self._on_profile_saved)
+        # Same reference-keeping fix as _review_popup below — a real
+        # Qt.Window has no implicit reference keeping it alive once this
+        # method returns.
+        self._profile_popup = popup
         anchor = self._card_widget.mapToGlobal(self._card_widget.rect().topLeft())
         popup.move(anchor)
         popup.show()
@@ -1609,6 +1645,7 @@ class LogisticsHubModule(ModuleBase):
         self.settings["hauler_profile"] = profile
         self._save_settings()
         self._set_status(f"Profile saved: {profile.get('ship') or 'no ship set'}.")
+        self._profile_popup = None
 
     def _current_location_terminal(self) -> dict | None:
         return self.settings.get("current_location")
@@ -2010,6 +2047,12 @@ class LogisticsHubModule(ModuleBase):
             grade, grade_reason, grade_capped, unrated_terminals,
             on_rate, self._on_review_accept, self._on_review_reject,
         )
+        # Now a real Qt.Window (see _ReviewPopup's 2026-09-07 note), which
+        # — unlike Qt.Popup — has no implicit reference keeping it alive.
+        # Without this, the popup was garbage-collected right after this
+        # method returns, before the user could even see it. Cleared in
+        # both outcome handlers below.
+        self._review_popup = popup
         anchor = self._scan_btn.mapToGlobal(self._scan_btn.rect().bottomLeft())
         popup.move(anchor)
         popup.show()
@@ -2038,11 +2081,13 @@ class LogisticsHubModule(ModuleBase):
             self._log_review_outcome(self._pending_scan, "accepted")
             self._add_contract(self._pending_scan)
         self._pending_scan = None
+        self._review_popup = None
 
     def _on_review_reject(self):
         if self._pending_scan is not None:
             self._log_review_outcome(self._pending_scan, "rejected")
         self._pending_scan = None
+        self._review_popup = None
         self._set_status("Contract not added.")
 
     # ------------------------------------------------------------------
