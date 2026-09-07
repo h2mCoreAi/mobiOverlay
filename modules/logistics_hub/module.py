@@ -101,6 +101,12 @@ except ImportError:
 COPY_ROUTE_CONFIRM_MS = 1500  # how long the COPY ROUTE button shows "COPIED" before reverting
 
 DEBUG_LOG_FILENAME = "logistics_hub_debug.jsonl"  # always-on scan history, see docs/DECISIONS.md
+# Separate from the debug log above — that one is a firehose of every
+# scan (including rejected/duplicate ones) meant for debugging parsing;
+# this one is a clean, append-only record of contracts you actually
+# finished, meant for later analysis (session totals, aUEC/hour, etc.).
+# See docs/DECISIONS.md, 2026-09-07.
+COMPLETED_LOG_FILENAME = "logistics_hub_completed.jsonl"
 
 # Hauler Profile choices (added 2026-09-07) — fixed, small option sets
 # rather than free text, so grading (a later part of the same plan) has
@@ -1470,9 +1476,27 @@ class LogisticsHubModule(ModuleBase):
         reprocess_btn.clicked.connect(self._safe_reprocess)
         action_row.addWidget(reprocess_btn)
 
+        # COMPLETE — added 2026-09-07 per user request, replacing "just
+        # click CLEAR when done" with something that actually keeps a
+        # record. Distinct from CLEAR on purpose: CLEAR stays the discard-
+        # without-a-trace button (wrong scan, duplicate, mistake) so it
+        # never has to second-guess whether a given contract was really
+        # finished; COMPLETE only ever logs contracts you're explicitly
+        # saying you delivered.
+        complete_btn = QPushButton("COMPLETE")
+        complete_btn.setToolTip(
+            "Logs every contract currently in the queue as completed "
+            "(reward, cargo, locations, the grade it scored when accepted) "
+            "to logistics_hub_completed.jsonl, then clears the queue."
+        )
+        complete_btn.setStyleSheet(self._button_style())
+        complete_btn.clicked.connect(self._complete_contracts)
+        action_row.addWidget(complete_btn)
+
         # CLEAR is placed last, away from SCAN/COPY, since it's destructive
         # and the user has accidentally hit it reaching for the other two.
         clear_btn = QPushButton("CLEAR")
+        clear_btn.setToolTip("Discards every contract in the queue without logging them as completed.")
         clear_btn.setStyleSheet(self._button_style())
         clear_btn.clicked.connect(self._clear_contracts)
         action_row.addWidget(clear_btn)
@@ -1729,6 +1753,51 @@ class LogisticsHubModule(ModuleBase):
         self._pending_scan = None
         self._render_results()
         self._set_status("Contracts cleared.")
+
+    def _complete_contracts(self):
+        """Logs every contract currently in the queue to
+        `logistics_hub_completed.jsonl` (reward, cargo, locations, the
+        grade it scored when accepted), then clears the queue exactly
+        like CLEAR does — added 2026-09-07 per user request, replacing a
+        plain CLEAR (which left no record at all) as the "I'm done with
+        these" action. CLEAR itself is untouched and still exists for
+        discarding contracts that were never actually completed (wrong
+        scan, duplicate, mistake) without polluting this log."""
+        contracts = self.settings.get("contracts", [])
+        if not contracts:
+            self._set_status("No contracts to complete.")
+            return
+
+        now = time.strftime("%Y-%m-%d %H:%M:%S")
+        for contract in contracts:
+            entry = {
+                "timestamp": now,
+                "contract_id": contract.get("id"),
+                "scanned_at": contract.get("scanned_at"),
+                "completed_at": now,
+                "reward": contract.get("reward"),
+                "grade_at_accept": contract.get("grade_at_accept"),
+                "grade_reason_at_accept": contract.get("grade_reason_at_accept"),
+                "pickups": [
+                    {
+                        "location": self._locations.display_name(e["terminal"]) if e.get("terminal") else e.get("raw"),
+                        "commodities": _cargo_label(e.get("commodities")),
+                    }
+                    for e in contract.get("pickups", [])
+                ],
+                "dropoffs": [
+                    {
+                        "location": self._locations.display_name(e["terminal"]) if e.get("terminal") else e.get("raw"),
+                        "commodities": _cargo_label(e.get("commodities")),
+                    }
+                    for e in contract.get("dropoffs", [])
+                ],
+            }
+            self._append_jsonl(COMPLETED_LOG_FILENAME, entry)
+
+        count = len(contracts)
+        self._clear_contracts()
+        self._set_status(f"Completed {count} contract{'s' if count != 1 else ''} — logged and cleared.")
 
     def _safe_reprocess(self):
         try:
@@ -2021,12 +2090,15 @@ class LogisticsHubModule(ModuleBase):
         self._append_debug_log(entry)
 
     def _append_debug_log(self, entry: dict) -> None:
+        self._append_jsonl(DEBUG_LOG_FILENAME, entry)
+
+    def _append_jsonl(self, filename: str, entry: dict) -> None:
         try:
-            log_path = paths.app_root() / DEBUG_LOG_FILENAME
+            log_path = paths.app_root() / filename
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except OSError:
-            logger.warning("Failed to write logistics_hub debug log entry", exc_info=True)
+            logger.warning("Failed to write logistics_hub %s entry", filename, exc_info=True)
 
     def _add_contract(self, contract: dict, route_debug: dict | None = None) -> None:
         contracts = self.settings.setdefault("contracts", [])
@@ -2147,6 +2219,13 @@ class LogisticsHubModule(ModuleBase):
     def _on_review_accept(self):
         if self._pending_scan is not None:
             self._log_review_outcome(self._pending_scan, "accepted")
+            # Stashed on the contract itself (not just the transient debug
+            # log) so COMPLETE can report what a contract actually scored
+            # when it was accepted, even long after this scan's debug
+            # entries are gone — added 2026-09-07 alongside COMPLETE.
+            if self._pending_grade is not None:
+                self._pending_scan["grade_at_accept"] = self._pending_grade[0]
+                self._pending_scan["grade_reason_at_accept"] = self._pending_grade[1]
             self._add_contract(self._pending_scan)
         self._pending_scan = None
         self._review_popup = None

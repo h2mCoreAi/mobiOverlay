@@ -634,6 +634,13 @@
   already reads settings fresh every call). 28/28 regression checks
   pass. See DECISIONS.md, 2026-09-07.
 
+- **New COMPLETE button** — logs every queued contract (reward, cargo,
+  locations, grade at accept) to a new `logistics_hub_completed.jsonl`,
+  then clears the queue. CLEAR is unchanged (still discard-without-a-
+  trace, for mistakes/duplicates) — kept separate so completed history
+  only ever has contracts actually delivered. 29/29 regression checks
+  pass. See DECISIONS.md, 2026-09-07.
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one

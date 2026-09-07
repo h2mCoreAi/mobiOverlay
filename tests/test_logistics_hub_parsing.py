@@ -31,7 +31,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from host.config import Config
 from host.api_client import UexApiClient
-from modules.logistics_hub.module import LogisticsHubModule, GRADE_CAP_ON_WARNING, CAPACITY_OVERFLOW_CAP
+from modules.logistics_hub.module import (
+    LogisticsHubModule, GRADE_CAP_ON_WARNING, CAPACITY_OVERFLOW_CAP, COMPLETED_LOG_FILENAME,
+)
 
 
 # Each fixture: (name, raw_text, expected_pickups, expected_dropoffs)
@@ -590,11 +592,14 @@ def run_ui_state_checks() -> tuple[int, int]:
     api_client = UexApiClient(config.data["api"]["uex_base_url"], config.data["api"]["uex_token"])
     mod = LogisticsHubModule(api_client, config)
     mod._locations.ensure_loaded()
-    # `_append_debug_log()` writes to the real logistics_hub_debug.jsonl
-    # unconditionally (it doesn't go through Config, so the temp Config
-    # above doesn't isolate it) — this suite calling _on_review_accept/
-    # _on_review_reject below would otherwise append fake test entries
-    # into the user's real debug log every run. Collect in memory instead.
+    # `_append_jsonl()` (which both the debug log and, since 2026-09-07,
+    # the completed-contracts log route through) writes to the real file
+    # unconditionally — it doesn't go through Config, so the temp Config
+    # above doesn't isolate it. Patching this one lower-level method
+    # (not just `_append_debug_log`) covers both logs with one collector;
+    # `_complete_contracts()` calls `_append_jsonl` directly.
+    jsonl_entries: list[tuple[str, dict]] = []
+    mod._append_jsonl = lambda filename, entry: jsonl_entries.append((filename, entry))
     debug_log_entries: list[dict] = []
     mod._append_debug_log = debug_log_entries.append
     container = CardContainer(config)
@@ -764,6 +769,33 @@ def run_ui_state_checks() -> tuple[int, int]:
     print(f"[{'PASS' if ok else 'FAIL'}] {name}")
     if not ok:
         failures += 1
+
+    # 2026-09-07: COMPLETE should log every queued contract to the
+    # completed-contracts JSONL (reward/cargo/locations/grade), then clear
+    # the queue same as CLEAR. Uses the `jsonl_entries` collector set up
+    # above — never the real logistics_hub_completed.jsonl.
+    name = "complete_contracts_logs_then_clears"
+    total += 1
+    jsonl_entries.clear()
+    contract4 = mod._build_contract(FIXTURES[0][1])
+    contract4["grade_at_accept"] = 82
+    contract4["grade_reason_at_accept"] = "500 aUEC/SCU (great); minimal detour"
+    mod.settings["contracts"] = [contract4]
+    mod._complete_contracts()
+    logged = [e for fname, e in jsonl_entries if fname == COMPLETED_LOG_FILENAME]
+    ok = (
+        len(logged) == 1
+        and logged[0]["contract_id"] == contract4["id"]
+        and logged[0]["grade_at_accept"] == 82
+        and logged[0]["reward"] == contract4["reward"]
+        and len(logged[0]["pickups"]) == len(contract4["pickups"])
+        and mod.settings.get("contracts") == []
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    expected 1 completed-log entry matching contract4 and an emptied queue; "
+              f"got logged={logged!r}, contracts={mod.settings.get('contracts')!r}")
 
     tmp_path.unlink(missing_ok=True)
     return failures, total

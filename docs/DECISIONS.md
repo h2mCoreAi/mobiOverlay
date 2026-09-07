@@ -2516,3 +2516,41 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   contract in the same running module instance — 522 aUEC/SCU scored 90%
   ("great") before, 65% ("ok") immediately after, no restart. 28/28
   regression checks pass; `config.json` confirmed untouched (hash-verified).
+
+- 2026-09-07: **New COMPLETE button, distinct from CLEAR.** User had been
+  using CLEAR to finish a batch of contracts, which left no record at
+  all. New `_complete_contracts()` logs every contract currently queued
+  to a new `logistics_hub_completed.jsonl` (reward, cargo, resolved
+  pickup/dropoff locations, and the grade it scored when accepted), then
+  clears the queue the same way CLEAR does. CLEAR itself is unchanged and
+  still the discard-without-a-trace action (wrong scan, duplicate,
+  mistake) — kept deliberately separate so the completed log only ever
+  contains contracts the user is explicitly saying they delivered, never
+  polluted by scans that were never actually finished. Whole-queue
+  (not per-contract) per user's explicit choice when asked.
+
+  To make the grade available at completion time (not just transiently
+  during the review popup), `_on_review_accept()` now stashes
+  `grade_at_accept`/`grade_reason_at_accept` directly onto the contract
+  dict before it's added to the queue — persists with the contract itself
+  through `config.json`, so it survives even a relaunch, not just the
+  current session.
+
+  `_append_debug_log()` refactored into a generic `_append_jsonl(filename,
+  entry)` (both logs are the same append-only JSON-lines pattern, just
+  different files/purposes) — `_append_debug_log` is now a one-line
+  wrapper over it.
+
+  New regression check `complete_contracts_logs_then_clears`; the existing
+  test-isolation collector in `run_ui_state_checks()` was widened from
+  patching only `_append_debug_log` to patching the lower-level
+  `_append_jsonl` (so `_complete_contracts()`'s direct call is covered
+  too, not just debug-log calls) — same "never let a test touch a real
+  log file" discipline as the config.json fix earlier this session.
+  29/29 checks pass. Verified live end-to-end (real fixture contract,
+  real accept path, real file write, not a collector): the resulting
+  `logistics_hub_completed.jsonl` entry had the correct reward, resolved
+  location names, full commodity breakdown, and the grade/reason exactly
+  as shown at accept time — then deleted (disposable verification file,
+  same as other live checks this session). `config.json` confirmed
+  untouched throughout.
