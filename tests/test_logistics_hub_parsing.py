@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from host.config import Config
 from host.api_client import UexApiClient
-from modules.logistics_hub.module import LogisticsHubModule, GRADE_THRESHOLDS
+from modules.logistics_hub.module import LogisticsHubModule, GRADE_CAP_ON_WARNING, CAPACITY_OVERFLOW_CAP
 
 
 # Each fixture: (name, raw_text, expected_pickups, expected_dropoffs)
@@ -496,12 +496,11 @@ def run_grading_checks() -> tuple[int, int]:
     pickup_terminal = contract["pickups"][0]["terminal"]
     mod._rate_compatibility("Hull C", pickup_terminal, good=False)
     grade, reason, capped = mod._grade_contract(contract, [])
-    grade_index = {g: i for i, (_pts, g) in enumerate(GRADE_THRESHOLDS)}
-    ok = grade is not None and capped is True and grade_index[grade] >= grade_index["B"] and "BAD" in reason
+    ok = grade is not None and capped is True and grade <= GRADE_CAP_ON_WARNING and "BAD" in reason
     print(f"[{'PASS' if ok else 'FAIL'}] {name}")
     if not ok:
         failures += 1
-        print(f"    expected grade capped (capped=True) at B-or-worse with a BAD-location reason; "
+        print(f"    expected score <= {GRADE_CAP_ON_WARNING} with capped=True and a BAD-location reason; "
               f"got {(grade, reason, capped)!r}")
 
     name = "grade_capped_on_duplicate_freight_overlap"
@@ -509,12 +508,28 @@ def run_grading_checks() -> tuple[int, int]:
     mod._rate_compatibility("Hull C", pickup_terminal, good=True)  # clear the BAD rating from above
     existing = [mod._build_contract(FIXTURES[0][1])]  # same commodity already "queued"
     grade, reason, capped = mod._grade_contract(contract, existing)
-    ok = grade is not None and capped is True and grade_index[grade] >= grade_index["B"] and "already queued" in reason
+    ok = grade is not None and capped is True and grade <= GRADE_CAP_ON_WARNING and "already queued" in reason
     print(f"[{'PASS' if ok else 'FAIL'}] {name}")
     if not ok:
         failures += 1
-        print(f"    expected grade capped (capped=True) at B-or-worse with an 'already queued' reason; "
+        print(f"    expected score <= {GRADE_CAP_ON_WARNING} with capped=True and an 'already queued' reason; "
               f"got {(grade, reason, capped)!r}")
+
+    name = "grade_capped_harder_on_cargo_capacity_overflow"
+    total += 1
+    mod.settings["cargo_capacity_scu"] = 1  # guarantee this contract's real SCU overflows it
+    grade, reason, capped = mod._grade_contract(contract, [])
+    ok = (
+        grade is not None and capped is True
+        and grade <= CAPACITY_OVERFLOW_CAP
+        and "exceeds" in reason and "capacity" in reason
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    expected score <= {CAPACITY_OVERFLOW_CAP} (stricter than the {GRADE_CAP_ON_WARNING} "
+              f"warning cap) with a capacity-exceeded reason; got {(grade, reason, capped)!r}")
+    del mod.settings["cargo_capacity_scu"]
 
     name = "grade_not_capped_when_clean"
     total += 1

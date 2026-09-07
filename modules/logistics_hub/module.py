@@ -113,16 +113,27 @@ PROFILE_RISK_CHOICES = ["Safe systems only", "Moderate", "Will run risky routes 
 PROFILE_TIME_CHOICES = ["Quick (<30 min)", "Medium", "Long session"]
 PROFILE_REGION_CHOICES = ["Current system only", "Willing to cross jump points"]
 
-# Grade thresholds (points, highest first) for `_grade_contract()` below —
-# a first-pass rubric, weights meant to be tuned against real usage the
-# same way this module's OCR/routing thresholds already were (see
-# docs/DECISIONS.md, 2026-09-07).
-GRADE_THRESHOLDS = [(85, "S"), (70, "A"), (50, "B"), (30, "C"), (0, "D")]
+# `_grade_contract()` returns a raw 0-100 score directly (shown as a
+# percentage) rather than a letter — per user direction, 2026-09-07: a
+# numeric scale reads more precisely than 5 coarse letter bands. Weights
+# below are a first-pass rubric, meant to be tuned against real usage the
+# same way this module's OCR/routing thresholds already were.
+#
 # A known-BAD ship/location match or a duplicate-freight overlap never
-# blocks ACCEPT (per user direction) but caps the grade here regardless of
+# blocks ACCEPT (per user direction) but caps the score here regardless of
 # how good everything else scores — matches this module's existing
 # "never silently averaged away" pattern for the Freight Manifest warning.
-GRADE_CAP_ON_WARNING = 55  # top of the "B" band
+GRADE_CAP_ON_WARNING = 55
+# A stricter cap for cargo capacity overflow specifically — added
+# 2026-09-07 after a live test showed a contract that needed nearly 4x
+# the user's actual cargo capacity still scored a "B" (55), since grading
+# never checked capacity at all (a separate oversight — capacity checking
+# already existed on the card's own summary line, just never wired into
+# grading). Exceeding capacity is a harder constraint than a duplicate-
+# freight annoyance or an unconfirmed location: it's not just annoying or
+# unverified, it's physically impossible to complete as queued — so it
+# gets a lower ceiling than the other two warnings, not the same one.
+CAPACITY_OVERFLOW_CAP = 20
 # Real system names UEX marks as more dangerous to route through — used
 # only as a soft nudge against Risk Tolerance, not a hard rule (Star
 # Citizen's actual risk map shifts with game updates; this is deliberately
@@ -912,13 +923,13 @@ class _ReviewPopup(QWidget):
     themed `Qt.Popup` shell `_DuplicatePopup` used (closes on an outside
     click, matches the rest of the app's HUD styling instead of a plain
     QMessageBox) — generalized to show the contract summary and (later,
-    once the grading pass lands) a letter grade, not just a duplicate
+    once the grading pass lands) a 0-100 score, not just a duplicate
     warning. The duplicate warning line still appears here when relevant,
     folded into this one popup instead of a separate flow."""
 
     def __init__(
         self, parent_widget, summary_text: str, duplicate_warning: str | None,
-        grade: str | None, grade_reason: str, grade_capped: bool,
+        grade: int | None, grade_reason: str, grade_capped: bool,
         unrated_terminals: list[tuple[str, dict]], on_rate, on_accept, on_reject,
     ):
         # A real top-level window, not Qt.Popup — added 2026-09-07 after a
@@ -962,14 +973,14 @@ class _ReviewPopup(QWidget):
         layout.addWidget(summary)
 
         if grade is not None:
-            # Amber whenever a hard warning capped the grade, regardless of
-            # which letter it landed on — the cap can still land in a
-            # normal-looking band (e.g. B), and that's exactly the "90%
-            # great, one hard no, hidden behind a decent-looking grade"
-            # case this feature exists to prevent. Otherwise amber only
-            # for a low grade on its own merits.
-            grade_color = theme.ACCENT_AMBER if (grade_capped or grade in ("C", "D")) else theme.ACCENT_CYAN
-            grade_label = QLabel(f"GRADE: {grade} — {grade_reason}")
+            # Amber whenever a hard warning capped the score, regardless of
+            # what the number still looks like — the cap can still land
+            # somewhere that looks decent (e.g. 55%), and that's exactly
+            # the "90% great, one hard no, hidden behind a decent-looking
+            # score" case this feature exists to prevent. Otherwise amber
+            # only for a low score on its own merits.
+            grade_color = theme.ACCENT_AMBER if (grade_capped or grade < 50) else theme.ACCENT_CYAN
+            grade_label = QLabel(f"GRADE: {grade}% — {grade_reason}")
             grade_label.setWordWrap(True)
             grade_label.setStyleSheet(
                 f"color: {grade_color}; font-family: {theme.FONT_DISPLAY}; "
@@ -1225,7 +1236,7 @@ class LogisticsHubModule(ModuleBase):
         # (which happens later, asynchronously, so it can't be logged in
         # the same call that shows the popup). See docs/DECISIONS.md,
         # 2026-09-07.
-        self._pending_grade: tuple[str | None, str, bool] | None = None
+        self._pending_grade: tuple[int | None, str, bool] | None = None
         self._pending_unrated_names: list[str] = []
         self._pending_ratings_given: list[dict] = []
         # Both now real Qt.Window widgets (2026-09-07 fix, see _ReviewPopup/
@@ -1888,7 +1899,7 @@ class LogisticsHubModule(ModuleBase):
     def _log_scan_debug(
         self, raw_text: str, candidates: list[tuple[str, str, int]], contract: dict, note: str,
         debug_trace: list[dict], route_debug: dict,
-        grade: tuple[str | None, str, bool] | None = None,
+        grade: tuple[int | None, str, bool] | None = None,
     ) -> None:
         """Append one JSON line per scan to an always-on debug log, so real
         usage accumulates into a file the user can hand to an AI later to
@@ -2001,7 +2012,7 @@ class LogisticsHubModule(ModuleBase):
             return LocationService.terminal_key(terminal)
         return entry.get("raw", "").lower()
 
-    def _show_review_popup(self, contract: dict, duplicate: bool, grade_info: tuple[str | None, str, bool]):
+    def _show_review_popup(self, contract: dict, duplicate: bool, grade_info: tuple[int | None, str, bool]):
         pickups_text = self._entry_names(contract.get("pickups", []), self._locations.display_name)
         dropoffs_text = self._entry_names(contract.get("dropoffs", []), self._locations.display_name)
         reward = contract.get("reward")
@@ -2973,16 +2984,20 @@ class LogisticsHubModule(ModuleBase):
         route_key = f"{contract.get('id')}:{role}:{j}"
         return f"[{role_tag}] {display}{cargo_text}", route_key
 
-    def _peak_cargo_scu(self, contracts: list[dict]) -> int:
+    def _peak_cargo_scu(self, contracts: list[dict], route_order: list | None = None) -> int:
         """The largest amount of cargo actually in the hold at any point
         along the *planned* route — not a flat sum of every pickup, which
         would overstate the ship size needed whenever some cargo gets
-        dropped off before more is picked up. Walks `self._route_order` in
-        order, +SCU on a pickup, -SCU on a dropoff, tracking the running
-        peak."""
+        dropped off before more is picked up. Walks `route_order` (defaults
+        to `self._route_order`, the currently-active route — pass an
+        explicit route, e.g. from a hypothetical candidate-included
+        `_plan_route()` call, to check a contract not yet added) in order,
+        +SCU on a pickup, -SCU on a dropoff, tracking the running peak."""
+        if route_order is None:
+            route_order = self._route_order
         current = 0
         peak = 0
-        for node in self._route_order:
+        for node in route_order:
             resolved = self._stop_entry(contracts, node)
             if resolved is None:
                 continue
@@ -3283,18 +3298,24 @@ class LogisticsHubModule(ModuleBase):
         ratings[self._compat_key(ship, terminal)] = "good" if good else "bad"
         self._save_settings()
 
-    def _grade_contract(self, contract: dict, existing_contracts: list[dict]) -> tuple[str | None, str, bool]:
-        """Letter grade + one-line reason + whether a hard warning capped
+    def _grade_contract(self, contract: dict, existing_contracts: list[dict]) -> tuple[int | None, str, bool]:
+        """0-100 score + one-line reason + whether a hard warning capped
         it, for a freshly-scanned contract — or `(None, prompt, False)` if
         the Hauler Profile isn't set yet, since grading never guesses at a
-        ship/preferences it doesn't have. A known-BAD ship/location match
-        or a duplicate-freight overlap (already queued elsewhere) never
-        blocks ACCEPT, but caps the grade at `GRADE_CAP_ON_WARNING`
-        regardless of how well everything else scores — the exact "90%
-        great, one hard no" case that prompted this feature. `capped` is
-        returned separately from the letter (not inferred from it) so the
-        UI can flag it visually even when the capped grade still lands in
-        a normal-looking band, e.g. B."""
+        ship/preferences it doesn't have. Shown as a percentage rather than
+        a letter grade per user direction, 2026-09-07 — reads more
+        precisely than 5 coarse bands.
+
+        Three things cap the score regardless of how well everything else
+        scores — the exact "90% great, one hard no" case that prompted
+        this feature: a known-BAD ship/location match or a duplicate-
+        freight overlap (both cap at `GRADE_CAP_ON_WARNING`), and combined
+        cargo capacity overflow (cap at the stricter
+        `CAPACITY_OVERFLOW_CAP` — physically can't complete the run as
+        queued, a harder constraint than the other two). `capped` is
+        returned separately from the score (not inferred from it) so the
+        UI can flag it visually even when the capped score still looks
+        decent at a glance, e.g. 55%."""
         profile = self.settings.get("hauler_profile") or {}
         ship = (profile.get("ship") or "").strip()
         if not ship:
@@ -3303,20 +3324,39 @@ class LogisticsHubModule(ModuleBase):
         ratings = self.settings.get("ship_location_ratings", {})
         reasons: list[str] = []
         points = 50  # neutral baseline
-        capped = False
+        cap_ceiling = 100  # lowered below if a hard-warning trigger fires; the strictest one wins
 
         bad_locations = [
             self._locations.display_name(t) for t in self._contract_terminals(contract)
             if ratings.get(self._compat_key(ship, t)) == "bad"
         ]
         if bad_locations:
-            capped = True
+            cap_ceiling = min(cap_ceiling, GRADE_CAP_ON_WARNING)
             # No emoji here — this line renders in the Orbitron display
             # font (FONT_DISPLAY), which doesn't cover ⚠ and rendered it
             # as a tofu box when tried live. `capped` itself (returned
             # separately below) is what drives the warning color in the
             # UI, so the text doesn't need to carry its own glyph.
             reasons.append(f"marked BAD for {ship} at {', '.join(bad_locations)}")
+
+        # Combined peak cargo (everything already queued + this candidate)
+        # against the manually-set ship capacity — added 2026-09-07 after
+        # a live test showed a contract needing ~4x the user's actual
+        # capacity still scored decently, since grading never checked this
+        # at all (capacity checking already existed on the card's own
+        # summary line, just never wired into grading — a real oversight,
+        # not a deliberate scoring choice). Reuses the candidate route
+        # already being planned for the detour-cost check below rather
+        # than planning it twice.
+        combined_contracts = existing_contracts + [contract]
+        candidate_debug: dict = {}
+        candidate_route = self._plan_route(combined_contracts, route_debug=candidate_debug)
+        capacity = self.settings.get("cargo_capacity_scu")
+        if capacity:
+            peak = self._peak_cargo_scu(combined_contracts, candidate_route)
+            if peak > capacity:
+                cap_ceiling = min(cap_ceiling, CAPACITY_OVERFLOW_CAP)
+                reasons.append(f"{peak} SCU peak exceeds {capacity} SCU capacity by {peak - capacity}")
 
         manifest = self._freight_manifest(existing_contracts + [contract])
         candidate_commodities = set()
@@ -3329,7 +3369,7 @@ class LogisticsHubModule(ModuleBase):
             if manifest.get(name, {}).get("contract_count", 0) > 1
         )
         if overlapping:
-            capped = True
+            cap_ceiling = min(cap_ceiling, GRADE_CAP_ON_WARNING)
             reasons.append(f"{', '.join(overlapping)} already queued elsewhere")
 
         reward_digits = (contract.get("reward") or "").replace(",", "")
@@ -3352,9 +3392,9 @@ class LogisticsHubModule(ModuleBase):
             reasons.append("reward or cargo unknown")
 
         baseline_debug: dict = {}
-        candidate_debug: dict = {}
         self._plan_route(existing_contracts, route_debug=baseline_debug)
-        self._plan_route(existing_contracts + [contract], route_debug=candidate_debug)
+        # candidate_debug/candidate_route already computed above for the
+        # capacity check — reused here rather than replanning a second time.
         marginal = candidate_debug.get("final_cost", 0.0) - baseline_debug.get("final_cost", 0.0)
         if marginal <= 50:
             points += 15
@@ -3384,12 +3424,12 @@ class LogisticsHubModule(ModuleBase):
             reasons.append(f"routes through {'/'.join(systems & RISKY_SYSTEMS)}")
 
         points = max(0, min(100, points))
+        capped = cap_ceiling < 100
         if capped:
-            points = min(points, GRADE_CAP_ON_WARNING)
+            points = min(points, cap_ceiling)
 
-        grade = next(letter for threshold, letter in GRADE_THRESHOLDS if points >= threshold)
         reason_text = "; ".join(reasons) if reasons else "no strong signal either way"
-        return grade, reason_text, capped
+        return points, reason_text, capped
 
     def _populate_manifest_rows(self, target_layout: QVBoxLayout, contracts: list[dict]):
         while target_layout.count():

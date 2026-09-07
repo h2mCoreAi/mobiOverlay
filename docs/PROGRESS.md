@@ -611,6 +611,15 @@
   a colored border on the chosen one instead of just greying both out
   identically. See DECISIONS.md, 2026-09-07.
 
+- **Grading now shows a raw 0-100% score instead of a letter grade, and
+  cargo capacity overflow is finally checked** — user caught that a
+  contract needing ~4x their actual capacity still scored a "B" (grading
+  never checked capacity at all, a real oversight). Combined peak cargo
+  (everything queued + the new scan) vs. capacity now caps the score much
+  harder (20%) than the existing duplicate-freight/bad-location cap (55%)
+  — exceeding your hold is a harder constraint than either of those.
+  27/27 regression checks pass. See DECISIONS.md, 2026-09-07.
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one

@@ -2422,3 +2422,47 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   button renders visibly distinct from its sibling (screenshot-confirmed).
   Real `config.json`/debug log both confirmed unaffected by any of this
   testing.
+
+- 2026-09-07: **Grading switched from a 5-letter scale to a raw 0-100%
+  score, and cargo-capacity overflow now actually affects it.** User
+  caught a real gap from live testing: a contract needing ~4x their real
+  cargo capacity (612 SCU combined vs. a 512 SCU ship) still scored a
+  "B" — `_grade_contract()` had never once checked `cargo_capacity_scu`/
+  `_peak_cargo_scu()` at all. Root cause: capacity checking already
+  existed as its own feature (the card's summary-line warning, built in
+  an earlier part of this session) and was never wired into grading when
+  grading was added later — an oversight, not a scoring judgment call.
+
+  Two changes:
+  1. **Percentage instead of letter** — per user preference, stated
+     directly: "I would prefer a % based grade scale from 0-100%." The
+     internal 0-100 point score already existed under the hood
+     (`GRADE_THRESHOLDS` just bucketed it into 5 bands); now shown
+     directly as `N%` instead. `GRADE_THRESHOLDS` removed — nothing
+     buckets the score into letters anymore.
+  2. **Combined peak cargo vs. capacity now checked**, and treated as its
+     own, *stricter* hard-cap than the existing duplicate-freight/bad-
+     location cap (`GRADE_CAP_ON_WARNING`, 55): new `CAPACITY_OVERFLOW_CAP`
+     (20). Rationale, per discussion with the user: duplicate freight and
+     an unconfirmed location are both things you *can* still physically
+     complete (annoying or risky, not impossible); exceeding your actual
+     cargo hold means you cannot complete the run as queued at all — a
+     harder constraint deserves a harder ceiling, not the same one.
+     Checks `existing_contracts + [candidate]` together (the realistic
+     "can I run this given what's already queued" question, not the
+     candidate in isolation — confirmed this framing with the user first),
+     reusing the same candidate route already being planned for the
+     detour-cost check rather than planning it twice. `_peak_cargo_scu()`
+     gained an optional `route_order` param (defaults to `self._route_order`,
+     the existing card-summary behavior) so it can walk a hypothetical
+     not-yet-accepted route too. Multiple simultaneous triggers now take
+     the *strictest* applicable cap (`cap_ceiling = min(...)` across all
+     of them), not just the first one found.
+
+  Verified: new regression check `grade_capped_harder_on_cargo_capacity_
+  overflow` (27 total checks now, all pass). Live-verified against the
+  literal scenario that surfaced this — two real fixture contracts
+  combining to 612 SCU against a 512 SCU capacity — scored 20% (capped,
+  amber), reason correctly leads with "612 SCU peak exceeds 512 SCU
+  capacity by 100," screenshot-confirmed in the real popup. `config.json`
+  confirmed untouched (hash-verified) throughout.
