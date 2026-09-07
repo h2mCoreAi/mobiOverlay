@@ -2193,3 +2193,49 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   user request after a game crash lost their in-progress contracts —
   it's always-on and regenerates fresh on the next scan, nothing lost
   from deleting it (it's untracked, not a source file).
+
+- 2026-09-07: **Scan → review popup (Part 1 of the confirm-gate/grading
+  plan).** SCAN CONTRACT used to add straight to the queue/route, pausing
+  only for a duplicate. Per user direction, every scan now pauses for
+  review first. `_DuplicatePopup` generalized into `_ReviewPopup`
+  (pickups→dropoffs summary, reward, SCU, an inline duplicate warning when
+  relevant, ACCEPT/REJECT) — one popup path instead of two.
+  `_pending_duplicate` renamed `_pending_scan`; `refresh()` always shows
+  the popup after a successful `_build_contract()` instead of ever calling
+  `_add_contract()` directly. Grading (letter grade + reason) is a
+  separate, later part of the same plan — this popup already has a slot
+  for it once the Hauler Profile + compatibility DB land.
+
+  **Caught two real bugs building this, both fixed before shipping:**
+  1. `_show_review_popup()` formatted `reward` with `f"{reward:,}"` —
+     `reward` is the raw OCR-extracted *string* (e.g. `"87,250"`, already
+     comma-formatted), not an int, so this raised `ValueError` on every
+     real popup. The first version of the regression checks didn't catch
+     it because they called `_on_review_accept`/`_on_review_reject`
+     directly, never actually building the popup widget — only a live
+     launch surfaced it. Fixed (drop the `:,` format spec, same pattern
+     `_contract_row` already uses) and a new regression check
+     (`review_popup_renders_without_crashing`) added that actually calls
+     `_show_review_popup()`, specifically so a future change can't
+     reintroduce a popup-construction crash behind a passing test suite.
+  2. The new regression checks (`review_popup_reject_does_not_add`/
+     `review_popup_accept_adds_pending_contract`) used the default
+     `Config()`, which points at the real `config.json` — since
+     `_on_review_accept()` saves to disk, running the test suite silently
+     overwrote the user's actual saved contracts with fixture data. Caught
+     immediately by re-checking `config.json` after a test run. Fixed by
+     giving `run_ui_state_checks()` its own isolated temp-file `Config`
+     instead (deleted at the end of the function) — the real config.json
+     is never touched by this test file again. User's real contracts
+     (there weren't any at the time — already empty from earlier cleanup)
+     and `cargo_capacity_scu: 512` were verified intact by hash-comparing
+     `config.json` before/after a full test run.
+
+  Verified live end-to-end: launched the app from source, clicked SCAN
+  CONTRACT via real UI Automation `InvokePattern.Invoke()` (not synthetic
+  state), confirmed the `_ReviewPopup` window actually exists as its own
+  top-level widget (not visible in a `PrintWindow` capture of the main
+  window — it's a separate `Qt.Popup` top-level, captured separately),
+  screenshotted it directly showing real theme/fonts with the ACCEPT/
+  REJECT buttons, clicked REJECT via `InvokePattern`, and confirmed
+  `config.json`'s contract count stayed at 0 afterward.

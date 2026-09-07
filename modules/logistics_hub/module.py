@@ -878,58 +878,84 @@ class _RegionSelector(QWidget):
         self.deleteLater()
 
 
-class _DuplicatePopup(QWidget):
-    """Small themed confirm/deny prompt — same Qt.Popup pattern as
-    host/main_window.py's Settings/Tray panels (closes on an outside
-    click), used here instead of a plain QMessageBox to match the rest of
-    the app's HUD styling."""
+class _ReviewPopup(QWidget):
+    """Shown after every scan (not just duplicates) — added 2026-09-07 per
+    user direction: SCAN CONTRACT used to add straight to the queue/route,
+    only pausing for a duplicate. Now every scan pauses here first. Same
+    themed `Qt.Popup` shell `_DuplicatePopup` used (closes on an outside
+    click, matches the rest of the app's HUD styling instead of a plain
+    QMessageBox) — generalized to show the contract summary and (later,
+    once the grading pass lands) a letter grade, not just a duplicate
+    warning. The duplicate warning line still appears here when relevant,
+    folded into this one popup instead of a separate flow."""
 
-    def __init__(self, parent_widget, on_confirm, on_deny):
+    def __init__(self, parent_widget, summary_text: str, duplicate_warning: str | None, on_accept, on_reject):
         super().__init__(parent_widget, Qt.Popup)
         self.setAttribute(Qt.WA_StyledBackground, True)
+        border_color = theme.ACCENT_AMBER if duplicate_warning else theme.BORDER_FLAT
         self.setStyleSheet(f"""
-            _DuplicatePopup {{
-                background: {theme.BG_PANEL}; border: 1px solid {theme.ACCENT_AMBER};
+            _ReviewPopup {{
+                background: {theme.BG_PANEL}; border: 1px solid {border_color};
                 border-radius: {theme.RADIUS}px;
             }}
         """)
-        self._on_confirm = on_confirm
-        self._on_deny = on_deny
+        self._on_accept = on_accept
+        self._on_reject = on_reject
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(8)
+        self.setMaximumWidth(420)
 
-        label = QLabel("Duplicate detected. Add?")
-        label.setStyleSheet(
+        title = QLabel("Add this contract?")
+        title.setStyleSheet(
             f"color: {theme.TEXT_PRIMARY}; font-family: {theme.FONT_DISPLAY}; "
             f"font-weight: 700; font-size: {theme.fpx(11)}px;"
         )
-        layout.addWidget(label)
+        layout.addWidget(title)
+
+        summary = QLabel(summary_text)
+        summary.setWordWrap(True)
+        summary.setStyleSheet(
+            f"color: {theme.TEXT_PRIMARY}; font-family: {theme.FONT_MONO}; "
+            f"font-size: {theme.fpx(10)}px;"
+        )
+        layout.addWidget(summary)
+
+        if duplicate_warning:
+            warn = QLabel(f"⚠ {duplicate_warning}")
+            warn.setWordWrap(True)
+            warn.setStyleSheet(
+                f"background: {theme.ACCENT_AMBER_DIM}; color: {theme.ACCENT_AMBER}; "
+                f"border: 1px solid {theme.ACCENT_AMBER}; border-radius: {theme.RADIUS}px; "
+                f"padding: 5px 8px; font-family: {theme.FONT_MONO}; "
+                f"font-size: {theme.fpx(9)}px;"
+            )
+            layout.addWidget(warn)
 
         btn_row = QHBoxLayout()
-        confirm_btn = QPushButton("CONFIRM")
-        deny_btn = QPushButton("DENY")
+        accept_btn = QPushButton("ACCEPT")
+        reject_btn = QPushButton("REJECT")
         btn_style = (
             f"background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN}; "
             f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
             f"padding: 4px 10px; font-family: {theme.FONT_DISPLAY}; font-weight: 700; "
             f"font-size: {theme.fpx(10)}px;"
         )
-        confirm_btn.setStyleSheet(btn_style)
-        deny_btn.setStyleSheet(btn_style)
-        confirm_btn.clicked.connect(self._confirm)
-        deny_btn.clicked.connect(self._deny)
-        btn_row.addWidget(confirm_btn)
-        btn_row.addWidget(deny_btn)
+        accept_btn.setStyleSheet(btn_style)
+        reject_btn.setStyleSheet(btn_style)
+        accept_btn.clicked.connect(self._accept)
+        reject_btn.clicked.connect(self._reject)
+        btn_row.addWidget(accept_btn)
+        btn_row.addWidget(reject_btn)
         layout.addLayout(btn_row)
 
-    def _confirm(self):
-        self._on_confirm()
+    def _accept(self):
+        self._on_accept()
         self.close()
 
-    def _deny(self):
-        self._on_deny()
+    def _reject(self):
+        self._on_reject()
         self.close()
 
 
@@ -966,7 +992,7 @@ class LogisticsHubModule(ModuleBase):
         # in Core rather than as a "location module" other modules depend on.
         self._locations = LocationService(api_client)
         self._location_choices: dict[str, dict] = {}  # display name -> terminal row, for the picker
-        self._pending_duplicate: dict | None = None  # scanned but held back, awaiting confirm
+        self._pending_scan: dict | None = None  # scanned, awaiting ACCEPT/REJECT in the review popup
         # A "node" is one stop to visit: (contract_index, "pickup"/"dropoff",
         # index within that role's list) — a contract can have several
         # pickups or several drop-offs (real panels use both DROP OFF
@@ -1360,7 +1386,7 @@ class LogisticsHubModule(ModuleBase):
         self.settings["route_done"] = []
         self._save_settings()
         self._route_order = []
-        self._pending_duplicate = None
+        self._pending_scan = None
         self._render_results()
         self._set_status("Contracts cleared.")
 
@@ -1567,20 +1593,17 @@ class LogisticsHubModule(ModuleBase):
 
         candidates = _candidate_phrases(raw_text)
 
+        # Every scan now pauses for a review popup — added 2026-09-07 per
+        # user direction, replacing the old "auto-add unless duplicate"
+        # behavior. Route/manifest are unchanged until ACCEPT is clicked,
+        # so there's nothing new to compare yet — an empty dict, not None,
+        # keeps _log_scan_debug's entry shape consistent either way.
         contracts = self.settings.setdefault("contracts", [])
-        if any(self._is_likely_duplicate(c, contract) for c in contracts):
-            self._pending_duplicate = contract
-            self._show_duplicate_popup()
-            self._set_status("Duplicate detected — confirm or deny.")
-            # Route is unchanged in this branch (contract isn't added yet),
-            # so there's nothing new to compare — an empty dict, not None,
-            # keeps _log_scan_debug's entry shape consistent either way.
-            self._log_scan_debug(raw_text, candidates, contract, "duplicate_pending", debug_trace, {})
-            return
-
-        route_debug: dict = {}
-        self._add_contract(contract, route_debug=route_debug)
-        self._log_scan_debug(raw_text, candidates, contract, "added", debug_trace, route_debug)
+        self._pending_scan = contract
+        duplicate = any(self._is_likely_duplicate(c, contract) for c in contracts)
+        self._show_review_popup(contract, duplicate)
+        self._set_status("Review the scan — ACCEPT or REJECT.")
+        self._log_scan_debug(raw_text, candidates, contract, "pending_review", debug_trace, {})
 
     def _log_scan_debug(
         self, raw_text: str, candidates: list[tuple[str, str, int]], contract: dict, note: str,
@@ -1690,20 +1713,38 @@ class LogisticsHubModule(ModuleBase):
             return LocationService.terminal_key(terminal)
         return entry.get("raw", "").lower()
 
-    def _show_duplicate_popup(self):
-        popup = _DuplicatePopup(self._card_widget, self._on_duplicate_confirm, self._on_duplicate_deny)
+    def _show_review_popup(self, contract: dict, duplicate: bool):
+        pickups_text = self._entry_names(contract.get("pickups", []), self._locations.display_name)
+        dropoffs_text = self._entry_names(contract.get("dropoffs", []), self._locations.display_name)
+        reward = contract.get("reward")
+        # `reward` is the raw extracted string (e.g. "87,250"), already
+        # comma-formatted from OCR text — not an int, same as every other
+        # place in this file that displays it (_contract_row, etc.).
+        reward_text = f"{reward} aUEC" if reward else "reward unknown"
+        scu = sum(_entry_scu(e) for e in contract.get("pickups", []))
+        summary_text = f"{pickups_text} → {dropoffs_text}\n{reward_text}  ·  {scu} SCU"
+
+        duplicate_warning = (
+            "Looks like a duplicate of a contract already in your queue "
+            "(same reward, shares a location)." if duplicate else None
+        )
+
+        popup = _ReviewPopup(
+            self._card_widget, summary_text, duplicate_warning,
+            self._on_review_accept, self._on_review_reject,
+        )
         anchor = self._scan_btn.mapToGlobal(self._scan_btn.rect().bottomLeft())
         popup.move(anchor)
         popup.show()
 
-    def _on_duplicate_confirm(self):
-        if self._pending_duplicate is not None:
-            self._add_contract(self._pending_duplicate)
-        self._pending_duplicate = None
+    def _on_review_accept(self):
+        if self._pending_scan is not None:
+            self._add_contract(self._pending_scan)
+        self._pending_scan = None
 
-    def _on_duplicate_deny(self):
-        self._pending_duplicate = None
-        self._set_status("Duplicate not added.")
+    def _on_review_reject(self):
+        self._pending_scan = None
+        self._set_status("Contract not added.")
 
     # ------------------------------------------------------------------
     # Screen capture / OCR

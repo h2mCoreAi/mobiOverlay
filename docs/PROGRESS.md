@@ -562,6 +562,17 @@
   picked up). 16/16 regression checks pass. See DECISIONS.md, 2026-09-07,
   for full detail on all three.
 
+- **Scan → review popup shipped (Part 1 of 3 on the confirm-gate/grading
+  plan** — see `~/.claude/plans/yes-please-fold-all-quizzical-starfish.md`
+  for the full 3-part plan). SCAN CONTRACT no longer auto-adds; every scan
+  pauses on a themed ACCEPT/REJECT popup showing the pickup/dropoff
+  summary, reward, SCU, and a duplicate warning when relevant. Grading
+  (letter grade + reason) and the Hauler Profile are Parts 2-3, not yet
+  built. Caught and fixed two real bugs while building this (a reward-
+  formatting crash in the popup, and a test that was silently overwriting
+  the real config.json) — see DECISIONS.md, 2026-09-07. 19/19 regression
+  checks pass, verified live via a real launch + UI Automation click.
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one

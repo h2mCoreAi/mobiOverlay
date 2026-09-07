@@ -462,13 +462,22 @@ def run_ui_state_checks() -> tuple[int, int]:
     `_render_results()` call must sync the popout's rows to the *current*
     `_route_order` even when it's now empty, not only when it's non-empty."""
     import os
+    import tempfile
+    from pathlib import Path
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
     from host.config import Config as _Config
     from host.card_container import CardContainer
 
     app = QApplication.instance() or QApplication([])
-    config = _Config()
+    # Isolated temp path, NOT the real config.json — this group calls
+    # _add_contract()/_on_review_accept(), which save to disk on every
+    # call. Pointing at the real path once let a test run silently
+    # overwrite the user's actual saved contracts (caught 2026-09-07,
+    # see DECISIONS.md) — never repeat that regardless of what the checks
+    # below do or how they fail.
+    tmp_path = Path(tempfile.gettempdir()) / f"mobiov_test_config_{os.getpid()}.json"
+    config = _Config(path=tmp_path)
     api_client = UexApiClient(config.data["api"]["uex_base_url"], config.data["api"]["uex_token"])
     mod = LogisticsHubModule(api_client, config)
     mod._locations.ensure_loaded()
@@ -492,6 +501,61 @@ def run_ui_state_checks() -> tuple[int, int]:
         print(f"    expected popout rows to go from >0 to 0 on CLEAR, got {before} -> {after}")
 
     mod._on_route_popout_closed()
+
+    # 2026-09-07: SCAN CONTRACT no longer auto-adds — every scan now waits
+    # for ACCEPT/REJECT on the review popup. First actually build and show
+    # it (not just call the accept/reject handlers directly, which
+    # bypasses the widget construction entirely — that gap is exactly how
+    # a real crash in `_show_review_popup`'s reward-formatting slipped past
+    # the first version of these checks, caught only by a live run).
+    name = "review_popup_renders_without_crashing"
+    total += 1
+    contract2 = mod._build_contract(FIXTURES[1][1])
+    try:
+        mod._pending_scan = contract2
+        mod._show_review_popup(contract2, duplicate=True)  # duplicate=True exercises the warning-row branch too
+        app.processEvents()
+        ok = True
+    except Exception as exc:
+        ok = False
+        print(f"    _show_review_popup raised: {exc!r}")
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+    popup = next((w for w in app.topLevelWidgets() if type(w).__name__ == "_ReviewPopup"), None)
+    if popup is not None:
+        popup.close()
+
+    # Two checks: REJECT must leave the contract list untouched, ACCEPT
+    # must add exactly the pending one.
+    name = "review_popup_reject_does_not_add"
+    total += 1
+    contract2 = mod._build_contract(FIXTURES[1][1])
+    before_count = len(mod.settings.get("contracts", []))
+    mod._pending_scan = contract2
+    mod._on_review_reject()
+    after_count = len(mod.settings.get("contracts", []))
+    ok = after_count == before_count and mod._pending_scan is None
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    expected contract count unchanged ({before_count}) and _pending_scan cleared; "
+              f"got count={after_count}, pending={mod._pending_scan!r}")
+
+    name = "review_popup_accept_adds_pending_contract"
+    total += 1
+    before_count = len(mod.settings.get("contracts", []))
+    mod._pending_scan = contract2
+    mod._on_review_accept()
+    after_count = len(mod.settings.get("contracts", []))
+    ok = after_count == before_count + 1 and mod._pending_scan is None
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    expected contract count {before_count}->{before_count + 1} and _pending_scan cleared; "
+              f"got count={after_count}, pending={mod._pending_scan!r}")
+
+    tmp_path.unlink(missing_ok=True)
     return failures, total
 
 
