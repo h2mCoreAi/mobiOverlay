@@ -551,6 +551,17 @@
   contract/duplicate-id issues. See docs/modules/refinery-finder.md and
   DECISIONS.md, 2026-09-06, for the full scoping rationale.
 
+- **Card ROUTE section restored to a full inline stop list** (was a
+  placeholder pointing at the Tracker popout since 2026-09-05 — the
+  original bug behind that revert never reproduced this time, verified
+  live via a real launch + screenshot). **Manual CARGO CAPACITY field
+  added** (SCU, persisted) with an amber over-capacity warning on the
+  card's summary line, verified live. **Freight Manifest section added**
+  — running commodity list across all active contracts, flags any
+  commodity split across 2+ contracts (hard to tell apart in-game once
+  picked up). 16/16 regression checks pass. See DECISIONS.md, 2026-09-07,
+  for full detail on all three.
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one

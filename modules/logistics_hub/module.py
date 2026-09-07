@@ -54,6 +54,7 @@ from PySide6.QtCore import Qt, QRect, QRectF, QPoint, QTimer, Signal
 from PySide6.QtGui import (
     QGuiApplication,
     QImage,
+    QIntValidator,
     QPainter,
     QPainterPath,
     QColor,
@@ -65,6 +66,7 @@ from PySide6.QtWidgets import (
     QCompleter,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSizeGrip,
@@ -1032,6 +1034,41 @@ class LogisticsHubModule(ModuleBase):
         location_row.addWidget(self._location_combo, 1)
         layout.addLayout(location_row)
 
+        # ---- cargo capacity row --------------------------------------
+        # Manual entry, not a ship picker — the user's actual hold size
+        # depends on cargo-grid loadout, which UEX's static vehicle data
+        # can't reflect. Compared against `_peak_cargo_scu()` in the
+        # summary line so overcommitting a route (more peak cargo than the
+        # ship can hold) is caught before undocking, not discovered at the
+        # pickup terminal. See docs/DECISIONS.md, 2026-09-07.
+        capacity_row = QHBoxLayout()
+        capacity_label = QLabel("CARGO CAPACITY")
+        capacity_label.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
+            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
+        )
+        capacity_row.addWidget(capacity_label)
+
+        self._capacity_edit = QLineEdit()
+        self._capacity_edit.setValidator(QIntValidator(0, 100000, self._capacity_edit))
+        self._capacity_edit.setPlaceholderText("SCU")
+        self._capacity_edit.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
+                padding: 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
+                font-size: {theme.fpx(11)}px;
+            }}
+            """
+        )
+        saved_capacity = self.settings.get("cargo_capacity_scu")
+        if saved_capacity:
+            self._capacity_edit.setText(str(saved_capacity))
+        self._capacity_edit.editingFinished.connect(self._on_capacity_changed)
+        capacity_row.addWidget(self._capacity_edit, 1)
+        layout.addLayout(capacity_row)
+
         # ---- region status row --------------------------------------
         region_row = QHBoxLayout()
         self._region_label = QLabel("Region: not set")
@@ -1148,6 +1185,32 @@ class LogisticsHubModule(ModuleBase):
         self._contracts_scroll.setMinimumHeight(90)
         self._contracts_scroll.setMaximumHeight(160)
         layout.addWidget(self._contracts_scroll)
+
+        # ---- freight manifest (running list of what's being hauled) -----
+        # Added 2026-09-07 per user direction: a running total of every
+        # commodity across all active contracts, so a duplicate — the same
+        # freight picked up under two different contracts, which the game
+        # makes very hard to tell apart once it's in the hold — is caught
+        # by eye right after a scan, before it's a problem at the pickup
+        # terminal. See docs/DECISIONS.md.
+        manifest_title = QLabel("FREIGHT MANIFEST")
+        manifest_title.setStyleSheet(self._title_style())
+        layout.addWidget(manifest_title)
+
+        self._manifest_scroll = QScrollArea()
+        self._manifest_scroll.setWidgetResizable(True)
+        self._manifest_scroll.setStyleSheet(
+            f"QScrollArea {{ background: transparent; border: 1px solid {theme.BORDER_FLAT}; "
+            f"border-radius: {theme.RADIUS}px; }}"
+        )
+        self._manifest_widget = QWidget()
+        self._manifest_layout = QVBoxLayout(self._manifest_widget)
+        self._manifest_layout.setContentsMargins(8, 8, 8, 8)
+        self._manifest_layout.setSpacing(4)
+        self._manifest_scroll.setWidget(self._manifest_widget)
+        self._manifest_scroll.setMinimumHeight(60)
+        self._manifest_scroll.setMaximumHeight(140)
+        layout.addWidget(self._manifest_scroll)
 
         # ---- scrollable route list --------------------------------------
         self._results_scroll = QScrollArea()
@@ -1276,6 +1339,15 @@ class LogisticsHubModule(ModuleBase):
         if contracts:
             self._route_order = self._plan_route(contracts)
             self._render_results()
+
+    def _on_capacity_changed(self):
+        text = self._capacity_edit.text().strip()
+        self.settings["cargo_capacity_scu"] = int(text) if text else None
+        self._save_settings()
+        # Re-render so the summary line's over-capacity warning (or its
+        # removal, if the field was cleared) reflects the new value
+        # immediately rather than waiting for the next scan/edit.
+        self._render_results()
 
     def _current_location_terminal(self) -> dict | None:
         return self.settings.get("current_location")
@@ -2391,13 +2463,25 @@ class LogisticsHubModule(ModuleBase):
         contracts = self.settings.get("contracts", [])
         self._contracts_title.setText(f"CONTRACTS ({len(contracts)})")
         self._populate_contracts_rows(self._contracts_layout, contracts)
+        self._populate_manifest_rows(self._manifest_layout, contracts)
 
         if contracts:
             reward = _total_reward(contracts)
             peak_scu = self._peak_cargo_scu(contracts)
             plural = "s" if len(contracts) != 1 else ""
-            self._summary_label.setText(
-                f"{len(contracts)} contract{plural} · {reward:,} aUEC · {peak_scu} SCU peak cargo"
+            summary = f"{len(contracts)} contract{plural} · {reward:,} aUEC · {peak_scu} SCU peak cargo"
+            capacity = self.settings.get("cargo_capacity_scu")
+            over_capacity = bool(capacity) and peak_scu > capacity
+            if capacity:
+                if over_capacity:
+                    summary += f"  ⚠ EXCEEDS {capacity} SCU CAPACITY BY {peak_scu - capacity}"
+                else:
+                    summary += f"  (of {capacity} SCU)"
+            self._summary_label.setText(summary)
+            self._summary_label.setStyleSheet(
+                f"color: {theme.ACCENT_AMBER if over_capacity else theme.TEXT_MUTED}; "
+                f"font-family: {theme.FONT_MONO}; font-size: {theme.fpx(9)}px; "
+                f"letter-spacing: 0.5px; font-weight: {700 if over_capacity else 400};"
             )
         else:
             self._summary_label.setText("")
@@ -2421,24 +2505,20 @@ class LogisticsHubModule(ModuleBase):
             route_title.setStyleSheet(self._title_style())
             self._results_layout.addWidget(route_title)
 
+            # Full per-stop list, inline on the card — re-added 2026-09-07.
+            # A 2026-09-05 attempt at this same thing hit rows that stayed
+            # invisible until the Tracker popout had been opened once, and
+            # was reverted rather than chased blind (no way to run the real
+            # Qt UI in that pass). This time verified live in the running
+            # app (not just code-reviewed) — see docs/DECISIONS.md,
+            # 2026-09-07, for what the actual cause turned out to be. The
+            # Tracker popout still exists alongside this as an optional
+            # always-on-top detached window for while the game has focus;
+            # both stay in sync via the same `_populate_route_rows` call.
+            self._populate_route_rows(self._results_layout, contracts)
             if self._route_popout is not None:
                 self._results_layout.addWidget(self._info_label(
-                    "Route is in its own always-on-top Tracker window."
-                ))
-            else:
-                # The full stop-by-stop list used to render inline here too
-                # (with the same per-stop done/skip toggling the Tracker
-                # popout has) — reverted 2026-09-05. It went invisible on
-                # the card (a scroll-position fix for it didn't actually
-                # resolve the report) and the Tracker popout is the tool
-                # actually used for working a route, so simplifying to a
-                # single prompt removes the whole broken code path instead
-                # of continuing to chase it blind (no way to run the real
-                # Qt UI in this environment). See DECISIONS.md.
-                plural = "s" if len(self._route_order) != 1 else ""
-                self._results_layout.addWidget(self._info_label(
-                    f"{len(self._route_order)} stop{plural} planned. "
-                    "Click TRACKER above to view and work the route."
+                    "Also open in the detached Tracker window."
                 ))
 
         self._results_layout.addWidget(self._info_label(
@@ -2759,6 +2839,69 @@ class LogisticsHubModule(ModuleBase):
                 target_layout.addWidget(self._contract_row(c))
                 for note in c.get("ambiguous", []):
                     target_layout.addWidget(self._ambiguous_row(note))
+
+    @staticmethod
+    def _freight_manifest(contracts: list[dict]) -> dict:
+        """Commodity name -> {"scu": total SCU across every contract
+        hauling it, "contract_count": how many distinct contracts that is}.
+        Read from each contract's *pickups* only — a pickup entry already
+        holds that contract's contract-wide total for a commodity (see the
+        2026-09-05 quantity-summing fix), so drop-offs would double-count
+        the same freight split across multiple destinations. Within one
+        contract, quantities are summed across its pickups first so a
+        commodity appearing at two pickups in the same contract counts
+        once at its true total rather than twice."""
+        manifest: dict[str, dict] = {}
+        for contract in contracts:
+            contract_totals: dict[str, int] = {}
+            for entry in contract.get("pickups", []):
+                for c in entry.get("commodities") or []:
+                    if isinstance(c, (list, tuple)):
+                        name, qty = c
+                    else:
+                        name, qty = c, None
+                    qty = int(qty) if qty and str(qty).isdigit() else 0
+                    contract_totals[name] = contract_totals.get(name, 0) + qty
+            for name, qty in contract_totals.items():
+                row = manifest.setdefault(name, {"scu": 0, "contract_count": 0})
+                row["scu"] += qty
+                row["contract_count"] += 1
+        return manifest
+
+    def _populate_manifest_rows(self, target_layout: QVBoxLayout, contracts: list[dict]):
+        while target_layout.count():
+            item = target_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        manifest = self._freight_manifest(contracts)
+        if not manifest:
+            target_layout.addWidget(self._info_label(
+                "Nothing hauled yet — commodities appear here once a "
+                "contract is scanned."
+            ))
+            return
+
+        for name in sorted(manifest.keys()):
+            row = manifest[name]
+            scu, count = row["scu"], row["contract_count"]
+            if count > 1:
+                target_layout.addWidget(self._ambiguous_row(
+                    f"{name} — {scu} SCU total, split across {count} "
+                    "contracts — the game will not let you tell these "
+                    "apart once picked up"
+                ))
+            else:
+                label = QLabel(f"{name} — {scu} SCU" if scu else name)
+                label.setWordWrap(True)
+                label.setStyleSheet(
+                    f"background: {theme.BG_PANEL}; color: {theme.TEXT_PRIMARY}; "
+                    f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
+                    f"padding: 5px 8px; font-family: {theme.FONT_MONO}; "
+                    f"font-size: {theme.fpx(10)}px;"
+                )
+                target_layout.addWidget(label)
 
     @staticmethod
     def _title_style() -> str:

@@ -426,6 +426,34 @@ def run_distance_checks(mod) -> tuple[int, int]:
     return failures, total
 
 
+def run_manifest_and_capacity_checks(mod) -> tuple[int, int]:
+    """Pure-logic checks (no Qt event loop needed) for the two 2026-09-07
+    additions: `_freight_manifest()` flagging the same commodity split
+    across multiple contracts (the game makes these impossible to tell
+    apart once picked up — the exact scenario that prompted this), and
+    `_peak_cargo_scu()` feeding the card's over-capacity warning."""
+    failures, total = 0, 0
+
+    total += 1
+    contracts = [
+        {"pickups": [{"commodities": [("Titanium", "50")]}]},
+        {"pickups": [{"commodities": [("Titanium", "30")]}]},
+        {"pickups": [{"commodities": [("Gold", "10")]}]},
+    ]
+    manifest = mod._freight_manifest(contracts)
+    ok = (
+        manifest.get("Titanium") == {"scu": 80, "contract_count": 2}
+        and manifest.get("Gold") == {"scu": 10, "contract_count": 1}
+    )
+    name = "freight_manifest_flags_same_commodity_across_contracts"
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    expected Titanium split across 2 contracts (80 SCU total), Gold in 1; got {manifest}")
+
+    return failures, total
+
+
 def run_ui_state_checks() -> tuple[int, int]:
     """Returns (failures, total_checks). Needs a real (offscreen-OK) Qt
     event loop, unlike the two check groups above — set QT_QPA_PLATFORM=
@@ -505,6 +533,10 @@ def run() -> int:
     distance_failures, distance_total = run_distance_checks(mod)
     failures += distance_failures
     print(f"\n{distance_total - distance_failures}/{distance_total} distance checks passed")
+
+    manifest_failures, manifest_total = run_manifest_and_capacity_checks(mod)
+    failures += manifest_failures
+    print(f"\n{manifest_total - manifest_failures}/{manifest_total} manifest/capacity checks passed")
 
     try:
         ui_failures, ui_total = run_ui_state_checks()

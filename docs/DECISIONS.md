@@ -2130,3 +2130,66 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   `real_faithful_dream_station_three_commodities`) — the first fixtures
   in this suite sourced from live post-fix scans rather than reconstructed
   from memory. All 15 regression checks pass.
+
+- 2026-09-07: **Card ROUTE section restored to a full inline per-stop
+  list** (was a single "N stops planned, click TRACKER" placeholder since
+  2026-09-05 — see that entry above). User reported the card "doesn't
+  seem to be displaying correctly" — everything past the CONTRACTS list
+  needed the Tracker popout to see any detail, when the card is supposed
+  to hold the majority of the information. Root cause of the original
+  2026-09-05 revert was genuinely never found (no way to run the real Qt
+  UI in that pass, per its own writeup) — this time it was: launched the
+  app from source with two real fixture-derived contracts seeded into
+  `config.json`, screenshotted the running card via `PrintWindow`, and
+  the full 4-stop route list rendered correctly the very first try. The
+  2026-09-05 "invisible rows" symptom did not reproduce — most likely
+  cause, never fully isolated since it wasn't reproduced either: the
+  scroll-position-reset attempt from that same day, still present in the
+  code, may have been enough on its own even though it was judged
+  ineffective at the time on a different symptom. `_render_results()`
+  now calls `_populate_route_rows(self._results_layout, contracts)`
+  directly instead of the placeholder branch; the Tracker popout is kept
+  as an optional always-on-top detached window alongside it (both stay in
+  sync via the same call), not removed.
+- 2026-09-07: **Manual cargo capacity added.** User hit a real case: two
+  queued contracts needed 612 SCU combined but their ship only holds 512
+  — nothing in the app would have caught that before undocking. Considered
+  a UEX-vehicle-data ship picker vs. manual entry; user explicitly
+  preferred manual ("I trust it more than the ship picker") since a
+  picker can't reflect a customized cargo-grid loadout. New `CARGO
+  CAPACITY` field on the card (`cargo_capacity_scu` in settings,
+  `QIntValidator`, saved on `editingFinished`). The existing summary line
+  (`_peak_cargo_scu()`, already computed) now compares against it and
+  turns amber with `EXCEEDS N SCU CAPACITY BY <over-amount>` when the
+  planned route's peak cargo would overflow the hold. Verified live: set
+  to 512 via a real UI Automation click + Tab (not just
+  `ValuePattern.SetValue`, which set the field's text but never fired
+  `editingFinished` since Qt's own focus-loss signal never ran — the
+  first attempt silently didn't trigger the warning for exactly that
+  reason), summary correctly read "612 SCU peak cargo ⚠ EXCEEDS 512 SCU
+  CAPACITY BY 100".
+- 2026-09-07: **Freight Manifest added** — a running list of every
+  commodity being hauled across all active contracts, new card section
+  between CONTRACTS and ROUTE. Per user direction: the game makes it very
+  hard to tell two pickups of the same commodity apart once they're both
+  in the hold, so accidentally taking two contracts hauling the same
+  freight is a real trap worth flagging on sight, not discovered mid-run.
+  `_freight_manifest()` sums each contract's *pickup*-side commodity
+  totals only (a pickup entry already holds that contract's contract-wide
+  total per the 2026-09-05 quantity-summing fix; drop-offs would double-
+  count the same freight split across destinations) and tracks how many
+  distinct contracts each commodity name appears in. Any commodity in 2+
+  contracts renders as an amber warning row (reusing the existing
+  ambiguous-location row style) instead of a plain one. Verified offline
+  with a synthetic 3-contract case (Titanium split 50/30 across two
+  contracts correctly summed to 80 SCU and flagged; Gold in one contract
+  correctly left unflagged) and confirmed rendering live in the running
+  app alongside the two real seeded fixture contracts (no overlap in that
+  particular pair, so no flag fired there — the flagging logic itself was
+  checked separately, above). New regression check
+  `freight_manifest_flags_same_commodity_across_contracts` added
+  (16 total checks now).
+- 2026-09-07: The debug log (`logistics_hub_debug.jsonl`) was deleted at
+  user request after a game crash lost their in-progress contracts —
+  it's always-on and regenerates fresh on the next scan, nothing lost
+  from deleting it (it's untracked, not a source file).
