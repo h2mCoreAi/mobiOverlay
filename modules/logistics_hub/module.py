@@ -348,9 +348,29 @@ def _extract_commodities(
         if loc_key in base:
             loc_part = base
         elif end + 1 < len(lines):
-            widened = re.sub(r"[^a-z0-9]", "", (m.group(dest_group) + " " + lines[end + 1]).lower())
+            next_line = lines[end + 1]
+            widened = re.sub(r"[^a-z0-9]", "", (m.group(dest_group) + " " + next_line).lower())
             idx = widened.find(loc_key)
-            loc_part = widened if idx != -1 and idx < len(base) else base
+            straddles = idx != -1 and idx < len(base)
+            # A single-word city candidate (see _candidate_phrases's "in "
+            # pass) is, by construction, never going to straddle this
+            # boundary — a destination phrased "Teasa Spaceport" / "in
+            # Lorville:" always puts the *entire* city name on the next
+            # line, none of it on this one. That's a direct grammatical
+            # continuation of the same destination ("X in CITY"), not a
+            # coincidentally-adjacent unrelated mention (the Port Tressler
+            # case above is a different *terminal's* own freight-elevator
+            # listing, never introduced by "in "). Confirmed real: a live
+            # scan's "Deliver...to Teasa Spaceport" / "in Lorville:" lost
+            # its commodity entirely for the Lorville stop without this —
+            # the straddle check can structurally never pass for this
+            # pattern, not just miss it occasionally.
+            next_in_match = re.match(r"\s*in\s+([A-Za-z']+)", next_line, re.I)
+            is_in_continuation = (
+                next_in_match is not None
+                and re.sub(r"[^a-z0-9]", "", next_in_match.group(1).lower()) == loc_key
+            )
+            loc_part = widened if (straddles or is_in_continuation) else base
         else:
             loc_part = base
         if loc_key not in loc_part:

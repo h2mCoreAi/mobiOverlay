@@ -2086,3 +2086,47 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   only way to actually confirm #1 (column ordering) and #4 (allowlist)
   specifically, since neither could be fully validated against synthetic
   test data in this environment.
+
+- 2026-09-07: **First live scans after the OCR pipeline optimization
+  batch — both parsed correctly overall, but one exposed a real
+  commodity-extraction gap, fixed same day.** Two real contracts
+  scanned: a 3-commodity Everus Harbor -> Faithful Dream Station haul
+  (Quantum Fuel/Hydrogen Fuel/Ship Ammunition, all correct — added as
+  `real_faithful_dream_station_three_commodities`, the first fixture in
+  this suite built from a genuinely clean real scan rather than a bug
+  report) and an Everus Harbor -> Lorville haul that reproduced the
+  single-word-city fix live for real: "Lorville" correctly resolved as
+  a real dropoff while "Teasa Spaceport" correctly stayed flagged as a
+  genuine ambiguity (New Deal vs. Kel-To) — exactly as predicted when
+  that fix shipped, first real confirmation outside synthetic testing.
+  **But its commodities came back empty**, a gap the synthetic fixture
+  for that same bug never caught. Root cause: the real contract phrases
+  the destination as "Deliver...to Teasa Spaceport" / "in Lorville:" —
+  split across the line break — and the straddle check added for the
+  Port Tressler theft bug (2026-09-06) can *never* pass for a single-
+  word-city candidate by construction: a destination introduced via
+  "in CITY" always puts the entire city name on the *next* line, none
+  of it on the current one, so it structurally can't straddle the
+  boundary the way a genuinely truncated name (the case that check was
+  built for) does. This is a real, mechanical incompatibility between
+  the single-word-city fix and the Port-Tressler-theft fix, not a
+  coincidental edge case — it would have failed for every single-word-
+  city dropoff's commodities, every time. Fixed by adding a narrow
+  carve-out: if the next line itself opens with "in " immediately
+  followed by the same word as the candidate's own loc_key, trust the
+  widened match even without straddling — that pattern is a direct
+  grammatical continuation of the same destination ("X in CITY"), never
+  the coincidentally-adjacent unrelated mention (a different terminal's
+  own freight-elevator listing) the straddle check exists to reject.
+  **Verified against the real captured text**: Lorville's commodities
+  now correctly show 27 SCU Pressurized Ice + 278 SCU Processed Food,
+  matching the pickup total exactly. Confirmed the fix is actually
+  necessary (reverted it, watched the real capture fail again, restored
+  it). Confirmed the Port Tressler fixture still passes — this carve-out
+  doesn't reopen that bug, since it only fires for the specific "in "-
+  opening-a-line pattern, never a "Freight elevator at..." one. Added
+  both real captures as regression fixtures
+  (`real_lorville_in_continuation_commodity_gap`,
+  `real_faithful_dream_station_three_commodities`) — the first fixtures
+  in this suite sourced from live post-fix scans rather than reconstructed
+  from memory. All 15 regression checks pass.

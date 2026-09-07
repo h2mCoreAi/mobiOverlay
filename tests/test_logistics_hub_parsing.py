@@ -274,6 +274,76 @@ FIXTURES = [
         {"Admin - Everus Harbor": [("Medical Supplies", "8")]},
         {"Landing Services - Lorville": [("Medical Supplies", "8")]},
     ),
+    (
+        # REAL OCR capture (2026-09-07, first live scan after this
+        # session's OCR pipeline optimizations). Exposed a real gap the
+        # synthetic fixture above didn't catch: the destination is split
+        # "Deliver...to Teasa Spaceport" / "in Lorville:" — a direct
+        # grammatical continuation of one destination across the line
+        # break, not the coincidentally-adjacent unrelated mention the
+        # straddle check (mic_l2_long_forest_v2_port_tressler_theft_bug)
+        # was built to reject. Before the fix, Lorville's commodities came
+        # back empty because "lorville" never straddles that boundary —
+        # a single-word city candidate's continuation, by construction,
+        # is always entirely on the next line.
+        "real_lorville_in_continuation_commodity_gap",
+        "ACCEPTED (2/10)\nOFFERS\nVacrlut\nExperienced [ DRECT Medium Haul\n"
+        "Harbor ? Teasa Spaceport [BP]*\nDETAILS\nHello;\n"
+        "Need a contractor for a simple cargo haul going from a freight\n"
+        "elevator at Everus Harbor above Hurston to a freight elevator at\n"
+        "Teasa Spaceport in Lorville. At most the containers will be 16 SCU\n"
+        "in size:\nAlso, we strongly encourage contractors to bring a handheld\n"
+        "tractor beam along:\n're available to take care of it for us?\n"
+        "chance\nAny\nyou'\nThanks in advance for ensuring prompt service,\n"
+        "Chase Hewitt\nJr. Logistics Coordinator\nCovalex Shipping\n"
+        "'Anything you need, anywhere you need it '\n"
+        "Covalex Shipping is a limited liabilitv corporation. To encouraqe\n"
+        "ABANDON\nBEACONS\nHISTORY\nDecu-Brsada\nA 163,250\nReward\nEverus\n"
+        "NZA\nContract Deadline\nCovalex Independent Contractors\n"
+        "Contracted By\nPRIMARY OBJECTIVES\n"
+        "Deliver 0/27 SCU of Pressurized Ice to Teasa Spaceport\nin Lorville:\n"
+        "Collect Pressurized Ice from Everus Harbor.\n"
+        "Deliver 0/278 SCU of Processed Food to Teasa Spaceport\nin Lorville.\n"
+        "Collect Processed Food from Everus Harbor.\nSHARE\nTRACK",
+        {"Admin - Everus Harbor": [("Pressurized Ice", "27"), ("Processed Food", "278")]},
+        {"Landing Services - Lorville": [("Pressurized Ice", "27"), ("Processed Food", "278")]},
+    ),
+    (
+        # REAL OCR capture (2026-09-07, same live scan session as above).
+        # Already-correct before any fix here — added as a plain
+        # confirming fixture (3-commodity single-pickup/single-dropoff,
+        # each commodity split across its own Deliver/Collect line pair)
+        # so a future change can't silently break this shape either.
+        "real_faithful_dream_station_three_commodities",
+        "ACCEPTED (2/10)\nOFFERS\nExperienced [ DIRECT Medium Haul [ Everus\n"
+        "Harbor z HUR-L2 Faithful Dream Station [BP]*\nDETAILS\nHello,\n"
+        "Need a contractor for a simple cargo haul going from a freight\n"
+        "elevator at Everus Harbor above Hurston to a freight elevator at\n"
+        "Faithful Dream Station at Hurston's L? Lagrange point. At most\n"
+        "the containers will be 16 SCU in size:\n"
+        "Also, we strongly encourage contractors to bring a handheld\n"
+        "tractor beam along:\n're available to take care of it for us?\n"
+        "chance\nyou' r\nAny\nThanks in advance for ensuring prompt service,\n"
+        "Chase Hewitt\nJr. Logistics Coordinator\nCovalex Shipping\n"
+        "'Anything you need, anywhere you need it;'\n"
+        "Covalex Shippina is a limited liabilitv corporation: To encouraqe\n"
+        "ABANDON\nBEACONS\nHISTORY\nArev -Uijou;\n4 160,250\nReward\nNZA\n"
+        "Contract Deadline\nCovalex Independent Contractors\nContracted By\n"
+        "PRIMARY OBJECTIVES\nDeliver 0/84 SCU of Quantum Fuel to Faithful Dream\n"
+        "Station at Hurston's Lz Lagrange point.\n"
+        "Collect Quantum Fuel from Everus Harbor:\n"
+        "Deliver 0/115 SCU of Hydrogen Fuel to Faithful Dream\npoint:\n"
+        "Station at Hurston's Lz Lagrange\nCollect Hydrogen Fuel from Everus Harbor.\n"
+        "Deliver 0/108 SCU of Ship Ammunition to Faithful Dream\n"
+        "Station at Hurston'\ns Lz Lagrange point.\n"
+        "Collect Ship Ammunition from Everus Harbor.\nSHARE\nUNTRACK",
+        {"Admin - Everus Harbor": [
+            ("Quantum Fuel", "84"), ("Hydrogen Fuel", "115"), ("Ship Ammunition", "108"),
+        ]},
+        {"HUR-L2 Faithful Dream Station": [
+            ("Quantum Fuel", "84"), ("Hydrogen Fuel", "115"), ("Ship Ammunition", "108"),
+        ]},
+    ),
 ]
 
 # NOTE: a "Baijini Point -> Seraphim, 103 Stims" contract was also verified

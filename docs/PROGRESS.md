@@ -604,6 +604,13 @@
      misread as a stray symbol) that synthetic text can't reproduce.
      **All 4 ranked OCR optimizations now implemented** — a real scan is
      the actual test of the batch. See DECISIONS.md, 2026-09-06.
+  5. **First live scans (2026-09-07): both parsed correctly overall.**
+     Confirmed the single-word-city fix works live for real (not just
+     synthetic) — but surfaced a real commodity-extraction gap for that
+     exact case, fixed same day: a single-word-city destination's
+     commodities were always lost, not just occasionally, due to a
+     mechanical incompatibility with the Port Tressler theft fix. See
+     DECISIONS.md, 2026-09-07.
 - **FIXED (2026-09-06): the duplicate-stop KNOWN BUG below.**
   `_build_contract`'s `merge_resolved` now also merges two candidates that
   resolve to *different* UEX records for the *same real place* (via
