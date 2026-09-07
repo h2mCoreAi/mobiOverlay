@@ -580,11 +580,30 @@
      fragmented it into 3 disjoint unusable pieces ("Ontr", "Pontesh");
      with upscaling, it stayed as one coherent (if still imperfect)
      line. See DECISIONS.md, 2026-09-06.
-  3. Not started: preprocessing tuned to this UI specifically (inverted
-     threshold for light-text-on-dark, instead of generic grayscale +
-     autocontrast).
-  4. Not started: EasyOCR character allowlist (contract text is a known,
-     narrow domain — letters/digits/standard punctuation/"SCU").
+  3. **Investigated, NOT implemented (2026-09-06): thresholding/
+     sharpening on top of the current grayscale+autocontrast+upscale.**
+     A/B tested two candidate techniques (Otsu binarization, mild
+     UnsharpMask) against 4-6 synthetic cases each, compared directly
+     against the true pre-session baseline. Neither showed a consistent
+     enough win to justify shipping: binarization was a wash (helped one
+     detail, hurt another, on the same case); sharpening meaningfully
+     helped one case, was neutral on another, slightly hurt a third.
+     The already-shipped 2x upscale (#2) is the real, consistent win —
+     it stops EasyOCR from fragmenting a line into disconnected pieces,
+     the actual failure mode that breaks downstream line-based parsing.
+     Skipping this item rather than shipping an unproven change. See
+     DECISIONS.md, 2026-09-06, for the full comparison data.
+  4. ✅ **Done (2026-09-06): EasyOCR character allowlist.** New
+     `OCR_ALLOWLIST` — letters, digits, and every punctuation mark
+     observed across this session's real captures. Theoretically sound
+     (restricting a classifier's output space can only remove wrong
+     options, never add new errors, given a genuinely complete list) but
+     empirically inconclusive in synthetic testing — no measurable
+     difference on clean synthetic text, since the real benefit targets
+     genuine OCR hallucination artifacts (e.g. a reward-icon glyph
+     misread as a stray symbol) that synthetic text can't reproduce.
+     **All 4 ranked OCR optimizations now implemented** — a real scan is
+     the actual test of the batch. See DECISIONS.md, 2026-09-06.
 - **FIXED (2026-09-06): the duplicate-stop KNOWN BUG below.**
   `_build_contract`'s `merge_resolved` now also merges two candidates that
   resolve to *different* UEX records for the *same real place* (via

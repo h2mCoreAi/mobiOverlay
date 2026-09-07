@@ -100,6 +100,26 @@ COPY_ROUTE_CONFIRM_MS = 1500  # how long the COPY ROUTE button shows "COPIED" be
 
 DEBUG_LOG_FILENAME = "logistics_hub_debug.jsonl"  # always-on scan history, see docs/DECISIONS.md
 
+# Restricts what EasyOCR can output to characters that can actually appear
+# in a contract panel — letters, digits, and every punctuation mark
+# observed across this session's real captures (periods, commas, colons,
+# semicolons, apostrophes/quotes, hyphens, slashes for "0/37", parens,
+# brackets for "[BP]*", asterisks, underscores — a documented real OCR
+# artifact standing in for a period — plus basic sentence punctuation).
+# Restricting a classifier's output space to only valid characters can
+# only remove wrong options, never introduce new ones — but an
+# *incomplete* list could suppress a real, legitimate character, so this
+# is deliberately generous rather than minimal. Empirically inconclusive
+# in this session's own synthetic testing (no measurable difference on
+# clean synthetic text — the real benefit is against genuine OCR
+# hallucination artifacts, like a reward-icon glyph misread as a stray
+# symbol, which synthetic text can't reproduce); needs a real scan to
+# actually confirm, same as the earlier column-ordering change.
+OCR_ALLOWLIST = (
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    " .,:;'\"-/()[]*_%&!?"
+)
+
 # Real UEX distance (LocationService.distance(), see host/locations.py) is
 # the primary travel cost between two resolved locations now — genuine
 # point-to-point/orbit-to-orbit numbers, not a guess. These are only the
@@ -1657,7 +1677,7 @@ class LogisticsHubModule(ModuleBase):
         # this session (split location names, orphaned words, role
         # misattribution), all of which were really downstream symptoms of
         # reading the two columns interleaved instead of one at a time.
-        results = self._reader.readtext(np.array(gray), detail=1)
+        results = self._reader.readtext(np.array(gray), detail=1, allowlist=OCR_ALLOWLIST)
         # `gray.width`, not `pil_rgb.width` — bounding boxes from EasyOCR
         # are in the *upscaled* image's coordinate space, so the column-
         # gap threshold in _order_ocr_boxes needs to be computed against

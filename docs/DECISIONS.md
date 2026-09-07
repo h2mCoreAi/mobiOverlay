@@ -2011,3 +2011,78 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   easier test case had shown no visible difference either way, which
   would have been a false reassurance if used as the only test. Full
   regression suite (13/13) unaffected.
+
+- 2026-09-06: **OCR pipeline optimization #3: investigated, NOT
+  implemented — thresholding/sharpening didn't hold up under real
+  testing.** The original ranked idea was "preprocessing tuned to this
+  UI specifically (inverted threshold for light-text-on-dark)." Tested
+  it properly before implementing, per the user's own explicit push
+  mid-investigation ("rather than guessing or over testing, how are the
+  results compared to the old model?") — a direct comparison against
+  the true pre-session baseline (no upscale, plain grayscale +
+  autocontrast), not just candidate-vs-candidate.
+  **Otsu binarization** (auto-thresholding to pure black/white, computed
+  per-image from its own histogram — implemented as a small pure-Python
+  helper, no new dependency): tested against 4 synthetic cases. Result:
+  a wash. On the hardest case it fixed two details ("0/37" keeping its
+  slash, "of" instead of "01") but introduced two new errors elsewhere
+  in the same line ("Cvarz"/"Quitz" both wrong differently). No
+  consistent win. This matches a known general pattern: EasyOCR (a
+  modern neural OCR engine trained on natural anti-aliased text) doesn't
+  reliably benefit from hard thresholding the way a classic engine like
+  Tesseract does — unlike Tesseract, forcing pure black/white can
+  introduce jagged edges unlike anything in its training distribution.
+  **Mild UnsharpMask** (radius=2, percent=150) tested next as a lower-
+  risk alternative: meaningfully helped the hardest case (correctly
+  recovered "0/37", "of", and "Tressler" in full — the single best
+  result across every technique tried), had zero effect on a second
+  case, and introduced new errors on a third ("Calec"/"Corrcum"/"Lorg").
+  **Direct comparison against the true original pipeline** (the
+  question that actually mattered) showed the already-shipped 2x
+  upscale (#2) is the real, consistent win: on the hardest case, the
+  original pipeline fragmented "Deliver 0/37 SCU of Quartz to Port
+  Tressler" into 3 disjoint, unusable pieces ("Dewver 037 SCU", "Ontz",
+  "PotTes" — half the real content gone); 2x upscale alone kept it as
+  one coherent line. Same pattern on a second case (original split
+  "Freight elevator at..." into two lines, losing "at" entirely; 2x
+  upscale kept it as one line). Neither Otsu nor sharpening improved on
+  that already-shipped baseline consistently enough to justify adding
+  more preprocessing complexity/risk for an unproven, case-by-case
+  benefit. Decision: skip this item as originally scoped rather than
+  ship something the data doesn't actually support — consistent with
+  this project's standing rule to verify before implementing, not just
+  before calling something done.
+
+- 2026-09-06: **OCR pipeline optimization #4 (last of the ranked list):
+  EasyOCR character allowlist.** New `OCR_ALLOWLIST` constant
+  (`modules/logistics_hub/module.py`) — letters, digits, and every
+  punctuation mark observed across this session's real captures
+  (periods, commas, colons, semicolons, apostrophes/quotes, hyphens,
+  slashes for "0/37", parens, brackets for "[BP]*", asterisks,
+  underscores — a documented real OCR artifact standing in for a period
+  — plus basic sentence punctuation), passed as `readtext(...,
+  allowlist=OCR_ALLOWLIST)`.
+  A/B tested against 4 synthetic cases (including one with brackets,
+  since `[BP]*` is a real recurring pattern in captures): **identical
+  output with and without the allowlist in every case** — a genuinely
+  inconclusive result, not a validated win, and said so plainly rather
+  than overselling it. The reason is structural, not a flaw in the
+  change: synthetic PIL-rendered text can't reproduce the actual failure
+  mode an allowlist targets — genuine OCR hallucination into an
+  impossible character (a reward-icon glyph misread as a stray currency
+  symbol, a UI decoration read as a letter) — because there's no real
+  icon/compression/anti-aliasing noise in a clean synthetic render for
+  the model to hallucinate from. Kept the change anyway on theoretical
+  grounds specific to this exact mechanism: restricting a classifier's
+  candidate output set can only remove options that were already wrong,
+  never introduce a new error, *provided the list is genuinely complete*
+  — the only real risk is an incomplete list suppressing a legitimate
+  character, which is why the list was built generously (every
+  punctuation mark actually observed this session) rather than narrowly.
+  Full regression suite (13/13) unaffected; confirmed `_ocr()` still
+  runs end-to-end without error with the new parameter wired in.
+  **This is the last of the 4 ranked OCR optimizations — the user will
+  test the full batch together against real scans next**, which is the
+  only way to actually confirm #1 (column ordering) and #4 (allowlist)
+  specifically, since neither could be fully validated against synthetic
+  test data in this environment.
