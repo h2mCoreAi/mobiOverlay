@@ -717,6 +717,7 @@ def run_ui_state_checks() -> tuple[int, int]:
         if popup is None:
             raise AssertionError("_HaulerProfilePopup not found among top-level widgets")
         popup._ship_edit.setText("Hull C")
+        popup._capacity_edit.setText("512")
         popup._goal_combo.setCurrentText("Profit")
         popup._risk_combo.setCurrentText("Moderate")
         popup._time_combo.setCurrentText("Quick (<30 min)")
@@ -727,9 +728,9 @@ def run_ui_state_checks() -> tuple[int, int]:
         ok = saved == {
             "ship": "Hull C", "goal": "Profit", "risk": "Moderate",
             "time_budget": "Quick (<30 min)", "region_pref": "Willing to cross jump points",
-        }
+        } and mod.settings.get("cargo_capacity_scu") == 512
         if not ok:
-            print(f"    unexpected saved profile: {saved}")
+            print(f"    unexpected saved profile/capacity: {saved}, {mod.settings.get('cargo_capacity_scu')!r}")
     except Exception as exc:
         ok = False
         print(f"    profile popup raised: {exc!r}")

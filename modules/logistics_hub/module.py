@@ -1097,7 +1097,7 @@ class _HaulerProfilePopup(QWidget):
     click/focus loss, which would silently discard an in-progress edit
     here too); only SAVE closes it."""
 
-    def __init__(self, parent_widget, profile: dict, on_save):
+    def __init__(self, parent_widget, profile: dict, capacity: int | None, on_save):
         super().__init__(None, Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"""
@@ -1141,6 +1141,35 @@ class _HaulerProfilePopup(QWidget):
         )
         ship_row.addWidget(self._ship_edit, 1)
         layout.addLayout(ship_row)
+
+        # Moved here from the card face, 2026-09-07, per user request —
+        # sits with the ship it's actually describing (a hold size only
+        # means something in the context of a specific ship) rather than
+        # as an unrelated standalone field on the card. Manual entry, not
+        # a ship picker — the user's actual hold size depends on cargo-
+        # grid loadout, which UEX's static vehicle data can't reflect.
+        capacity_row = QHBoxLayout()
+        capacity_label = QLabel("CARGO CAPACITY")
+        capacity_label.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
+            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
+        )
+        capacity_row.addWidget(capacity_label)
+        self._capacity_edit = QLineEdit(str(capacity) if capacity else "")
+        self._capacity_edit.setValidator(QIntValidator(0, 100000, self._capacity_edit))
+        self._capacity_edit.setPlaceholderText("SCU")
+        self._capacity_edit.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
+                padding: 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
+                font-size: {theme.fpx(11)}px;
+            }}
+            """
+        )
+        capacity_row.addWidget(self._capacity_edit, 1)
+        layout.addLayout(capacity_row)
 
         self._goal_combo = self._add_row(layout, "GOAL", PROFILE_GOAL_CHOICES, profile.get("goal"))
         self._risk_combo = self._add_row(layout, "RISK TOLERANCE", PROFILE_RISK_CHOICES, profile.get("risk"))
@@ -1186,13 +1215,17 @@ class _HaulerProfilePopup(QWidget):
         return combo
 
     def _save(self):
-        self._on_save({
-            "ship": self._ship_edit.text().strip(),
-            "goal": self._goal_combo.currentText(),
-            "risk": self._risk_combo.currentText(),
-            "time_budget": self._time_combo.currentText(),
-            "region_pref": self._region_combo.currentText(),
-        })
+        capacity_text = self._capacity_edit.text().strip()
+        self._on_save(
+            {
+                "ship": self._ship_edit.text().strip(),
+                "goal": self._goal_combo.currentText(),
+                "risk": self._risk_combo.currentText(),
+                "time_budget": self._time_combo.currentText(),
+                "region_pref": self._region_combo.currentText(),
+            },
+            int(capacity_text) if capacity_text else None,
+        )
         self.close()
 
 
@@ -1311,41 +1344,6 @@ class LogisticsHubModule(ModuleBase):
         self._location_combo.textActivated.connect(self._on_location_selected)
         location_row.addWidget(self._location_combo, 1)
         layout.addLayout(location_row)
-
-        # ---- cargo capacity row --------------------------------------
-        # Manual entry, not a ship picker — the user's actual hold size
-        # depends on cargo-grid loadout, which UEX's static vehicle data
-        # can't reflect. Compared against `_peak_cargo_scu()` in the
-        # summary line so overcommitting a route (more peak cargo than the
-        # ship can hold) is caught before undocking, not discovered at the
-        # pickup terminal. See docs/DECISIONS.md, 2026-09-07.
-        capacity_row = QHBoxLayout()
-        capacity_label = QLabel("CARGO CAPACITY")
-        capacity_label.setStyleSheet(
-            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
-            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
-        )
-        capacity_row.addWidget(capacity_label)
-
-        self._capacity_edit = QLineEdit()
-        self._capacity_edit.setValidator(QIntValidator(0, 100000, self._capacity_edit))
-        self._capacity_edit.setPlaceholderText("SCU")
-        self._capacity_edit.setStyleSheet(
-            f"""
-            QLineEdit {{
-                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
-                padding: 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
-                font-size: {theme.fpx(11)}px;
-            }}
-            """
-        )
-        saved_capacity = self.settings.get("cargo_capacity_scu")
-        if saved_capacity:
-            self._capacity_edit.setText(str(saved_capacity))
-        self._capacity_edit.editingFinished.connect(self._on_capacity_changed)
-        capacity_row.addWidget(self._capacity_edit, 1)
-        layout.addLayout(capacity_row)
 
         # ---- region status row --------------------------------------
         region_row = QHBoxLayout()
@@ -1627,15 +1625,6 @@ class LogisticsHubModule(ModuleBase):
             self._route_order = self._plan_route(contracts)
             self._render_results()
 
-    def _on_capacity_changed(self):
-        text = self._capacity_edit.text().strip()
-        self.settings["cargo_capacity_scu"] = int(text) if text else None
-        self._save_settings()
-        # Re-render so the summary line's over-capacity warning (or its
-        # removal, if the field was cleared) reflects the new value
-        # immediately rather than waiting for the next scan/edit.
-        self._render_results()
-
     def _show_profile_popup(self):
         # `.get(key, {})` only falls back when the key is *absent* — the
         # key can legitimately be present with value `None` (e.g. never
@@ -1643,7 +1632,8 @@ class LogisticsHubModule(ModuleBase):
         # it was live-tested. `or {}` covers both cases, same pattern
         # `_grade_contract()` already uses for the same field.
         profile = self.settings.get("hauler_profile") or {}
-        popup = _HaulerProfilePopup(self._card_widget, profile, self._on_profile_saved)
+        capacity = self.settings.get("cargo_capacity_scu")
+        popup = _HaulerProfilePopup(self._card_widget, profile, capacity, self._on_profile_saved)
         # Same reference-keeping fix as _review_popup below — a real
         # Qt.Window has no implicit reference keeping it alive once this
         # method returns.
@@ -1652,11 +1642,16 @@ class LogisticsHubModule(ModuleBase):
         popup.move(anchor)
         popup.show()
 
-    def _on_profile_saved(self, profile: dict):
+    def _on_profile_saved(self, profile: dict, capacity: int | None):
         self.settings["hauler_profile"] = profile
+        self.settings["cargo_capacity_scu"] = capacity
         self._save_settings()
         self._set_status(f"Profile saved: {profile.get('ship') or 'no ship set'}.")
         self._profile_popup = None
+        # Cargo capacity feeds the card summary's over-capacity warning
+        # directly — re-render so a changed value shows up immediately
+        # instead of waiting for the next scan.
+        self._render_results()
 
     def _current_location_terminal(self) -> dict | None:
         return self.settings.get("current_location")

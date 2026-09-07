@@ -620,6 +620,12 @@
   — exceeding your hold is a harder constraint than either of those.
   27/27 regression checks pass. See DECISIONS.md, 2026-09-07.
 
+- **CARGO CAPACITY moved into the Hauler Profile popup**, directly beneath
+  SHIP (was its own row on the card face) — per user request, since a
+  hold size only makes sense in the context of a specific ship. Same
+  settings key, only the UI location changed. 27/27 regression checks
+  pass. See DECISIONS.md, 2026-09-07.
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one

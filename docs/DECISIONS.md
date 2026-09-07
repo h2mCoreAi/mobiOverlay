@@ -2466,3 +2466,22 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   amber), reason correctly leads with "612 SCU peak exceeds 512 SCU
   capacity by 100," screenshot-confirmed in the real popup. `config.json`
   confirmed untouched (hash-verified) throughout.
+
+- 2026-09-07: **CARGO CAPACITY moved from its own row on the card into the
+  Hauler Profile popup, directly beneath SHIP** — per user request. A hold
+  size only means anything in the context of a specific ship, so it reads
+  better living next to the field it actually describes than as an
+  unrelated standalone row on the card face. Same settings key
+  (`cargo_capacity_scu`, top-level, not nested under `hauler_profile`) —
+  only the UI location changed, not the data model, so grading and the
+  card's existing summary-line warning both keep working unmodified.
+  `_HaulerProfilePopup` now takes `capacity` as its own constructor arg
+  (alongside `profile`) and `_save()`/`on_save` pass it through as a
+  second value; `_on_profile_saved()` writes both settings keys and
+  re-renders so a changed capacity shows up in the card summary
+  immediately. Card's old standalone `CARGO CAPACITY` row and
+  `_on_capacity_changed()` removed entirely. Regression check
+  `profile_popup_saves_all_five_fields` extended to also set/verify the
+  capacity field through the real popup widget. 27/27 checks pass;
+  verified live (offscreen, real fonts) that the field renders correctly
+  positioned and `config.json` stayed untouched (hash-verified).
