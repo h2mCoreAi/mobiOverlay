@@ -38,7 +38,10 @@ Your final layout should look like:
 dist/
   mobiOverlay.exe
   modules/
-    price_lookup/
+    commodity_prices/
+    crosshair/
+    logistics_hub/
+    refinery_finder/
     trade_route_optimizer/
 ```
 

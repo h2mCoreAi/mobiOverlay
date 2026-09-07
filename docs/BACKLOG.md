@@ -120,8 +120,12 @@ tier.
 
 ## Status
 
-Commodity Prices and Trade Route Optimizer (tiers 1.1 and 1.2) are built — see
-docs/PROGRESS.md. Refinery Yield Calculator (1.3) is the strongest
-next pick from the community-interest ranking. The Multi-Stop Contract
-Route Optimizer above is a separate high-priority want, held for later
-due to its complexity.
+Commodity Prices, Trade Route Optimizer, and Refinery Finder (tiers 1.1,
+1.2, and 1.3) are all built — see docs/PROGRESS.md. Refinery Finder is a
+narrower-scoped "Refinery Yield Calculator": ranks real terminals by
+reported yield modifier rather than computing an exact SCU-in/SCU-out
+number, since UEX doesn't expose the base composition data a literal
+calculator would need (see docs/modules/refinery-finder.md). Item Price
+Lookup / Ship Outfitting (1.4) is the strongest remaining Tier 1 pick. The
+Multi-Stop Contract Route Optimizer above is a separate high-priority
+want, held for later due to its complexity.

@@ -536,6 +536,23 @@
   already confirmed elsewhere in the same contract. New
   `_find_delivery_match()`/`_complete_commodity_name()` helpers in
   `modules/logistics_hub/module.py`. See DECISIONS.md, 2026-09-06.
+- **New module: Refinery Finder** (`modules/refinery_finder/`) —
+  BACKLOG.md's Tier 1.3 "Refinery Yield Calculator," scope narrowed after
+  live API investigation showed a literal SCU-in/SCU-out calculator isn't
+  buildable from real UEX data (no base yield%/purity field anywhere, and
+  only 3 real `refineries_audits` rows exist project-wide). Instead ranks
+  real UEX-tracked refinery terminals by their reported yield modifier
+  (`refineries_yields`) for a chosen raw commodity, shows each terminal's
+  capacity (`refineries_capacities`), and a static refining-methods
+  comparison table (`refineries_methods`). Verified end-to-end against
+  live data (not a stub): 45 raw commodities in the picker, correct
+  top-5 ranking for Laranite (Raw) across 3 systems, correct "no yield
+  data reported yet" state for a commodity with zero reports (21 of 45
+  currently have none), system filter narrowing results correctly,
+  settings persisting to `config.json`, and loading cleanly through the
+  real `discover_modules()` alongside all 4 existing modules with no
+  contract/duplicate-id issues. See docs/modules/refinery-finder.md and
+  DECISIONS.md, 2026-09-06, for the full scoping rationale.
 
 ## Next
 
@@ -660,4 +677,6 @@
 Full ranked module backlog (22 candidates, ranked by researched community
 interest, not just endpoint availability) lives in **docs/BACKLOG.md**.
 Write a `docs/modules/<name>.md` when a module is picked up from it.
-Current top pick: Trade Route Optimizer (`commodities_routes`).
+Refinery Yield Calculator (Tier 1.3) is now built, as **Refinery Finder**
+(scope narrowed — see docs/modules/refinery-finder.md and DECISIONS.md,
+2026-09-06). Backlog is otherwise unchanged; next pick would be Tier 2.

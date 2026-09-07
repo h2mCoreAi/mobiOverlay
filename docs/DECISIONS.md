@@ -1811,3 +1811,46 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   redundant-recomputation findings (correct but negligible at this
   project's actual data scale — single-contract text, 4-8 stops per
   route).
+
+- 2026-09-06: **New module: Refinery Finder — picked up BACKLOG.md's Tier
+  1.3 "Refinery Yield Calculator," but narrowed scope after live API
+  investigation showed a literal calculator isn't buildable from real
+  data.** Investigated the actual endpoints before designing anything
+  (same discipline as Commodity Prices' `commodities_ranking` dead-end):
+  `refineries_yields` gives a per-terminal/per-commodity yield
+  **modifier** (confirmed live range -9 to +13), not an absolute yield
+  percentage; `refineries_capacities` gives per-terminal max job size;
+  `refineries_methods` gives 9 real methods with 1-3 star yield/cost/
+  speed ratings; `refineries_audits` (real reported jobs, quantity in ->
+  quantity_yield + quantity_inert out) has only **3 rows total** across
+  the whole live dataset — checked directly, not assumed. Also checked
+  `commodities` itself for any base yield%/purity field on a raw
+  commodity record — none exists; raw/refined pairs link only via
+  `id_parent`. Building "enter N SCU, get exact output" would require
+  inventing the missing composition/base-yield constants ourselves,
+  which this project has consistently refused to do. Landed on: rank
+  real terminals by their actual reported yield modifier for a chosen
+  raw commodity (`commodities` filtered to `is_raw == 1`, 45 real
+  entries), show each terminal's capacity, and a static methods
+  comparison table — all real UEX data, nothing invented. Confirmed live
+  that `refineries_yields`' `id_commodity` query param does **not**
+  filter server-side despite looking like a real filter (same "verify,
+  don't assume" lesson as Commodity Prices' `commodity_name` substring
+  surprise) — filtered client-side instead. Also confirmed terminal
+  names from these endpoints ("Refinement Center - Nyx Gateway (Pyro)")
+  are already clean, unlike the "Admin -" kiosk-name issue Commodity
+  Prices/Trade Route Optimizer both hit, so no nickname-lookup pass was
+  needed here. A terminal can report more than one yield value for the
+  same commodity over time (confirmed live) — kept only each terminal's
+  best reported value before ranking, so the top-5 list isn't dominated
+  by one terminal's repeat submissions. Verified end-to-end against live
+  data via an offscreen-Qt backend script (no visible UI in this
+  environment, same limitation as every other module): 45 raw
+  commodities loaded, correct top-5 ranking for Laranite (Raw) across
+  Nyx/Pyro/Stanton, correct explicit "no yield data reported yet" state
+  for a commodity with zero reports (21 of 45 currently have none),
+  system filter narrowing results correctly, settings persisting to a
+  real `config.json` on disk, and clean discovery through the real
+  `discover_modules()` alongside all 4 existing modules (no duplicate
+  `module_id`, contract validation passed). See
+  docs/modules/refinery-finder.md for the full writeup.
