@@ -1658,6 +1658,36 @@ class LogisticsHubModule(ModuleBase):
         def merge_resolved(text: str, terminal: dict, hint: str, priority: int) -> None:
             key = self._locations.terminal_key(terminal)
             if key not in resolved_by_key:
+                # Two different UEX records can be the exact same real
+                # place — a `terminals` kiosk and the `space_stations`/
+                # `outposts`/`cities` record it structurally belongs to
+                # (see `LocationService.same_physical_place()`) — and
+                # `terminal_key()` alone can't tell. Confirmed real: "Seraphim
+                # The" and "Seraphim Station" resolved to two different
+                # records for the same real station, producing a duplicate
+                # route stop that got visited twice for no reason. Check
+                # already-resolved entries for a same-place match before
+                # creating a new one, so both mentions land in the same
+                # entry regardless of which specific record either resolved
+                # to.
+                for existing_key in order:
+                    if self._locations.same_physical_place(terminal, resolved_by_key[existing_key][1]):
+                        key = existing_key
+                        # Prefer a structural (`space_stations`/`outposts`/
+                        # `cities`) record as the merged entry's display
+                        # terminal over a `terminals` kiosk record — a
+                        # kiosk's own name/nickname is often the raw,
+                        # unfriendly in-game label ("Admin - MIC-L2") while
+                        # the structural record has the real place name
+                        # ("MIC-L2 Long Forest Station"). Confirmed real:
+                        # without this, merging could regress an
+                        # already-correct display name to the uglier one
+                        # just because of merge order.
+                        existing_terminal = resolved_by_key[existing_key][1]
+                        if existing_terminal.get("_endpoint") == "terminals" and terminal.get("_endpoint") != "terminals":
+                            resolved_by_key[existing_key][1] = terminal
+                        break
+            if key not in resolved_by_key:
                 # 5th element: every raw OCR spelling that resolved to this
                 # same real place ("Long Forest Station", and separately
                 # "Forest Station" once disambiguated) — commodity

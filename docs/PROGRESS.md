@@ -556,20 +556,18 @@
 
 ## Next
 
-- **KNOWN BUG (logistics-hub, duplicate-stop): same terminal can appear
-  twice in one contract's pickups/dropoffs.** Found 2026-09-05 re-checking
-  a live route export. A contract mentioning the same real place via two
-  differently-worded raw phrases (e.g. "Seraphim The" and "Seraphim
-  Station", both resolving to terminal id 259) keeps both as separate
-  entries in `_build_contract` instead of merging them by resolved
-  terminal — the route then visits that stop twice for no reason.
-  Related: for this same Seraphim pair (terminal 259) and a same-city
-  terminal (Covalex Orison, id 206, also Crusader/Orison), live
-  `terminals_distances` returns `data: false` (no distance recorded —
-  they're effectively co-located) and `orbits_distances` has no
-  same-orbit self-entry either, so `LocationService.distance()` falls
-  back to the coarse `+5 est.` heuristic instead of treating them as
-  ~0 apart. Not fixed yet — logged for later.
+- **TODO: review the Logistics Hub OCR pipeline for optimization
+  opportunities against the user's actual real-world screenshots.** Noted
+  2026-09-06 per user request — not yet started. Worth checking capture
+  region/preprocessing/easyocr settings against a batch of real captures
+  rather than the current settings, which were never specifically tuned.
+- **FIXED (2026-09-06): the duplicate-stop KNOWN BUG below.**
+  `_build_contract`'s `merge_resolved` now also merges two candidates that
+  resolve to *different* UEX records for the *same real place* (via
+  `LocationService.same_physical_place()`, added earlier the same session
+  for the related distance bug), preferring the structural record's name
+  over a `terminals` kiosk's raw label as the display representative. See
+  DECISIONS.md, 2026-09-06, for the full writeup and verification.
 - **KNOWN BUG (logistics-hub, single-word-city): a location named with one
   capitalized word never becomes a candidate at all.** Found 2026-09-05 on
   a live scan. `_candidate_phrases`'s regex requires 2+ capitalized words in

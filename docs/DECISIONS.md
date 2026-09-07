@@ -1854,3 +1854,40 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   `discover_modules()` alongside all 4 existing modules (no duplicate
   `module_id`, contract validation passed). See
   docs/modules/refinery-finder.md for the full writeup.
+
+- 2026-09-06: **Fixed the logistics-hub duplicate-stop KNOWN BUG (logged
+  2026-09-05), reusing the same-place infrastructure built earlier this
+  session for the CURRENT LOCATION distance bug.** Root cause was
+  identical in shape: `_build_contract`'s `merge_resolved` deduped
+  candidates by `terminal_key()` alone, so two differently-worded
+  mentions of one real place that resolved to *different* UEX records
+  (a `terminals` kiosk vs. the `space_stations`/`outposts`/`cities`
+  record it belongs to) never merged, producing a duplicate route stop.
+  Fixed by checking already-resolved entries for a
+  `LocationService.same_physical_place()` match before creating a new
+  entry, so both mentions land in the same stop regardless of which
+  specific record either one resolved to.
+  **Found and fixed a second-order regression from this same fix before
+  shipping it**: two existing regression fixtures broke immediately —
+  not because the merge was wrong, but because it now *also* correctly
+  merges a real, previously-separate pair in those fixtures' own test
+  data (`Admin - MIC-L2` kiosk + `MIC-L2 Long Forest Station`, one of
+  the 822 real kiosk/station pairs confirmed earlier this session), and
+  picked the uglier kiosk name as the display representative purely
+  because of merge order. Fixed by preferring a structural record's name
+  over a `terminals` kiosk's raw label whenever the two merge, regardless
+  of which one resolved first. Verified: all 6 existing parsing fixtures
+  plus a new 7th (`duplicate_stop_same_place_two_records_synthetic`)
+  pass. That 7th fixture is explicitly labeled **synthetic** in the test
+  file, not a real capture — the original real contract that exposed
+  this bug (2026-09-05, "Seraphim The"/"Seraphim Station") predates this
+  session's regression suite and its raw OCR text was never saved.
+  Reproduces the exact same confirmed-live mechanism instead (`Seraphim
+  Station` -> `space_stations` id 27, `Seraphim Trade` -> `terminals` id
+  259 "Admin - Seraphim", both verified via a live `resolve_all()` call
+  before writing the fixture, not guessed) — add the real capture for
+  real if this shape ever recurs in a live scan.
+  Also noted per user request: the OCR pipeline itself (capture/
+  preprocessing/easyocr settings) hasn't been reviewed against the
+  user's actual real-world screenshots — logged in PROGRESS.md's Next
+  section as a future pass, not started.

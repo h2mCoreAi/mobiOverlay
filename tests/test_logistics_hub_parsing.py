@@ -231,6 +231,29 @@ FIXTURES = [
             "Admin - Port Tressler": [("Quartz", "39"), ("Corundum", "11")],
         },
     ),
+    (
+        # SYNTHETIC, not a real OCR capture — the original real contract
+        # that exposed this bug (2026-09-05, "Seraphim The"/"Seraphim
+        # Station") predates this test file and its raw text was never
+        # saved. Reproduces the same real, confirmed-live mechanism
+        # instead: "Seraphim Station" (resolves to space_stations id 27)
+        # and "Seraphim Trade" (resolves to terminals id 259, "Admin -
+        # Seraphim") are two different real UEX records for the exact same
+        # physical place — confirmed via a live `resolve_all()` call, not
+        # guessed. Before the 2026-09-06 same-place merge fix, these
+        # produced two separate dropoff entries for one real stop.
+        "duplicate_stop_same_place_two_records_synthetic",
+        "OFFERS\nACCEPTED (1/10)\nHISTORY\nBEACONS\nMember | Small Haul\nReward\n50,000\n"
+        "Contract Deadline\nNZA\nContracted By\nCovalex Independent Contractors\n"
+        "DETAILS\nPRIMARY OBJECTIVES\nHello,\n"
+        "Deliver 0/10 SCU of Waste to Seraphim Station above Crusader.\n"
+        "Collect Waste from Everus Harbor.\n"
+        "DROP OFF LOCATIONS (ANY ORDER)\n"
+        "Freight elevator at Seraphim Trade above Crusader\n"
+        "Thanks in advance for ensuring prompt service,\nABANDON\nSHARE\nTRACK",
+        {"Admin - Everus Harbor": [("Waste", "10")]},
+        {"Seraphim Station": [("Waste", "10")]},
+    ),
 ]
 
 # NOTE: a "Baijini Point -> Seraphim, 103 Stims" contract was also verified
