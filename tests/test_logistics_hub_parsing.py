@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from host.config import Config
 from host.api_client import UexApiClient
-from modules.logistics_hub.module import LogisticsHubModule
+from modules.logistics_hub.module import LogisticsHubModule, GRADE_THRESHOLDS
 
 
 # Each fixture: (name, raw_text, expected_pickups, expected_dropoffs)
@@ -454,6 +454,81 @@ def run_manifest_and_capacity_checks(mod) -> tuple[int, int]:
     return failures, total
 
 
+def run_grading_checks() -> tuple[int, int]:
+    """Pure-logic checks for `_grade_contract()` (Part 3 of the confirm-
+    gate/grading plan, 2026-09-07) — no Qt event loop needed, but its own
+    isolated temp-file Config since `_rate_compatibility()` saves to disk
+    on every call (same lesson as `run_ui_state_checks`: never let a test
+    touch the real config.json). Covers the feature's whole point: a
+    known-BAD ship/location match must cap the grade no matter how good
+    everything else scores — the "90% great, one hard no" case that
+    prompted this feature shouldn't be hideable behind a decent average."""
+    import os
+    import tempfile
+    from pathlib import Path
+    from host.config import Config as _Config
+
+    tmp_path = Path(tempfile.gettempdir()) / f"mobiov_test_grading_config_{os.getpid()}.json"
+    config = _Config(path=tmp_path)
+    api_client = UexApiClient(config.data["api"]["uex_base_url"], config.data["api"]["uex_token"])
+    mod = LogisticsHubModule(api_client, config)
+    mod._locations.ensure_loaded()
+
+    failures, total = 0, 0
+    contract = mod._build_contract(FIXTURES[0][1])  # everus_harbor_to_baijini, real pickup/dropoff terminals
+
+    name = "grade_none_without_profile"
+    total += 1
+    grade, reason, capped = mod._grade_contract(contract, [])
+    ok = grade is None and "PROFILE" in reason and capped is False
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    expected (None, '...PROFILE...', False); got {(grade, reason, capped)!r}")
+
+    mod.settings["hauler_profile"] = {
+        "ship": "Hull C", "goal": "Profit", "risk": "Moderate",
+        "time_budget": "Medium", "region_pref": "Willing to cross jump points",
+    }
+
+    name = "grade_capped_on_known_bad_location"
+    total += 1
+    pickup_terminal = contract["pickups"][0]["terminal"]
+    mod._rate_compatibility("Hull C", pickup_terminal, good=False)
+    grade, reason, capped = mod._grade_contract(contract, [])
+    grade_index = {g: i for i, (_pts, g) in enumerate(GRADE_THRESHOLDS)}
+    ok = grade is not None and capped is True and grade_index[grade] >= grade_index["B"] and "BAD" in reason
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    expected grade capped (capped=True) at B-or-worse with a BAD-location reason; "
+              f"got {(grade, reason, capped)!r}")
+
+    name = "grade_capped_on_duplicate_freight_overlap"
+    total += 1
+    mod._rate_compatibility("Hull C", pickup_terminal, good=True)  # clear the BAD rating from above
+    existing = [mod._build_contract(FIXTURES[0][1])]  # same commodity already "queued"
+    grade, reason, capped = mod._grade_contract(contract, existing)
+    ok = grade is not None and capped is True and grade_index[grade] >= grade_index["B"] and "already queued" in reason
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    expected grade capped (capped=True) at B-or-worse with an 'already queued' reason; "
+              f"got {(grade, reason, capped)!r}")
+
+    name = "grade_not_capped_when_clean"
+    total += 1
+    grade, reason, capped = mod._grade_contract(contract, [])
+    ok = grade is not None and capped is False and "BAD" not in reason and "already queued" not in reason
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    expected an uncapped grade with no warning reasons; got {(grade, reason)!r}")
+
+    tmp_path.unlink(missing_ok=True)
+    return failures, total
+
+
 def run_ui_state_checks() -> tuple[int, int]:
     """Returns (failures, total_checks). Needs a real (offscreen-OK) Qt
     event loop, unlike the two check groups above — set QT_QPA_PLATFORM=
@@ -558,7 +633,27 @@ def run_ui_state_checks() -> tuple[int, int]:
     # 2026-09-07 (Part 2): Hauler Profile popup — actually construct and
     # save it (same lesson as review_popup_renders_without_crashing above:
     # calling the save handler directly would skip the widget entirely and
-    # miss a real construction bug).
+    # miss a real construction bug). `hauler_profile` explicitly `None`
+    # (not just absent) crashed the first live test of this — `.get(key,
+    # {})` only falls back when the key is *missing*, not when it's
+    # present with value `None`. Regression case for exactly that.
+    name = "profile_popup_handles_none_profile"
+    total += 1
+    mod.settings["hauler_profile"] = None
+    try:
+        mod._show_profile_popup()
+        app.processEvents()
+        popup = next((w for w in app.topLevelWidgets() if type(w).__name__ == "_HaulerProfilePopup"), None)
+        ok = popup is not None
+        if popup is not None:
+            popup.close()
+    except Exception as exc:
+        ok = False
+        print(f"    _show_profile_popup raised on None profile: {exc!r}")
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+
     name = "profile_popup_saves_all_five_fields"
     total += 1
     try:
@@ -634,6 +729,10 @@ def run() -> int:
     manifest_failures, manifest_total = run_manifest_and_capacity_checks(mod)
     failures += manifest_failures
     print(f"\n{manifest_total - manifest_failures}/{manifest_total} manifest/capacity checks passed")
+
+    grading_failures, grading_total = run_grading_checks()
+    failures += grading_failures
+    print(f"\n{grading_total - grading_failures}/{grading_total} grading checks passed")
 
     try:
         ui_failures, ui_total = run_ui_state_checks()

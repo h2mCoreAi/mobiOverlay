@@ -113,6 +113,22 @@ PROFILE_RISK_CHOICES = ["Safe systems only", "Moderate", "Will run risky routes 
 PROFILE_TIME_CHOICES = ["Quick (<30 min)", "Medium", "Long session"]
 PROFILE_REGION_CHOICES = ["Current system only", "Willing to cross jump points"]
 
+# Grade thresholds (points, highest first) for `_grade_contract()` below —
+# a first-pass rubric, weights meant to be tuned against real usage the
+# same way this module's OCR/routing thresholds already were (see
+# docs/DECISIONS.md, 2026-09-07).
+GRADE_THRESHOLDS = [(85, "S"), (70, "A"), (50, "B"), (30, "C"), (0, "D")]
+# A known-BAD ship/location match or a duplicate-freight overlap never
+# blocks ACCEPT (per user direction) but caps the grade here regardless of
+# how good everything else scores — matches this module's existing
+# "never silently averaged away" pattern for the Freight Manifest warning.
+GRADE_CAP_ON_WARNING = 55  # top of the "B" band
+# Real system names UEX marks as more dangerous to route through — used
+# only as a soft nudge against Risk Tolerance, not a hard rule (Star
+# Citizen's actual risk map shifts with game updates; this is deliberately
+# small and easy to extend, not treated as authoritative).
+RISKY_SYSTEMS = {"Pyro"}
+
 # Restricts what EasyOCR can output to characters that can actually appear
 # in a contract panel — letters, digits, and every punctuation mark
 # observed across this session's real captures (periods, commas, colons,
@@ -900,7 +916,11 @@ class _ReviewPopup(QWidget):
     warning. The duplicate warning line still appears here when relevant,
     folded into this one popup instead of a separate flow."""
 
-    def __init__(self, parent_widget, summary_text: str, duplicate_warning: str | None, on_accept, on_reject):
+    def __init__(
+        self, parent_widget, summary_text: str, duplicate_warning: str | None,
+        grade: str | None, grade_reason: str, grade_capped: bool,
+        unrated_terminals: list[tuple[str, dict]], on_rate, on_accept, on_reject,
+    ):
         super().__init__(parent_widget, Qt.Popup)
         self.setAttribute(Qt.WA_StyledBackground, True)
         border_color = theme.ACCENT_AMBER if duplicate_warning else theme.BORDER_FLAT
@@ -910,6 +930,7 @@ class _ReviewPopup(QWidget):
                 border-radius: {theme.RADIUS}px;
             }}
         """)
+        self._on_rate = on_rate
         self._on_accept = on_accept
         self._on_reject = on_reject
 
@@ -933,6 +954,29 @@ class _ReviewPopup(QWidget):
         )
         layout.addWidget(summary)
 
+        if grade is not None:
+            # Amber whenever a hard warning capped the grade, regardless of
+            # which letter it landed on — the cap can still land in a
+            # normal-looking band (e.g. B), and that's exactly the "90%
+            # great, one hard no, hidden behind a decent-looking grade"
+            # case this feature exists to prevent. Otherwise amber only
+            # for a low grade on its own merits.
+            grade_color = theme.ACCENT_AMBER if (grade_capped or grade in ("C", "D")) else theme.ACCENT_CYAN
+            grade_label = QLabel(f"GRADE: {grade} — {grade_reason}")
+            grade_label.setWordWrap(True)
+            grade_label.setStyleSheet(
+                f"color: {grade_color}; font-family: {theme.FONT_DISPLAY}; "
+                f"font-weight: 800; font-size: {theme.fpx(11)}px;"
+            )
+            layout.addWidget(grade_label)
+        else:
+            hint = QLabel(grade_reason)  # "Set your PROFILE for a grade."
+            hint.setStyleSheet(
+                f"color: {theme.TEXT_DIM}; font-family: {theme.FONT_MONO}; "
+                f"font-size: {theme.fpx(9)}px;"
+            )
+            layout.addWidget(hint)
+
         if duplicate_warning:
             warn = QLabel(f"⚠ {duplicate_warning}")
             warn.setWordWrap(True)
@@ -943,6 +987,29 @@ class _ReviewPopup(QWidget):
                 f"font-size: {theme.fpx(9)}px;"
             )
             layout.addWidget(warn)
+
+        for label_text, terminal in unrated_terminals:
+            row = QHBoxLayout()
+            q = QLabel(f"Compatible with your ship at {label_text}?")
+            q.setWordWrap(True)
+            q.setStyleSheet(
+                f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
+                f"font-size: {theme.fpx(9)}px;"
+            )
+            row.addWidget(q, 1)
+            good_btn = QPushButton("✅")
+            bad_btn = QPushButton("❌")
+            small_btn_style = (
+                f"background: {theme.BG_VOID}; border: 1px solid {theme.BORDER_FLAT}; "
+                f"border-radius: {theme.RADIUS}px; padding: 2px 6px; font-size: {theme.fpx(10)}px;"
+            )
+            good_btn.setStyleSheet(small_btn_style)
+            bad_btn.setStyleSheet(small_btn_style)
+            good_btn.clicked.connect(lambda _checked, t=terminal, g=good_btn, b=bad_btn: self._rate(t, True, g, b))
+            bad_btn.clicked.connect(lambda _checked, t=terminal, g=good_btn, b=bad_btn: self._rate(t, False, g, b))
+            row.addWidget(good_btn)
+            row.addWidget(bad_btn)
+            layout.addLayout(row)
 
         btn_row = QHBoxLayout()
         accept_btn = QPushButton("ACCEPT")
@@ -960,6 +1027,17 @@ class _ReviewPopup(QWidget):
         btn_row.addWidget(accept_btn)
         btn_row.addWidget(reject_btn)
         layout.addLayout(btn_row)
+
+    def _rate(self, terminal: dict, good: bool, good_btn: QPushButton, bad_btn: QPushButton):
+        # Saves immediately, doesn't close the popup — you can rate several
+        # locations before deciding ACCEPT/REJECT. Doesn't affect *this*
+        # popup's already-shown grade (recomputing live isn't worth the
+        # complexity for a rating that mainly pays off on the *next* scan
+        # of the same location) — just disables the row so it's clear the
+        # answer was recorded.
+        self._on_rate(terminal, good)
+        good_btn.setEnabled(False)
+        bad_btn.setEnabled(False)
 
     def _accept(self):
         self._on_accept()
@@ -1503,7 +1581,12 @@ class LogisticsHubModule(ModuleBase):
         self._render_results()
 
     def _show_profile_popup(self):
-        profile = self.settings.get("hauler_profile", {})
+        # `.get(key, {})` only falls back when the key is *absent* — the
+        # key can legitimately be present with value `None` (e.g. never
+        # set, or explicitly cleared), which crashed this the first time
+        # it was live-tested. `or {}` covers both cases, same pattern
+        # `_grade_contract()` already uses for the same field.
+        profile = self.settings.get("hauler_profile") or {}
         popup = _HaulerProfilePopup(self._card_widget, profile, self._on_profile_saved)
         anchor = self._card_widget.mapToGlobal(self._card_widget.rect().topLeft())
         popup.move(anchor)
@@ -1868,8 +1951,25 @@ class LogisticsHubModule(ModuleBase):
             "(same reward, shares a location)." if duplicate else None
         )
 
+        existing_contracts = self.settings.get("contracts", [])
+        grade, grade_reason, grade_capped = self._grade_contract(contract, existing_contracts)
+
+        ship = (self.settings.get("hauler_profile") or {}).get("ship", "").strip()
+        ratings = self.settings.get("ship_location_ratings", {})
+        unrated_terminals = []
+        if ship:
+            seen_keys = set()
+            for terminal in self._contract_terminals(contract):
+                key = self._compat_key(ship, terminal)
+                if key in ratings or key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                unrated_terminals.append((self._locations.display_name(terminal), terminal))
+
         popup = _ReviewPopup(
             self._card_widget, summary_text, duplicate_warning,
+            grade, grade_reason, grade_capped, unrated_terminals,
+            lambda terminal, good: self._rate_compatibility(ship, terminal, good),
             self._on_review_accept, self._on_review_reject,
         )
         anchor = self._scan_btn.mapToGlobal(self._scan_btn.rect().bottomLeft())
@@ -3047,6 +3147,144 @@ class LogisticsHubModule(ModuleBase):
                 row["scu"] += qty
                 row["contract_count"] += 1
         return manifest
+
+    # ------------------------------------------------------------------
+    # Ship/location compatibility feedback DB + contract grading
+    # (Part 3 of the confirm-gate/grading plan, 2026-09-07 — see
+    # docs/DECISIONS.md). No reliable static source exists for which
+    # locations physically support which ships (checked against real
+    # sources, an AI-generated table was found partly fabricated) — so
+    # instead of guessing, this asks GOOD/BAD once per (ship, location)
+    # pair it hasn't seen, remembers the answer, and starts empty rather
+    # than wrong.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _compat_key(ship: str, terminal: dict) -> str:
+        endpoint, term_id = LocationService.terminal_key(terminal)
+        return f"{ship.strip().lower()}::{endpoint}:{term_id}"
+
+    @staticmethod
+    def _contract_terminals(contract: dict) -> list[dict]:
+        """Every *resolved* pickup/dropoff terminal in a contract — skips
+        entries that never matched real UEX data, since there's nothing to
+        key a compatibility rating on for those."""
+        return [
+            e["terminal"] for e in contract.get("pickups", []) + contract.get("dropoffs", [])
+            if e.get("terminal")
+        ]
+
+    def _rate_compatibility(self, ship: str, terminal: dict, good: bool) -> None:
+        ratings = self.settings.setdefault("ship_location_ratings", {})
+        ratings[self._compat_key(ship, terminal)] = "good" if good else "bad"
+        self._save_settings()
+
+    def _grade_contract(self, contract: dict, existing_contracts: list[dict]) -> tuple[str | None, str, bool]:
+        """Letter grade + one-line reason + whether a hard warning capped
+        it, for a freshly-scanned contract — or `(None, prompt, False)` if
+        the Hauler Profile isn't set yet, since grading never guesses at a
+        ship/preferences it doesn't have. A known-BAD ship/location match
+        or a duplicate-freight overlap (already queued elsewhere) never
+        blocks ACCEPT, but caps the grade at `GRADE_CAP_ON_WARNING`
+        regardless of how well everything else scores — the exact "90%
+        great, one hard no" case that prompted this feature. `capped` is
+        returned separately from the letter (not inferred from it) so the
+        UI can flag it visually even when the capped grade still lands in
+        a normal-looking band, e.g. B."""
+        profile = self.settings.get("hauler_profile") or {}
+        ship = (profile.get("ship") or "").strip()
+        if not ship:
+            return None, "Set your PROFILE for a grade.", False
+
+        ratings = self.settings.get("ship_location_ratings", {})
+        reasons: list[str] = []
+        points = 50  # neutral baseline
+        capped = False
+
+        bad_locations = [
+            self._locations.display_name(t) for t in self._contract_terminals(contract)
+            if ratings.get(self._compat_key(ship, t)) == "bad"
+        ]
+        if bad_locations:
+            capped = True
+            # No emoji here — this line renders in the Orbitron display
+            # font (FONT_DISPLAY), which doesn't cover ⚠ and rendered it
+            # as a tofu box when tried live. `capped` itself (returned
+            # separately below) is what drives the warning color in the
+            # UI, so the text doesn't need to carry its own glyph.
+            reasons.append(f"marked BAD for {ship} at {', '.join(bad_locations)}")
+
+        manifest = self._freight_manifest(existing_contracts + [contract])
+        candidate_commodities = set()
+        for entry in contract.get("pickups", []):
+            for c in entry.get("commodities") or []:
+                name = c[0] if isinstance(c, (list, tuple)) else c
+                candidate_commodities.add(name)
+        overlapping = sorted(
+            name for name in candidate_commodities
+            if manifest.get(name, {}).get("contract_count", 0) > 1
+        )
+        if overlapping:
+            capped = True
+            reasons.append(f"{', '.join(overlapping)} already queued elsewhere")
+
+        reward_digits = (contract.get("reward") or "").replace(",", "")
+        reward_val = int(reward_digits) if reward_digits.isdigit() else 0
+        scu = sum(_entry_scu(e) for e in contract.get("pickups", []))
+        if reward_val and scu:
+            per_scu = reward_val / scu
+            if per_scu >= 500:
+                points += 25
+                reasons.append(f"{per_scu:.0f} aUEC/SCU (great)")
+            elif per_scu >= 200:
+                points += 10
+                reasons.append(f"{per_scu:.0f} aUEC/SCU (good)")
+            elif per_scu >= 80:
+                reasons.append(f"{per_scu:.0f} aUEC/SCU (ok)")
+            else:
+                points -= 15
+                reasons.append(f"{per_scu:.0f} aUEC/SCU (low)")
+        else:
+            reasons.append("reward or cargo unknown")
+
+        baseline_debug: dict = {}
+        candidate_debug: dict = {}
+        self._plan_route(existing_contracts, route_debug=baseline_debug)
+        self._plan_route(existing_contracts + [contract], route_debug=candidate_debug)
+        marginal = candidate_debug.get("final_cost", 0.0) - baseline_debug.get("final_cost", 0.0)
+        if marginal <= 50:
+            points += 15
+            reasons.append("minimal detour")
+        elif marginal <= 150:
+            points += 5
+            reasons.append("moderate detour")
+        else:
+            points -= 15
+            reasons.append("big detour")
+
+        systems = {
+            t.get("star_system_name") for t in self._contract_terminals(contract)
+            if t.get("star_system_name")
+        }
+        current_terminal = self._current_location_terminal()
+        current_system = current_terminal.get("star_system_name") if current_terminal else None
+
+        if profile.get("region_pref") == "Current system only" and current_system and any(
+            s != current_system for s in systems
+        ):
+            points -= 10
+            reasons.append("crosses systems")
+
+        if profile.get("risk") == "Safe systems only" and systems & RISKY_SYSTEMS:
+            points -= 15
+            reasons.append(f"routes through {'/'.join(systems & RISKY_SYSTEMS)}")
+
+        points = max(0, min(100, points))
+        if capped:
+            points = min(points, GRADE_CAP_ON_WARNING)
+
+        grade = next(letter for threshold, letter in GRADE_THRESHOLDS if points >= threshold)
+        reason_text = "; ".join(reasons) if reasons else "no strong signal either way"
+        return grade, reason_text, capped
 
     def _populate_manifest_rows(self, target_layout: QVBoxLayout, contracts: list[dict]):
         while target_layout.count():

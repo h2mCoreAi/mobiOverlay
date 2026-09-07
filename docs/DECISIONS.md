@@ -2269,3 +2269,68 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   proven correct by the regression check above, which drives the combos
   directly via `setCurrentText()` (the real underlying Qt API, not a
   simulated click) and confirms all 5 fields round-trip correctly.
+
+- 2026-09-07: **Compatibility feedback DB + contract grading shipped
+  (Part 3, final part of the confirm-gate/grading plan).** No reliable
+  static source exists for which real locations physically support which
+  ships (established earlier this session — an AI-generated compatibility
+  table was checked against real sources and found partly fabricated), so
+  per user direction this doesn't guess: `self.settings["ship_location_
+  ratings"]` is a plain `{"<ship>::<endpoint>:<id>": "good"|"bad"}` dict,
+  starts empty, and grows only from the user's own GOOD/BAD answers shown
+  inline on `_ReviewPopup` for any pickup/dropoff it hasn't seen yet for
+  the profile's current ship — never re-asked once answered.
+
+  `_grade_contract()` (new): reward/SCU, marginal route cost (two
+  `_plan_route()` calls — with and without the candidate — reusing the
+  existing 2-opt planner rather than new distance math), and profile-
+  driven nudges (cross-system vs. Region preference, Pyro vs. Risk
+  Tolerance) feed a 0–100 point score mapped to a letter grade
+  (`GRADE_THRESHOLDS`). Two things cap the grade at `GRADE_CAP_ON_WARNING`
+  regardless of how well everything else scores: a known-BAD ship/
+  location match, or the candidate's commodity already being hauled in
+  another queued contract (via the existing `_freight_manifest()`,
+  reused). Per explicit user direction, a cap **never blocks ACCEPT** —
+  it only warns, visibly. No Hauler Profile set yet → `(None, "Set your
+  PROFILE for a grade.", False)`, never a guessed grade.
+
+  **Caught two real bugs building this, both found only by actually
+  looking at a live screenshot with real fonts loaded — logic-only
+  regression checks couldn't have caught either:**
+  1. `_show_profile_popup()` used `self.settings.get("hauler_profile",
+     {})` — that default only applies when the key is *absent*, not when
+     it's present with value `None` (which config.json legitimately had,
+     from an earlier cleanup step this same session). Crashed on first
+     live click. Fixed with the same `or {}` pattern `_grade_contract()`
+     already used for the same field; new regression case
+     `profile_popup_handles_none_profile` covers exactly this.
+  2. The capped grade rendered in the *same cyan color as an uncapped
+     one* whenever the cap still landed in a normal-looking letter band
+     (e.g. B, since `GRADE_CAP_ON_WARNING` sits inside the B range) —
+     defeating the entire point of the feature: a hard-no needs to be
+     visually unmissable, not just mentioned in small print. Fixed by
+     having `_grade_contract()` return `capped` as its own boolean
+     (`(grade, reason, capped)`, not inferred from the letter), and
+     `_ReviewPopup` colors the grade line amber whenever `capped` is
+     true, regardless of letter. Also found in the same pass: the `⚠`
+     glyph embedded in the BAD-location reason string rendered as a tofu
+     box — it's on a label styled with the Orbitron display font, which
+     doesn't cover that character (the mono font used elsewhere in the
+     app does). Dropped the glyph from the text; the amber color (fixed
+     above) now carries the warning instead.
+
+  Verified live end-to-end, offscreen with the app's real bundled fonts
+  loaded (`host/main.py`'s `load_fonts()` pattern, replicated in an
+  isolated-temp-config script — a full windowed launch can't produce a
+  real parseable contract without an actual game screen behind the
+  capture region, confirmed by trying it first and getting "No usable
+  text could be OCR'd"): set a Hull C profile, scanned a real fixture
+  contract, confirmed the S-grade + two unrated-location prompts render
+  correctly with real fonts; rated one location BAD for Hull C, rescanned
+  the same contract, confirmed the grade dropped from S to B, rendered
+  amber, named the specific bad location in the reason text, and only
+  asked about the *other*, still-unrated location — not the one already
+  answered. This is the literal Hull C-at-an-incompatible-station scenario
+  from the start of this session's conversation, working end-to-end.
+  25/25 regression checks pass; real `config.json` confirmed untouched
+  by any of this (hash-verified, same discipline as Parts 1–2).

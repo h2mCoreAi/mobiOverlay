@@ -579,6 +579,21 @@
   future scans. 20/20 regression checks pass, verified live via a real
   launch + UI Automation. See DECISIONS.md, 2026-09-07.
 
+- **Confirm-gate/grading plan complete (all 3 parts shipped)** — see
+  DECISIONS.md, 2026-09-07, for each part's full writeup:
+  1. Scan → review popup (ACCEPT/REJECT, replaces auto-add)
+  2. Hauler Profile (Ship/Goal/Risk/Time/Region, set once)
+  3. Ship/location compatibility feedback DB (starts empty, grows from
+     your own GOOD/BAD answers — no static ship-data source exists to
+     guess from) + contract grading (letter grade + reason, hard-capped
+     amber on a known-BAD location or duplicate-freight overlap, never
+     blocking ACCEPT). Verified against the literal Hull C-at-an-
+     incompatible-station scenario that motivated this work. 25/25
+     regression checks pass.
+  Three real bugs found and fixed only by actually running the app live
+  (a reward-format crash, a None-profile crash, and a cap that wasn't
+  visually distinct) — none were catchable by logic-only tests alone.
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one
