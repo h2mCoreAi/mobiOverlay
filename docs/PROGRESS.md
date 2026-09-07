@@ -572,8 +572,14 @@
      top-to-bottom, reads the left column in full before the right one.
      Degrades safely to one column (unchanged from before) when no real
      gap is found. See DECISIONS.md, 2026-09-06.
-  2. Not started: upscale the captured region before OCR (small in-game
-     UI text is likely below EasyOCR's comfortable resolution).
+  2. ✅ **Done (2026-09-06): 2x upscale before OCR.** LANCZOS-resized
+     the grayscale capture 2x before `readtext()` (EasyOCR's own
+     internal `mag_ratio` resizing alone isn't equivalent — this happens
+     before detection runs, not as a parameter to it). Verified with a
+     genuinely small synthetic test line: without upscaling, EasyOCR
+     fragmented it into 3 disjoint unusable pieces ("Ontr", "Pontesh");
+     with upscaling, it stayed as one coherent (if still imperfect)
+     line. See DECISIONS.md, 2026-09-06.
   3. Not started: preprocessing tuned to this UI specifically (inverted
      threshold for light-text-on-dark, instead of generic grayscale +
      autocontrast).

@@ -1624,6 +1624,22 @@ class LogisticsHubModule(ModuleBase):
 
         # Preprocess a little for the OCR engine.
         gray = ImageOps.grayscale(pil_rgb)
+        # In-game UI text captured at native resolution is often small —
+        # a single contract line can be well under 20px tall in a typical
+        # capture region. OCR engines (EasyOCR included) read text
+        # substantially more reliably above a certain pixel-height floor;
+        # upscaling before detection, not relying on EasyOCR's own
+        # internal `mag_ratio` resizing alone, is standard OCR-preprocessing
+        # practice for small source text. LANCZOS (not the default
+        # nearest-neighbor) keeps character edges reasonably clean at 2x
+        # rather than introducing new blockiness. This is a one-off manual
+        # scan, not a real-time loop, so the extra processing time is an
+        # easy trade for better accuracy.
+        OCR_UPSCALE_FACTOR = 2
+        gray = gray.resize(
+            (gray.width * OCR_UPSCALE_FACTOR, gray.height * OCR_UPSCALE_FACTOR),
+            Image.LANCZOS,
+        )
         gray = ImageOps.autocontrast(gray)
 
         if self._reader is None:
@@ -1642,7 +1658,11 @@ class LogisticsHubModule(ModuleBase):
         # misattribution), all of which were really downstream symptoms of
         # reading the two columns interleaved instead of one at a time.
         results = self._reader.readtext(np.array(gray), detail=1)
-        lines = _order_ocr_boxes(results, pil_rgb.width)
+        # `gray.width`, not `pil_rgb.width` — bounding boxes from EasyOCR
+        # are in the *upscaled* image's coordinate space, so the column-
+        # gap threshold in _order_ocr_boxes needs to be computed against
+        # that same scale, not the original pre-upscale capture width.
+        lines = _order_ocr_boxes(results, gray.width)
         return "\n".join(lines)
 
     # ------------------------------------------------------------------

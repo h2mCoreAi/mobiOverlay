@@ -1978,3 +1978,36 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   Per user direction, stopping here for confirmation before moving to
   the next ranked optimization (upscaling small in-game text before
   OCR).
+
+- 2026-09-06: **OCR pipeline optimization #2: 2x upscale before OCR.**
+  User confirmed proceeding through the rest of the ranked list without
+  a checkpoint after each (will test the whole batch together once
+  done). In-game UI text captured at native resolution is often small —
+  a single contract line can be well under 20px tall — and OCR engines
+  read text substantially more reliably above a certain pixel-height
+  floor. Added a 2x LANCZOS resize of the grayscale capture before
+  `readtext()` runs (`modules/logistics_hub/module.py`'s `_ocr()`) —
+  this happens *before* EasyOCR's own detection pass, not the same
+  thing as its internal `mag_ratio` parameter. LANCZOS specifically
+  (not the default nearest-neighbor) to keep character edges reasonably
+  clean at 2x instead of introducing new blockiness. Also fixed a
+  correctness detail this surfaced: `_order_ocr_boxes()`'s column-gap
+  threshold is relative to image width, so it now receives the
+  *upscaled* width (`gray.width`), not the original pre-upscale capture
+  width (`pil_rgb.width`) — bounding boxes from EasyOCR are in the
+  upscaled image's coordinate space.
+  **Verified with a genuinely small synthetic test case** (9pt text,
+  16px-tall image, PIL-rendered to sidestep an unrelated headless-Qt
+  font-rendering issue found while testing — offscreen `QPainter` text
+  rendered as empty glyph boxes in this environment, not a real bug,
+  just not usable for this test): without upscaling, EasyOCR fragmented
+  "Deliver 0/37 SCU of Quartz to Port Tressler" into 3 disjoint,
+  unusable pieces ("Delver 037 SCU _", "Ontr", "Pontesh"); with 2x
+  upscaling, it stayed as one coherent line (still character-garbled —
+  "Delver 037 SCU 01 Cuarz *0 Pon Tresskr" — but the structure/word-
+  boundaries survived, which is what the downstream line-based parsing
+  in `_candidate_phrases` actually depends on). This is real evidence
+  of the intended benefit, not just "didn't break anything" — a larger,
+  easier test case had shown no visible difference either way, which
+  would have been a false reassurance if used as the only test. Full
+  regression suite (13/13) unaffected.
