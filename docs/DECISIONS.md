@@ -2239,3 +2239,33 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   screenshotted it directly showing real theme/fonts with the ACCEPT/
   REJECT buttons, clicked REJECT via `InvokePattern`, and confirmed
   `config.json`'s contract count stayed at 0 afterward.
+
+- 2026-09-07: **Hauler Profile added (Part 2 of the confirm-gate/grading
+  plan).** New `PROFILE` button next to `SET SCAN AREA`, opens
+  `_HaulerProfilePopup` (same `Qt.Popup` shell as `_ReviewPopup`): five
+  fields — Ship (free text, no reliable static ship-data source exists to
+  validate against, and this doubles as the compatibility-DB key in Part
+  3), Goal, Risk Tolerance, Session Time, Region — the last four are fixed
+  `QComboBox` choices (`PROFILE_GOAL_CHOICES` etc.) rather than free text,
+  so the later grading logic has a closed set of values to branch on.
+  Saved to `self.settings["hauler_profile"]` on SAVE, set once and edited
+  whenever, never re-asked per scan. New regression check
+  `profile_popup_saves_all_five_fields` — actually constructs and saves
+  the real popup (not just the save handler), same lesson as the Part 1
+  crash: a check that skips widget construction can't catch a
+  construction bug.
+
+  Verified live: launched the app, clicked PROFILE via UI Automation,
+  screenshotted the popup directly (all 5 fields render with real
+  theme/fonts), set the ship field via `ValuePattern.SetValue` (worked,
+  persisted "Hull C" to `config.json` correctly) and clicked SAVE.
+  The four `QComboBox` selections did **not** visibly change via UI
+  Automation's `ExpandCollapsePattern`/`SelectionItemPattern` — this
+  matches a pre-existing, already-documented tooling limitation in this
+  environment (Trade Route Optimizer's terminal/system combos hit the
+  identical issue in an earlier session: "3 different automation methods
+  all failed identically"), not a new bug. The actual save mechanism
+  (`currentText()` on each combo → `self.settings["hauler_profile"]`) is
+  proven correct by the regression check above, which drives the combos
+  directly via `setCurrentText()` (the real underlying Qt API, not a
+  simulated click) and confirms all 5 fields round-trip correctly.

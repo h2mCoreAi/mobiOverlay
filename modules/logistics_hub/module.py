@@ -102,6 +102,17 @@ COPY_ROUTE_CONFIRM_MS = 1500  # how long the COPY ROUTE button shows "COPIED" be
 
 DEBUG_LOG_FILENAME = "logistics_hub_debug.jsonl"  # always-on scan history, see docs/DECISIONS.md
 
+# Hauler Profile choices (added 2026-09-07) — fixed, small option sets
+# rather than free text, so grading (a later part of the same plan) has
+# a closed set of values to branch on instead of parsing arbitrary text.
+# Ship is the one free-text field (no reliable static ship-data source —
+# see docs/DECISIONS.md) and doubles as the key for the ship/location
+# compatibility feedback database.
+PROFILE_GOAL_CHOICES = ["Profit", "Reputation", "Keep Busy"]
+PROFILE_RISK_CHOICES = ["Safe systems only", "Moderate", "Will run risky routes for good pay"]
+PROFILE_TIME_CHOICES = ["Quick (<30 min)", "Medium", "Long session"]
+PROFILE_REGION_CHOICES = ["Current system only", "Willing to cross jump points"]
+
 # Restricts what EasyOCR can output to characters that can actually appear
 # in a contract panel — letters, digits, and every punctuation mark
 # observed across this session's real captures (periods, commas, colons,
@@ -959,6 +970,113 @@ class _ReviewPopup(QWidget):
         self.close()
 
 
+class _HaulerProfilePopup(QWidget):
+    """Ship + hauling-preference profile, set once and edited whenever —
+    added 2026-09-07 (Part 2 of the confirm-gate/grading plan, see
+    docs/DECISIONS.md). Not re-asked per scan; a later grading pass reads
+    these five fields from `self.settings["hauler_profile"]` to score a
+    freshly-scanned contract. Same themed `Qt.Popup` shell as
+    `_ReviewPopup`/the old `_DuplicatePopup`."""
+
+    def __init__(self, parent_widget, profile: dict, on_save):
+        super().__init__(parent_widget, Qt.Popup)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            _HaulerProfilePopup {{
+                background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_FLAT};
+                border-radius: {theme.RADIUS}px;
+            }}
+        """)
+        self._on_save = on_save
+        self.setMinimumWidth(320)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
+
+        title = QLabel("HAULER PROFILE")
+        title.setStyleSheet(
+            f"color: {theme.ACCENT_CYAN}; font-family: {theme.FONT_DISPLAY}; "
+            f"font-weight: 800; font-size: {theme.fpx(11)}px; letter-spacing: 2px;"
+        )
+        layout.addWidget(title)
+
+        ship_row = QHBoxLayout()
+        ship_label = QLabel("SHIP")
+        ship_label.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
+            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
+        )
+        ship_row.addWidget(ship_label)
+        self._ship_edit = QLineEdit(profile.get("ship", ""))
+        self._ship_edit.setPlaceholderText("Ship (e.g. Hull C)")
+        self._ship_edit.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
+                padding: 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
+                font-size: {theme.fpx(11)}px;
+            }}
+            """
+        )
+        ship_row.addWidget(self._ship_edit, 1)
+        layout.addLayout(ship_row)
+
+        self._goal_combo = self._add_row(layout, "GOAL", PROFILE_GOAL_CHOICES, profile.get("goal"))
+        self._risk_combo = self._add_row(layout, "RISK TOLERANCE", PROFILE_RISK_CHOICES, profile.get("risk"))
+        self._time_combo = self._add_row(layout, "SESSION TIME", PROFILE_TIME_CHOICES, profile.get("time_budget"))
+        self._region_combo = self._add_row(layout, "REGION", PROFILE_REGION_CHOICES, profile.get("region_pref"))
+
+        save_btn = QPushButton("SAVE")
+        save_btn.setStyleSheet(
+            f"background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN}; "
+            f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
+            f"padding: 4px 10px; font-family: {theme.FONT_DISPLAY}; font-weight: 700; "
+            f"font-size: {theme.fpx(10)}px;"
+        )
+        save_btn.clicked.connect(self._save)
+        layout.addWidget(save_btn)
+
+    def _add_row(self, layout: QVBoxLayout, label_text: str, choices: list[str], current: str | None) -> QComboBox:
+        row = QHBoxLayout()
+        label = QLabel(label_text)
+        label.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
+            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
+        )
+        row.addWidget(label)
+
+        combo = QComboBox()
+        combo.addItems(choices)
+        if current in choices:
+            combo.setCurrentText(current)
+        combo.setStyleSheet(
+            f"""
+            QComboBox {{
+                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
+                padding: 4px 22px 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
+                font-size: {theme.fpx(10)}px;
+            }}
+            QComboBox::drop-down {{ width: 18px; border: none; }}
+            """
+        )
+        row.addWidget(combo, 1)
+        layout.addLayout(row)
+        return combo
+
+    def _save(self):
+        self._on_save({
+            "ship": self._ship_edit.text().strip(),
+            "goal": self._goal_combo.currentText(),
+            "risk": self._risk_combo.currentText(),
+            "time_budget": self._time_combo.currentText(),
+            "region_pref": self._region_combo.currentText(),
+        })
+        self.close()
+
+
 class LogisticsHubModule(ModuleBase):
     module_id = "logistics_hub"
     # Rich-text, styled like the main window's own wordmark (see
@@ -1108,6 +1226,15 @@ class LogisticsHubModule(ModuleBase):
         select_btn.setStyleSheet(self._button_style())
         select_btn.clicked.connect(self._select_region)
         region_row.addWidget(select_btn)
+
+        profile_btn = QPushButton("PROFILE")
+        profile_btn.setToolTip(
+            "Your ship + hauling preferences — set once, used to grade "
+            "future scans. Doesn't affect parsing or routing."
+        )
+        profile_btn.setStyleSheet(self._button_style())
+        profile_btn.clicked.connect(self._show_profile_popup)
+        region_row.addWidget(profile_btn)
         layout.addLayout(region_row)
 
         # ---- action row ---------------------------------------------
@@ -1374,6 +1501,18 @@ class LogisticsHubModule(ModuleBase):
         # removal, if the field was cleared) reflects the new value
         # immediately rather than waiting for the next scan/edit.
         self._render_results()
+
+    def _show_profile_popup(self):
+        profile = self.settings.get("hauler_profile", {})
+        popup = _HaulerProfilePopup(self._card_widget, profile, self._on_profile_saved)
+        anchor = self._card_widget.mapToGlobal(self._card_widget.rect().topLeft())
+        popup.move(anchor)
+        popup.show()
+
+    def _on_profile_saved(self, profile: dict):
+        self.settings["hauler_profile"] = profile
+        self._save_settings()
+        self._set_status(f"Profile saved: {profile.get('ship') or 'no ship set'}.")
 
     def _current_location_terminal(self) -> dict | None:
         return self.settings.get("current_location")

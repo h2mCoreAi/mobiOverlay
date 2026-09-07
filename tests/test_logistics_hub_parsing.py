@@ -555,6 +555,39 @@ def run_ui_state_checks() -> tuple[int, int]:
         print(f"    expected contract count {before_count}->{before_count + 1} and _pending_scan cleared; "
               f"got count={after_count}, pending={mod._pending_scan!r}")
 
+    # 2026-09-07 (Part 2): Hauler Profile popup — actually construct and
+    # save it (same lesson as review_popup_renders_without_crashing above:
+    # calling the save handler directly would skip the widget entirely and
+    # miss a real construction bug).
+    name = "profile_popup_saves_all_five_fields"
+    total += 1
+    try:
+        mod._show_profile_popup()
+        app.processEvents()
+        popup = next((w for w in app.topLevelWidgets() if type(w).__name__ == "_HaulerProfilePopup"), None)
+        if popup is None:
+            raise AssertionError("_HaulerProfilePopup not found among top-level widgets")
+        popup._ship_edit.setText("Hull C")
+        popup._goal_combo.setCurrentText("Profit")
+        popup._risk_combo.setCurrentText("Moderate")
+        popup._time_combo.setCurrentText("Quick (<30 min)")
+        popup._region_combo.setCurrentText("Willing to cross jump points")
+        popup._save()
+        app.processEvents()
+        saved = mod.settings.get("hauler_profile", {})
+        ok = saved == {
+            "ship": "Hull C", "goal": "Profit", "risk": "Moderate",
+            "time_budget": "Quick (<30 min)", "region_pref": "Willing to cross jump points",
+        }
+        if not ok:
+            print(f"    unexpected saved profile: {saved}")
+    except Exception as exc:
+        ok = False
+        print(f"    profile popup raised: {exc!r}")
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+
     tmp_path.unlink(missing_ok=True)
     return failures, total
 

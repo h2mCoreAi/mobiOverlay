@@ -573,6 +573,12 @@
   the real config.json) — see DECISIONS.md, 2026-09-07. 19/19 regression
   checks pass, verified live via a real launch + UI Automation click.
 
+- **Hauler Profile added (Part 2 of 3)** — new PROFILE button/popup on the
+  card: Ship, Goal, Risk Tolerance, Session Time, Region, saved once and
+  edited whenever. Grading (Part 3, not yet built) will read this to score
+  future scans. 20/20 regression checks pass, verified live via a real
+  launch + UI Automation. See DECISIONS.md, 2026-09-07.
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one
