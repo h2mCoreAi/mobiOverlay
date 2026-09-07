@@ -254,6 +254,26 @@ FIXTURES = [
         {"Admin - Everus Harbor": [("Waste", "10")]},
         {"Seraphim Station": [("Waste", "10")]},
     ),
+    (
+        # SYNTHETIC, not a real OCR capture — the original real contract
+        # that exposed this bug (2026-09-05, "...Teasa Spaceport in
+        # Lorville.") predates this test file and its raw text was never
+        # saved. Reproduces the same confirmed-live mechanism instead:
+        # "Lorville" resolves to exactly one real terminal ("Landing
+        # Services - Lorville") once it's even offered as a candidate,
+        # and "Teasa Spaceport" is a genuine, real ambiguity between two
+        # different shops there (New Deal vs. Kel-To) — both confirmed
+        # via live `resolve_all()` calls before writing this fixture.
+        "single_word_city_lorville_synthetic",
+        "OFFERS\nACCEPTED (1/10)\nHISTORY\nBEACONS\nMember | Small Haul\nReward\n45,000\n"
+        "Contract Deadline\nNZA\nContracted By\nCovalex Independent Contractors\n"
+        "DETAILS\nPRIMARY OBJECTIVES\nHello,\n"
+        "Deliver 0/8 SCU of Medical Supplies to Teasa Spaceport in Lorville.\n"
+        "Collect Medical Supplies from Everus Harbor.\n"
+        "Thanks in advance for ensuring prompt service,\nABANDON\nSHARE\nTRACK",
+        {"Admin - Everus Harbor": [("Medical Supplies", "8")]},
+        {"Landing Services - Lorville": [("Medical Supplies", "8")]},
+    ),
 ]
 
 # NOTE: a "Baijini Point -> Seraphim, 103 Stims" contract was also verified

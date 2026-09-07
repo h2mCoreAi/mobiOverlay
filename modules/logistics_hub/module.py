@@ -622,6 +622,28 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str, int]]:
                 continue
             add_candidate(m.group(0), hint, priority)
 
+        # A location named with a single capitalized word (real cities can
+        # be — "Lorville") never becomes a candidate at all above, since
+        # that regex requires 2+ words in a row. Confirmed real: "...Teasa
+        # Spaceport in Lorville." never offered "Lorville" itself as a
+        # candidate — only the genuinely ambiguous 2-word "Teasa Spaceport"
+        # (which resolves to two different real shops there) was tried, so
+        # the city was never even considered. Deliberately narrow: only
+        # after "in " specifically, never "at "/"above " — every real
+        # contract template seen introduces a *planet* via "above PLANET"
+        # ("above Hurston:", "above Crusader."), and planets aren't part of
+        # LocationService's indexed endpoints at all, so nothing already
+        # filters them out; confirmed live that bare planet names collide
+        # with unrelated real shops via substring match ("Hurston" ->
+        # "Hurston Dynamics Showcase - Lorville", "Crusader" ambiguous
+        # across 3 unrelated shops). "in " never precedes a planet/system
+        # name in any template seen, so this scoping targets the reported
+        # bug shape without reopening that risk. The negative lookahead
+        # skips a multi-word name's first word ("in New Deal Plaza") —
+        # the 2+-word regex above already captures that fuller phrase.
+        for m in re.finditer(r"\bin\s+([A-Z][a-zA-Z']{3,})(?!\s+[A-Z])", line):
+            add_candidate(m.group(1), hint, priority)
+
         # A location name itself (not just the flavor text around it) can be
         # split across a line wrap by the same two-column OCR reordering,
         # e.g. "...SCU of Agricultural Supplies to Everus" / "Harbor above

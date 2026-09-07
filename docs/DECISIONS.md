@@ -1891,3 +1891,43 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   preprocessing/easyocr settings) hasn't been reviewed against the
   user's actual real-world screenshots — logged in PROGRESS.md's Next
   section as a future pass, not started.
+
+- 2026-09-06: **Fixed the logistics-hub single-word-city KNOWN BUG
+  (logged 2026-09-05), using Plan Mode to design around a risk found
+  during investigation before writing any code.** `_candidate_phrases`'s
+  main location regex requires 2+ capitalized words in a row, so a
+  location named with one word (real example: "...Teasa Spaceport in
+  Lorville." — "Lorville" is a real city) never became a candidate at
+  all; only the 2-word "Teasa Spaceport" was tried, which is genuinely
+  ambiguous between two different real shops there (New Deal vs.
+  Kel-To, confirmed live) rather than resolving to the city itself.
+  **A naive fix (any single capitalized word) was investigated and
+  rejected before implementation**: confirmed live that bare planet
+  names — which appear constantly via "above PLANET" in every real
+  template ("above Hurston:", "above Crusader.") — collide with
+  unrelated real shops (`resolve_all("Hurston")` wrongly substring-
+  matches "Hurston Dynamics Showcase - Lorville"; `resolve_all("Crusader")`
+  is ambiguous across 3 unrelated shops). Planets aren't part of
+  `LocationService`'s indexed endpoints at all, so nothing already
+  filters them out — a broad single-word pass would have flooded
+  contracts with false planet-name candidates, a worse regression than
+  the bug being fixed. Fixed narrowly instead: the new candidate pass
+  only fires after "in " specifically (never "at "/"above "), since
+  every real template seen introduces a planet via "above", never "in" —
+  this targets the reported bug shape while structurally avoiding the
+  planet-collision risk, not just avoiding it by luck.
+  Verified live before writing the fix (not after): `resolve_all
+  ("Lorville")` returns exactly one real match ("Landing Services -
+  Lorville"), confirming the fix target genuinely resolves cleanly once
+  offered. Verified after: the exact reported bug shape now correctly
+  resolves "Lorville" as a real dropoff while "Teasa Spaceport" stays
+  honestly flagged ambiguous (a real ambiguity this fix was never meant
+  to resolve, not a lingering bug) — confirmed via `_build_contract`
+  directly, and via a live re-check that "Hurston"/"Crusader"/"ArcCorp"
+  still correctly do NOT become candidates from an "above PLANET" line
+  after the fix. Added `single_word_city_lorville_synthetic` to
+  `tests/test_logistics_hub_parsing.py` (labeled synthetic — the
+  original 2026-09-05 real capture was never saved, same as the
+  duplicate-stop fixture above) and confirmed it fails on the pre-fix
+  code and passes after. All 13 regression checks pass, no existing
+  fixture regressed.

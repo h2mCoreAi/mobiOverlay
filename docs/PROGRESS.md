@@ -568,14 +568,14 @@
   for the related distance bug), preferring the structural record's name
   over a `terminals` kiosk's raw label as the display representative. See
   DECISIONS.md, 2026-09-06, for the full writeup and verification.
-- **KNOWN BUG (logistics-hub, single-word-city): a location named with one
-  capitalized word never becomes a candidate at all.** Found 2026-09-05 on
-  a live scan. `_candidate_phrases`'s regex requires 2+ capitalized words in
-  a row, so "...Teasa Spaceport in Lorville." never produces "Lorville" as
-  a candidate (single word, preceded by lowercase "in") — only "Teasa
-  Spaceport" is tried, which isn't a real UEX record, so it falls through
-  to an ambiguous guess between two unrelated Lorville shops instead of
-  ever considering the city itself. Not fixed yet — logged for later.
+- **FIXED (2026-09-06): the single-word-city KNOWN BUG below.**
+  `_candidate_phrases` now also offers a single capitalized word as a
+  candidate when it immediately follows "in " — narrowly scoped to that
+  one preposition specifically to avoid a much worse regression (bare
+  planet names like "Hurston"/"Crusader", which appear via "above PLANET"
+  in every real template, collide with unrelated real shops via substring
+  match — confirmed live before shipping this). See DECISIONS.md,
+  2026-09-06, for the full root-cause/risk/verification writeup.
 - **Human check: Logistics Hub debug log.** Run a real scan and confirm
   `logistics_hub_debug.jsonl` appears next to `config.json` (repo root
   when running from source) with one valid JSON line containing raw
