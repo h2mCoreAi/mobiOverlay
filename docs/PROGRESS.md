@@ -701,6 +701,15 @@
 
 ## Next
 
+- **Known issue: accept reminder banner clips in the Tracker popout
+  instead of wrapping.** Noted 2026-09-08 by the user, live-testing —
+  the popout's `QPushButton` reminder banner (see DECISIONS.md,
+  2026-09-08, "mirrors onto the Tracker popout") doesn't wrap its text
+  to the window width the way the card's copy does; a narrow popout
+  clips the message instead of growing/wrapping. Needs a fix (likely:
+  word-wrap enabled on the button label, or swap to a QLabel-styled-as-
+  button if QPushButton text wrapping proves unreliable) — not done yet.
+
 - **OCR pipeline optimization pass — in progress, incremental, one
   change at a time per user direction.** Noted 2026-09-06 per user
   request. Ranked list of candidate optimizations investigated; working
