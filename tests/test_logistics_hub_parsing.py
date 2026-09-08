@@ -887,6 +887,93 @@ def run_ui_state_checks() -> tuple[int, int]:
             print(f"    default_window_result={default_window_result!r}")
             print(f"    narrow_window_result={narrow_window_result!r}")
 
+    # Accept reminder (2026-09-08) — `_schedule_accept_reminder()` must
+    # skip scheduling entirely (never call QTimer.singleShot) when already
+    # matched, when the reminder is disabled (0s), or with no contract id;
+    # otherwise it must schedule with the right delay. Monkeypatches
+    # QTimer.singleShot to a capturing stub for this one check — a real
+    # delay would make the test slow AND non-deterministic.
+    name = "schedule_accept_reminder_skips_when_not_needed"
+    total += 1
+    import modules.logistics_hub.module as _module_mod
+    scheduled_calls = []
+    original_single_shot = _module_mod.QTimer.singleShot
+    _module_mod.QTimer.singleShot = staticmethod(
+        lambda ms, cb: scheduled_calls.append((ms, cb))
+    )
+    try:
+        mod.settings["accept_reminder_seconds"] = 30
+        mod._schedule_accept_reminder("c1", {"matched": True})  # already matched -> skip
+        mod._schedule_accept_reminder(None, {"matched": False})  # no id -> skip
+        mod.settings["accept_reminder_seconds"] = 0
+        mod._schedule_accept_reminder("c1", {"matched": False})  # disabled -> skip
+        mod.settings["accept_reminder_seconds"] = 30
+        mod._schedule_accept_reminder("c1", {"matched": False})  # should schedule
+        ok = len(scheduled_calls) == 1 and scheduled_calls[0][0] == 30_000
+    finally:
+        _module_mod.QTimer.singleShot = original_single_shot
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    scheduled_calls={scheduled_calls!r}")
+
+    # `_recheck_accept_reminder()` — the three real outcomes: contract
+    # already gone from the queue (no-op), still unmatched (shows the
+    # blinking banner), and matched-this-time (silently applies the
+    # correction, no banner). Reuses the same real-temp-Game.log pattern
+    # as the window-override check above.
+    name = "recheck_accept_reminder_no_op_when_contract_gone"
+    total += 1
+    mod._dismiss_accept_reminder()
+    mod._recheck_accept_reminder("no-such-contract-id")
+    ok = mod._reminder_banner.isHidden() is True
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+
+    name = "recheck_accept_reminder_shows_banner_when_still_unmatched"
+    total += 1
+    still_unmatched_contract = mod._build_contract(FIXTURES[0][1])
+    mod.settings.setdefault("contracts", []).append(still_unmatched_contract)
+    mod.settings["game_log_path"] = str(Path(tempfile.gettempdir()) / "mobiov_test_no_such_gamelog.log")
+    mod._recheck_accept_reminder(still_unmatched_contract["id"])
+    ok = mod._reminder_banner.isHidden() is False and mod._reminder_banner.text() != ""
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    banner hidden={mod._reminder_banner.isHidden()!r}, text={mod._reminder_banner.text().encode("ascii","backslashreplace").decode()!r}")
+    mod._dismiss_accept_reminder()
+    mod.settings["contracts"].remove(still_unmatched_contract)
+
+    name = "recheck_accept_reminder_silent_on_late_match"
+    total += 1
+    with tempfile.TemporaryDirectory() as recheck_tmp_dir:
+        recheck_log = Path(recheck_tmp_dir) / "Game.log"
+        recheck_event_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+        recheck_contract = {
+            "id": "recheck-test-1",
+            "pickups": [{"terminal": {"id": 1, "name": "Everus Harbor"}, "raw": "Everus Harbor", "commodities": []}],
+            "dropoffs": [{"terminal": {"id": 2, "name": "Teasa Spaceport"}, "raw": "Teasa Spaceport", "commodities": []}],
+            "reward": "1,000",
+        }
+        recheck_log.write_text(
+            f'<{recheck_event_ts}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
+            '"Contract Accepted:  Rookie | Small Haul | Everus Harbor > Teasa Spaceport: " '
+            '[9] to queue. New queue size: 1, MissionId: [33333333-3333-3333-3333-333333333333], '
+            'ObjectiveId: [] [Team_CoreGameplayFeatures][Missions][Comms]\n',
+            encoding="utf-8",
+        )
+        mod.settings.setdefault("contracts", []).append(recheck_contract)
+        mod.settings["game_log_path"] = str(recheck_log)
+        mod._recheck_accept_reminder("recheck-test-1")
+        ok = mod._reminder_banner.isHidden() is True
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    banner hidden={mod._reminder_banner.isHidden()!r}, text={mod._reminder_banner.text().encode("ascii","backslashreplace").decode()!r}")
+        mod.settings["contracts"].remove(recheck_contract)
+    mod.settings["game_log_path"] = str(Path(tempfile.gettempdir()) / "mobiov_test_no_such_gamelog.log")
+
     # CLEAR LOG button (2026-09-08) — `_clear_debug_log()` writes via
     # `paths.app_root()` directly, NOT through the already-patched
     # `_append_jsonl`, so this monkeypatches `host.paths.app_root` itself
@@ -1019,6 +1106,7 @@ def run_ui_state_checks() -> tuple[int, int]:
         popup._good_edit.setText("1000")
         popup._ok_edit.setText("500")
         popup._game_log_edit.setText(r"C:\fake\Game.log")
+        popup._reminder_edit.setText("45")
         popup._save()
         app.processEvents()
         saved = mod.settings.get("hauler_profile", {})
@@ -1030,11 +1118,13 @@ def run_ui_state_checks() -> tuple[int, int]:
             and mod.settings.get("cargo_capacity_scu") == 512
             and mod.settings.get("grading_thresholds") == {"great": 2000, "good": 1000, "ok": 500}
             and mod.settings.get("game_log_path") == r"C:\fake\Game.log"
+            and mod.settings.get("accept_reminder_seconds") == 45
         )
         if not ok:
             print(f"    unexpected saved state: profile={saved}, capacity={mod.settings.get('cargo_capacity_scu')!r}, "
                   f"thresholds={mod.settings.get('grading_thresholds')!r}, "
-                  f"game_log_path={mod.settings.get('game_log_path')!r}")
+                  f"game_log_path={mod.settings.get('game_log_path')!r}, "
+                  f"accept_reminder_seconds={mod.settings.get('accept_reminder_seconds')!r}")
     except Exception as exc:
         ok = False
         print(f"    profile popup raised: {exc!r}")

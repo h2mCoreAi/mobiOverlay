@@ -2750,3 +2750,52 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   window size, not a normal per-user setting, and adding a UI field
   would suggest otherwise. Edit `config.json` directly if it needs
   changing.
+
+- **2026-09-08 — Accept reminder added: a click-to-dismiss blinking
+  banner, no game-input automation.** Discussed and rejected an auto-
+  click "ACCEPT OFFER" idea first (see this same date's conversation
+  history) — real account/ban risk (synthetic input is flagged by
+  Windows itself via LLMHF_INJECTED, and any anti-cheat/monitoring
+  checking for it is checking for exactly that), not worth it for a
+  quality-of-life feature. Landed on the much safer alternative the user
+  proposed instead: a reminder, not an action.
+
+  New `accept_reminder_seconds` setting (Hauler Profile popup, 0 = off,
+  default `DEFAULT_ACCEPT_REMINDER_SECONDS = 30` — a placeholder, same
+  as the verify window, expected to need tuning against real
+  `nearest_haul_event_gap_seconds` data). On ACCEPT, if Game.log didn't
+  verify immediately, `_schedule_accept_reminder()` queues a one-shot
+  `QTimer.singleShot` for that many seconds. When it fires,
+  `_recheck_accept_reminder()` re-runs `_verify_against_gamelog()` against
+  the *current* state of Game.log (a second, later chance — most real
+  accepts won't verify instantly since the log line can lag or the
+  in-game accept genuinely hasn't happened yet): a late match silently
+  applies any correction (exactly like the original check) with no
+  banner; still unmatched shows `_reminder_banner`, a blinking (500ms via
+  `_reminder_blink_timer`, amber/void swap) `QPushButton` — a button, not
+  a label, so any click dismisses it, not just a precise one. Expands
+  and raises the card if collapsed (`card.set_collapsed(False)` +
+  `raise_()`) so it can't hide behind a collapsed card. Every recheck
+  (not just misses) logs its own `accept_reminder_recheck` debug entry,
+  same tracking-first spirit as the verify-window diagnostics.
+
+  Deliberately does NOT duplicate into the Tracker popout — the card
+  itself is always present regardless of whether the popout is open, so
+  one banner location is enough without doubling the maintenance surface.
+
+  New regression checks: `schedule_accept_reminder_skips_when_not_needed`
+  (already-matched/no-id/disabled all correctly skip scheduling, verified
+  by monkeypatching `QTimer.singleShot` to a capturing stub rather than
+  waiting on a real delay), and three `_recheck_accept_reminder` cases
+  (contract already gone from the queue, still unmatched shows the
+  banner, late match is silent) using `isHidden()` rather than
+  `isVisible()` to check banner state — `isVisible()` depends on the
+  whole ancestor widget chain being shown, which this test harness's
+  CardContainer never is (no `app.exec()`), while `isHidden()` reflects
+  only this widget's own explicit shown/hidden state, which is what
+  these checks actually care about. 45/45 total checks pass.
+
+  This was explicitly split from the tabbed-card-layout redesign
+  requested in the same message — two independent changes, easier to
+  test/review separately; the tab redesign is a separate commit
+  immediately after this one.

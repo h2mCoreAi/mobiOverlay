@@ -677,6 +677,14 @@
   rebuild once overlapping contracts make that necessary. 39/39 checks
   pass. See DECISIONS.md, 2026-09-08.
 
+- **Accept reminder added** — a blinking, click-to-dismiss banner on the
+  card if Game.log still hasn't confirmed a contract
+  `accept_reminder_seconds` (Hauler Profile, default 30s, 0=off) after
+  ACCEPT. Rejected an auto-click "ACCEPT OFFER" idea first — real
+  account/ban risk from synthetic input, not worth it. No game input is
+  ever touched; this only reminds. 45/45 checks pass. See DECISIONS.md,
+  2026-09-08.
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one

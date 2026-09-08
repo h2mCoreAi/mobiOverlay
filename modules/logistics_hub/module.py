@@ -174,6 +174,15 @@ RISKY_SYSTEMS = {"Pyro"}
 # that turned out unreliable.
 DEFAULT_GRADING_THRESHOLDS = {"great": 500, "good": 200, "ok": 80}
 
+# How long after ACCEPT to wait before rechecking Game.log and, if it's
+# still unmatched, showing the blinking in-game-accept reminder — added
+# 2026-09-08. A placeholder guess, same spirit as gamelog_verify's window
+# constant: expected to need tuning against real
+# `nearest_haul_event_gap_seconds` data once more sessions run, hence a
+# plain user-editable field (Hauler Profile popup) rather than something
+# baked in harder. 0 disables the reminder entirely.
+DEFAULT_ACCEPT_REMINDER_SECONDS = 30
+
 # Restricts what EasyOCR can output to characters that can actually appear
 # in a contract panel — letters, digits, and every punctuation mark
 # observed across this session's real captures (periods, commas, colons,
@@ -1133,7 +1142,7 @@ class _HaulerProfilePopup(QWidget):
 
     def __init__(
         self, parent_widget, profile: dict, capacity: int | None, thresholds: dict | None,
-        game_log_path: str | None, on_save,
+        game_log_path: str | None, accept_reminder_seconds: int, on_save,
     ):
         super().__init__(None, Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -1268,6 +1277,36 @@ class _HaulerProfilePopup(QWidget):
         log_row.addWidget(browse_btn)
         layout.addLayout(log_row)
 
+        # ACCEPT REMINDER — added 2026-09-08 alongside the delayed-recheck
+        # feature: if Game.log still hasn't confirmed a contract this many
+        # seconds after ACCEPT, the card shows a blinking reminder to
+        # actually accept it in-game (easy to forget when you're just
+        # testing/reviewing). 0 disables it entirely. Deliberately a plain
+        # number field here, not a slider/combo — this is expected to need
+        # real tuning against `nearest_haul_event_gap_seconds` data as more
+        # sessions run, same reasoning as the verify window itself.
+        reminder_row = QHBoxLayout()
+        reminder_label = QLabel("ACCEPT REMINDER (sec, 0=off)")
+        reminder_label.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
+            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
+        )
+        reminder_row.addWidget(reminder_label)
+        self._reminder_edit = QLineEdit(str(accept_reminder_seconds))
+        self._reminder_edit.setValidator(QIntValidator(0, 3600, self._reminder_edit))
+        self._reminder_edit.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
+                padding: 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
+                font-size: {theme.fpx(11)}px;
+            }}
+            """
+        )
+        reminder_row.addWidget(self._reminder_edit, 1)
+        layout.addLayout(reminder_row)
+
         save_btn = QPushButton("SAVE")
         save_btn.setStyleSheet(
             f"background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN}; "
@@ -1339,6 +1378,7 @@ class _HaulerProfilePopup(QWidget):
 
     def _save(self):
         capacity_text = self._capacity_edit.text().strip()
+        reminder_text = self._reminder_edit.text().strip()
         self._on_save(
             {
                 "ship": self._ship_edit.text().strip(),
@@ -1354,6 +1394,7 @@ class _HaulerProfilePopup(QWidget):
                 "ok": int(self._ok_edit.text() or DEFAULT_GRADING_THRESHOLDS["ok"]),
             },
             self._game_log_edit.text().strip() or None,
+            int(reminder_text) if reminder_text else DEFAULT_ACCEPT_REMINDER_SECONDS,
         )
         self.close()
 
@@ -1581,6 +1622,23 @@ class LogisticsHubModule(ModuleBase):
         action_row.addWidget(clear_btn)
         layout.addLayout(action_row)
 
+        # ---- accept reminder banner (hidden until needed) ---------------
+        # Added 2026-09-08: if Game.log still hasn't confirmed a contract
+        # ACCEPT_REMINDER_SECONDS after ACCEPT, this blinks until physically
+        # clicked — a safety net for the easy-to-forget "accept it in-game
+        # too" step, without ever touching game input itself. A QPushButton
+        # (not a QLabel) so any click on it — not just a precise target —
+        # dismisses it; the whole point is that a hurried/annoyed click
+        # still works. See docs/DECISIONS.md.
+        self._reminder_banner = QPushButton("")
+        self._reminder_banner.setVisible(False)
+        self._reminder_banner.clicked.connect(self._dismiss_accept_reminder)
+        self._reminder_blink_timer = QTimer()
+        self._reminder_blink_timer.setInterval(500)
+        self._reminder_blink_timer.timeout.connect(self._toggle_reminder_blink)
+        self._reminder_blink_on = False
+        layout.addWidget(self._reminder_banner)
+
         # ---- contracts list (own scroll area — see 2026-09-04 DECISIONS ---
         # entry: this used to share one scroll area with the ROUTE section
         # below it, and a freshly-scanned contract could leave that shared
@@ -1716,6 +1774,36 @@ class LogisticsHubModule(ModuleBase):
         if getattr(self, "_status_label", None) is not None:
             self._status_label.setText(msg)
 
+    def _show_accept_reminder(self, text: str):
+        """Blinks `_reminder_banner` until physically clicked. Also expands
+        and raises the card — showing this while the card is collapsed
+        would defeat the entire point. Called only from
+        `_recheck_accept_reminder`, never directly from `_on_review_accept`
+        (the reminder only ever fires after Game.log has had a chance —
+        and failed — to confirm the contract, not on ACCEPT itself)."""
+        self._reminder_banner.setText(text)
+        self._reminder_banner.setVisible(True)
+        self._reminder_blink_on = False
+        self._toggle_reminder_blink()
+        self._reminder_blink_timer.start()
+        if self._card_widget is not None:
+            self._card_widget.set_collapsed(False)
+            self._card_widget.raise_()
+
+    def _toggle_reminder_blink(self):
+        self._reminder_blink_on = not self._reminder_blink_on
+        bg = theme.ACCENT_AMBER if self._reminder_blink_on else theme.BG_VOID
+        self._reminder_banner.setStyleSheet(
+            f"background: {bg}; color: {theme.BG_VOID if self._reminder_blink_on else theme.ACCENT_AMBER}; "
+            f"border: 2px solid {theme.ACCENT_AMBER}; border-radius: {theme.RADIUS}px; "
+            f"padding: 6px 8px; font-family: {theme.FONT_DISPLAY}; font-weight: 800; "
+            f"font-size: {theme.fpx(10)}px; letter-spacing: 1px;"
+        )
+
+    def _dismiss_accept_reminder(self):
+        self._reminder_blink_timer.stop()
+        self._reminder_banner.setVisible(False)
+
     def _clear_error_state(self):
         """Make sure the card body (with the SET SCAN AREA button) is visible
         even if the host previously put this card into its error state due to
@@ -1798,8 +1886,10 @@ class LogisticsHubModule(ModuleBase):
         capacity = self.settings.get("cargo_capacity_scu")
         thresholds = self.settings.get("grading_thresholds")
         game_log_path = self.settings.get("game_log_path") or gamelog_verify.default_game_log_path()
+        reminder_seconds = self.settings.get("accept_reminder_seconds", DEFAULT_ACCEPT_REMINDER_SECONDS)
         popup = _HaulerProfilePopup(
-            self._card_widget, profile, capacity, thresholds, game_log_path, self._on_profile_saved,
+            self._card_widget, profile, capacity, thresholds, game_log_path, reminder_seconds,
+            self._on_profile_saved,
         )
         # Same reference-keeping fix as _review_popup below — a real
         # Qt.Window has no implicit reference keeping it alive once this
@@ -1809,11 +1899,15 @@ class LogisticsHubModule(ModuleBase):
         popup.move(anchor)
         popup.show()
 
-    def _on_profile_saved(self, profile: dict, capacity: int | None, thresholds: dict, game_log_path: str | None):
+    def _on_profile_saved(
+        self, profile: dict, capacity: int | None, thresholds: dict, game_log_path: str | None,
+        accept_reminder_seconds: int,
+    ):
         self.settings["hauler_profile"] = profile
         self.settings["cargo_capacity_scu"] = capacity
         self.settings["grading_thresholds"] = thresholds
         self.settings["game_log_path"] = game_log_path
+        self.settings["accept_reminder_seconds"] = accept_reminder_seconds
         self._save_settings()
         self._set_status(f"Profile saved: {profile.get('ship') or 'no ship set'}.")
         self._profile_popup = None
@@ -2411,9 +2505,58 @@ class LogisticsHubModule(ModuleBase):
             if self._pending_grade is not None:
                 self._pending_scan["grade_at_accept"] = self._pending_grade[0]
                 self._pending_scan["grade_reason_at_accept"] = self._pending_grade[1]
+            contract_id = self._pending_scan.get("id")
             self._add_contract(self._pending_scan, verify_result=verify_result)
+            self._schedule_accept_reminder(contract_id, verify_result)
         self._pending_scan = None
         self._review_popup = None
+
+    def _schedule_accept_reminder(self, contract_id: str | None, verify_result: dict) -> None:
+        """Queues a one-shot delayed recheck of Game.log for a contract
+        that didn't verify immediately at ACCEPT — added 2026-09-08. Most
+        real accepts won't verify instantly (the log line can lag, or you
+        haven't clicked Accept in-game yet at the exact moment you click
+        ACCEPT here), so this gives Game.log a second, later chance before
+        ever bothering you — the reminder only fires if it's STILL
+        unmatched after the delay, not on every miss. No-op if already
+        matched (nothing to recheck) or the reminder is disabled (0s)."""
+        if verify_result.get("matched") or not contract_id:
+            return
+        delay_seconds = self.settings.get("accept_reminder_seconds", DEFAULT_ACCEPT_REMINDER_SECONDS)
+        if not delay_seconds or delay_seconds <= 0:
+            return
+        QTimer.singleShot(delay_seconds * 1000, lambda: self._recheck_accept_reminder(contract_id))
+
+    def _recheck_accept_reminder(self, contract_id: str) -> None:
+        """Fires once, `accept_reminder_seconds` after ACCEPT. Re-verifies
+        against Game.log (mutating the contract's dropoffs in place on a
+        match, exactly like the original verify at ACCEPT — this is really
+        just that same check running again, later); shows the blinking
+        reminder only if it's still unmatched. Silently no-ops if the
+        contract isn't in the queue anymore (CLEAR/COMPLETE ran first) —
+        nothing to remind about."""
+        contract = next(
+            (c for c in self.settings.get("contracts", []) if c.get("id") == contract_id), None
+        )
+        if contract is None:
+            return
+        verify_result = self._verify_against_gamelog(contract)
+        self._append_debug_log({
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "note": "accept_reminder_recheck",
+            "contract_id": contract_id,
+            "gamelog_verify": verify_result,
+        })
+        if verify_result.get("matched"):
+            if verify_result.get("corrections"):
+                self._save_settings()
+                self._render_results()
+            return
+        reward = contract.get("reward")
+        pickups_text = self._entry_names(contract.get("pickups", []), self._locations.display_name)
+        self._show_accept_reminder(
+            f"⚠ DID YOU ACCEPT '{pickups_text}' ({reward or '?'} aUEC) IN-GAME? CLICK TO DISMISS"
+        )
 
     def _on_review_reject(self):
         if self._pending_scan is not None:
