@@ -965,6 +965,56 @@ def run_ui_state_checks() -> tuple[int, int]:
     mod._dismiss_accept_reminder()
     mod.settings["contracts"].remove(still_unmatched_contract)
 
+    # Tracker popout mirroring (2026-09-08) — the real gap the user found:
+    # the card's own banner is invisible if mobiOverlay is stowed while
+    # the Tracker popout is open. Two directions: a reminder already
+    # active must appear on a popout opened AFTER it fires, and a
+    # reminder firing while the popout is ALREADY open must reach it too.
+    name = "accept_reminder_appears_on_popout_opened_after_firing"
+    total += 1
+    mod._show_accept_reminder("test reminder text")
+    mod._open_route_popout()
+    ok = (
+        mod._popout_reminder_banner is not None
+        and mod._popout_reminder_banner.isHidden() is False
+        and mod._popout_reminder_banner.text() == "test reminder text"
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    popout_reminder_banner={mod._popout_reminder_banner!r}")
+
+    name = "accept_reminder_dismiss_from_either_banner_clears_both"
+    total += 1
+    mod._popout_reminder_banner.click()
+    ok = (
+        mod._reminder_banner.isHidden() is True
+        and mod._popout_reminder_banner.isHidden() is True
+        and mod._reminder_text is None
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    card hidden={mod._reminder_banner.isHidden()!r}, "
+              f"popout hidden={mod._popout_reminder_banner.isHidden()!r}, "
+              f"reminder_text={mod._reminder_text!r}")
+
+    name = "accept_reminder_firing_while_popout_open_reaches_both"
+    total += 1
+    mod._show_accept_reminder("second reminder")
+    ok = (
+        mod._reminder_banner.isHidden() is False
+        and mod._popout_reminder_banner.isHidden() is False
+        and mod._popout_reminder_banner.text() == "second reminder"
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    card hidden={mod._reminder_banner.isHidden()!r}, "
+              f"popout hidden={mod._popout_reminder_banner.isHidden()!r}")
+    mod._dismiss_accept_reminder()
+    mod._on_route_popout_closed()
+
     name = "recheck_accept_reminder_silent_on_late_match"
     total += 1
     with tempfile.TemporaryDirectory() as recheck_tmp_dir:

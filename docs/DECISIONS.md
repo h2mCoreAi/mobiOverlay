@@ -2838,3 +2838,31 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   first fixes it) — a test-script artifact, not a real app bug; not
   worth writing up further since it doesn't affect the actual running app
   (which paints continuously, not via one-shot `grab()` calls).
+
+- **2026-09-08 — Accept reminder now mirrors onto the Tracker popout.**
+  Real gap found by the user: the reminder banner only lived on the main
+  card, so scanning + accepting, popping out the Tracker, then stowing
+  mobiOverlay's main window (a real, fast workflow) made the reminder
+  permanently invisible — the exact scenario the reminder exists for.
+
+  `_show_accept_reminder()`/`_toggle_reminder_blink()`/
+  `_dismiss_accept_reminder()` now operate on `_reminder_banners()` (the
+  card's banner, plus the popout's own if the Tracker is open) instead of
+  a single fixed widget — clicking either one dismisses both, since
+  they're the same reminder. New `_reminder_text` instance var holds the
+  active reminder's text (`None` when nothing's active) so a Tracker
+  opened *after* a reminder already fired still shows it immediately
+  (`_open_route_popout` checks this on creation), not just reminders that
+  fire while it's already open.
+
+  The popout's banner is inserted into its OUTER layout (right after the
+  header, via `popout.layout().insertWidget(1, ...)`), deliberately NOT
+  into `_route_popout_layout` (the route-rows content layout) — that one
+  is fully cleared and rebuilt by `_populate_route_rows()` on every
+  render, which would silently delete a banner living there.
+
+  3 new regression checks: a reminder already active appears on a popout
+  opened afterward, dismissing from either banner clears both, and a
+  reminder firing while the popout is already open reaches both. 49/49
+  total checks pass. Verified visually — rendered the popout with an
+  active reminder and confirmed it renders correctly.

@@ -1424,6 +1424,11 @@ class LogisticsHubModule(ModuleBase):
         self._card_widget = None
         self._copy_route_revert_timer: QTimer | None = None
         self._route_popout: QWidget | None = None
+        # Mirrored onto the Tracker popout's own banner too, if it's open
+        # when a reminder fires — see `_reminder_banners()`. `None` means
+        # no reminder is currently active.
+        self._reminder_text: str | None = None
+        self._popout_reminder_banner: QPushButton | None = None
         self._route_popout_layout: QVBoxLayout | None = None
         self._route_popout_opacity_slider: QSlider | None = None
         self._reader = None
@@ -1826,15 +1831,36 @@ class LogisticsHubModule(ModuleBase):
         if getattr(self, "_status_label", None) is not None:
             self._status_label.setText(msg)
 
+    def _reminder_banners(self) -> list[QPushButton]:
+        """Every live reminder banner widget — the card's own (always
+        present) plus the Tracker popout's (only while it's open). Added
+        2026-09-08: a real gap the user found — the card banner is
+        invisible if mobiOverlay is stowed to its pill while the Tracker
+        popout is open (a real workflow: scan, accept, pop out, then stow
+        to get it out of the way), so the reminder needs to live wherever
+        you're actually likely to be looking, not just one fixed place."""
+        banners = [self._reminder_banner]
+        popout_banner = getattr(self, "_popout_reminder_banner", None)
+        if popout_banner is not None:
+            banners.append(popout_banner)
+        return banners
+
     def _show_accept_reminder(self, text: str):
-        """Blinks `_reminder_banner` until physically clicked. Also expands
-        and raises the card — showing this while the card is collapsed
-        would defeat the entire point. Called only from
-        `_recheck_accept_reminder`, never directly from `_on_review_accept`
-        (the reminder only ever fires after Game.log has had a chance —
-        and failed — to confirm the contract, not on ACCEPT itself)."""
-        self._reminder_banner.setText(text)
-        self._reminder_banner.setVisible(True)
+        """Blinks every live reminder banner (card + Tracker popout, if
+        open) until physically clicked — either one dismisses both, since
+        they're the same reminder. Also expands and raises the card —
+        showing this while the card is collapsed would defeat the entire
+        point (the Tracker popout, being always-on-top, doesn't have this
+        problem). Called only from `_recheck_accept_reminder`, never
+        directly from `_on_review_accept` (the reminder only ever fires
+        after Game.log has had a chance — and failed — to confirm the
+        contract, not on ACCEPT itself). `self._reminder_text` is kept so
+        a Tracker popout opened *after* this fires still shows it
+        (`_open_route_popout` checks this on creation)."""
+        self._reminder_text = text
+        for banner in self._reminder_banners():
+            banner.setText(text)
+            banner.setVisible(True)
         self._reminder_blink_on = False
         self._toggle_reminder_blink()
         self._reminder_blink_timer.start()
@@ -1845,16 +1871,20 @@ class LogisticsHubModule(ModuleBase):
     def _toggle_reminder_blink(self):
         self._reminder_blink_on = not self._reminder_blink_on
         bg = theme.ACCENT_AMBER if self._reminder_blink_on else theme.BG_VOID
-        self._reminder_banner.setStyleSheet(
+        style = (
             f"background: {bg}; color: {theme.BG_VOID if self._reminder_blink_on else theme.ACCENT_AMBER}; "
             f"border: 2px solid {theme.ACCENT_AMBER}; border-radius: {theme.RADIUS}px; "
             f"padding: 6px 8px; font-family: {theme.FONT_DISPLAY}; font-weight: 800; "
             f"font-size: {theme.fpx(10)}px; letter-spacing: 1px;"
         )
+        for banner in self._reminder_banners():
+            banner.setStyleSheet(style)
 
     def _dismiss_accept_reminder(self):
+        self._reminder_text = None
         self._reminder_blink_timer.stop()
-        self._reminder_banner.setVisible(False)
+        for banner in self._reminder_banners():
+            banner.setVisible(False)
 
     def _clear_error_state(self):
         """Make sure the card body (with the SET SCAN AREA button) is visible
@@ -3720,6 +3750,23 @@ class LogisticsHubModule(ModuleBase):
 
         self._route_popout = popout
         self._route_popout_layout = content_layout
+
+        # Own reminder banner, added 2026-09-08 — inserted into the
+        # popout's OUTER layout (index 1: right after the header, before
+        # the scroll area), never into `content_layout` itself, since
+        # `_populate_route_rows()` clears `content_layout` completely on
+        # every render and would delete a banner living there.
+        self._popout_reminder_banner = QPushButton("")
+        self._popout_reminder_banner.setVisible(False)
+        self._popout_reminder_banner.clicked.connect(self._dismiss_accept_reminder)
+        popout.layout().insertWidget(1, self._popout_reminder_banner)
+        # A reminder already active when the Tracker is opened (e.g. it
+        # fired while the popout was closed) must show up here too, not
+        # just wait for the next `_show_accept_reminder`/blink tick.
+        if self._reminder_text is not None:
+            self._popout_reminder_banner.setText(self._reminder_text)
+            self._popout_reminder_banner.setVisible(True)
+
         popout.show()
         self._render_results()
 
@@ -3736,6 +3783,7 @@ class LogisticsHubModule(ModuleBase):
         self._route_popout = None
         self._route_popout_layout = None
         self._route_popout_opacity_slider = None
+        self._popout_reminder_banner = None
         self._render_results()
 
     def _populate_contracts_rows(self, target_layout: QVBoxLayout, contracts: list[dict]):

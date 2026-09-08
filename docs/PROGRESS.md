@@ -693,6 +693,11 @@
   untouched. Verified visually (real card render, both tabs
   screenshotted), not just via tests. 46/46 checks pass. See
   DECISIONS.md, 2026-09-08.
+- **Fixed real gap: accept reminder now also shows on the Tracker
+  popout**, not just the main card — user caught that stowing the main
+  window while the Tracker is open made the reminder invisible entirely.
+  Either banner dismisses both. 49/49 checks pass. See DECISIONS.md,
+  2026-09-08.
 
 ## Next
 
