@@ -2995,3 +2995,369 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   `_verify_against_gamelog()` itself builds the exclude set from queued
   contracts and records its own claim on a match — not just
   `gamelog_verify.py`'s functions in isolation. 60/60 total checks pass.
+
+## 2026-09-08 — Salvage module shelved; mobiNotes scoped instead
+
+Explored a salvage-focused module (parallel to Logistics Hub's hauling
+focus). Ranked 10 candidate ideas down to 3, then checked each against
+the live UEX API directly (not just documentation, which was itself
+incomplete/unreliable for these endpoints):
+
+- No dedicated salvage endpoints exist at all.
+- RMC (Recycled Material Composite) does not appear as a commodity in
+  `commodities` at all — confirmed via a live query, not just docs.
+- `refineries_yields` is ore-only (Iron, Gold, Quantainium, Bexalite,
+  Corundum, etc. — mining outputs) — confirmed via a live query. No
+  salvage-material processing/yield data exists to build a "yield
+  calculator" from.
+- Trade-route and buy/rent-price-finder variants were also rejected on
+  reflection: salvage is a one-way sell (no round-trip loop to
+  optimize), and ship buy/rent is a rare one-time decision, not something
+  worth a persistent overlay card.
+
+**Shelved — not a UEX data gap that can be worked around, salvage
+mechanics simply aren't exposed by the API.** Revisit only if UEX adds
+salvage-specific endpoints.
+
+Pivoted instead to **mobiNotes** — a lightweight, no-API notes/organization
+module (tagged, paged, searchable). Researched three open-source note
+apps for ideas (ReText, QOwnNotes, Zim Desktop Wiki) — all three are
+GPL-licensed, so decided to borrow **ideas, not code**, to avoid pulling
+copyleft obligations into this module. Designed a data model meant to
+support incremental extension without a rewrite: a `meta: {}` field per
+note reserved for future fields (location tagging via the existing
+`LocationService`, cross-module reference links) and a `schema_version`
+root field for future format migrations. Full scope written to
+`docs/modules/mobi-notes.md`. Not built yet.
+
+- **2026-09-08 — mobiNotes built: `NotesStore` (`modules/mobi_notes/store.py`)
+  + card UI (`modules/mobi_notes/module.py`), architected and scaffolded
+  autonomously per user direction.** Page switcher implemented as a
+  `QComboBox` (with a `+ New Page...` sentinel that prompts for a name)
+  rather than a tab strip — scales to any number of pages without layout
+  work; can become real tabs later if that turns out to matter. Tag
+  filter is a second combo seeded from `STARTER_TAGS` plus every tag
+  actually in use. Search box filters title/body/tags live via
+  `NotesStore.search_text`. Pinned notes sort to the top of the list,
+  then most-recently-modified first. `refresh()` is a confirmed no-op —
+  there's no remote data, same shape as Crosshair.
+  Hit and fixed one real bug immediately: the module's first draft used
+  `from .store import NotesStore` — a normal relative import — which
+  throws `ImportError: attempted relative import with no known parent
+  package` at runtime, because `module_loader.py` loads every
+  `module.py` via `importlib.util.spec_from_file_location` (a file-path
+  import, not a real package member — see the Packaging decision above).
+  Fixed with the same file-path-import pattern `logistics_hub/module.py`
+  already uses to reach its own `gamelog_verify.py` sibling — copy the
+  pattern instead of reinventing it, this project already had the answer.
+  Storage lives at `app_root()/mobinotes_data.json`, external to
+  `modules/` for the same reason `config.json` is (see Packaging
+  decision) — added to `.gitignore` alongside the other per-install data
+  files.
+
+- **2026-09-08 — Copy/paste treated as a first-class mobiNotes feature,
+  not an afterthought — added per direct user request mid-scope, not
+  in the original mobi-notes.md scoping doc.** Three mechanisms, in
+  order of how much code each needed:
+  1. The editor's body field is a real `QTextEdit`, title/tags are
+     `QLineEdit` — native Ctrl+A/Ctrl+C/Ctrl+V/Ctrl+X already work with
+     zero extra code. Worth stating explicitly because it would have
+     been easy to reach for a custom-painted text widget elsewhere in
+     this app's HUD styling and lose that for free.
+  2. **COPY NOTE** button and each list row's small ⧉ icon button both
+     format a note (title, `[tags]`, blank line, body) as plain text
+     and push it onto the real system clipboard via
+     `QGuiApplication.clipboard()`.
+  3. **PASTE AS NEW** reads the clipboard, uses its first line (capped
+     60 chars) as the title and the full text as the body, creates a
+     note on the current page in one click — the common case being
+     "copy a chunk of Discord/Spectrum text, turn it into a note"
+     without retyping anything.
+  Verified against the real OS clipboard, not a mock: a separate
+  PowerShell process set clipboard content via
+  `System.Windows.Forms.Clipboard`, a real UI Automation `InvokePattern`
+  click fired PASTE AS NEW, and the resulting note in
+  `mobinotes_data.json` matched the injected text exactly. Same pattern
+  in reverse for COPY NOTE (click it, then read the clipboard back from
+  a separate process). This is the same "verify with the exact runtime
+  mechanism, not an isolated stand-in" lesson this project has hit
+  before (see the PySide6/Qt6 enum-mismatch entries above) applied to
+  the OS clipboard instead of Qt's event system.
+
+- **2026-09-08 — mobiNotes verified end-to-end live, not just unit-style
+  checks.** Full app launch confirmed all 6 modules (including the new
+  one) discover cleanly with no contract/duplicate-id errors. A real
+  note was typed into the actual running card via UI Automation
+  (`ValuePattern.SetValue` on the real `QLineEdit`/`QTextEdit` controls,
+  `InvokePattern.Invoke()` on the real SAVE button) and confirmed on
+  disk in `mobinotes_data.json` with the multi-line body and
+  comma-parsed tags intact — then re-screenshotted (`PrintWindow`, this
+  project's standard technique, run from source so the target PID is
+  the real window's own process, no PyInstaller-onefile child-process
+  indirection to work around) to confirm the list view, editor, and
+  second saved note all rendered correctly. Test note data removed from
+  `mobinotes_data.json` afterward — it was verification data, not a
+  real user note.
+
+- **2026-09-08 — mobiNotes bug fix: a newly-created empty page vanished
+  immediately, found by the user on first real use.** User tried
+  creating a "Salvaging" page twice and it never showed up in the list.
+  Root cause: `store.pages()` only returns pages that already have at
+  least one note on them (by design — pages are a note field, not a
+  stored entity); a page just created via `+ New Page...` has neither,
+  so the very next picker rebuild (which reads `store.pages()`) silently
+  dropped it and fell back to whatever page was first alphabetically —
+  before the user ever got a chance to save a note onto it. Fixed with a
+  `custom_pages` list in the module's own persisted settings
+  (`modules/mobi_notes/module.py`), unioned with `store.pages()`
+  everywhere the page picker is built, so a page stays visible from the
+  moment it's created regardless of whether it has notes yet. Caught
+  and fixed at code-review time (traced from the user's description,
+  not yet re-verified live at the moment of the fix — the live launch to
+  confirm it was deliberately deferred because the user was actively
+  playing Star Citizen at the time; see the entry below for how that
+  was actually confirmed, headless).
+
+- **2026-09-08 — Added rename-page and delete-page actions, plus removed
+  the 5 built-in default pages entirely — all three driven directly by
+  live user feedback in the same session, none from the original
+  mobi-notes.md scoping doc.**
+  - **Delete page** (✕ button next to the page dropdown): user asked
+    "is there a way to delete a page" after noticing DELETE only existed
+    for individual notes. Confirmed the intended behavior first (delete
+    the page's notes along with it, vs. blocking until empty) rather
+    than guessing — user chose "delete the notes too," matching the
+    existing single-note DELETE's confirm-then-destroy pattern.
+  - **Rename page** (✎ button): natural follow-up once delete existed —
+    added `NotesStore.rename_page(old, new)`, a bulk field update over
+    every note on `old` (bumps each note's `modified` timestamp), plus
+    UI wiring to keep `custom_pages` in sync with the new name.
+  - **Removed all 5 default pages** (Trade/Fleet/Org/Builds/Missions —
+    these were just the example list from the original scoping doc,
+    never meant to be permanent fixtures): user's own words, "get rid of
+    that 'always there' for the 5 pages. The first thing we should have
+    to do is create our first page." `NotesStore.pages()` no longer
+    unions in any hardcoded list — it returns only pages that genuinely
+    have notes. `module.py` now tracks a real "zero pages" state: the
+    card's whole main UI (search/list/editor/page-management row) sits
+    inside a `_content_widget` that starts hidden, with a separate
+    `_empty_state` widget ("No pages yet. Create one to start taking
+    notes." + a **+ CREATE FIRST PAGE** button wired to the same
+    `_prompt_new_page` the `+ New Page...` combo entry uses) shown
+    instead until at least one page exists (via `custom_pages` or a real
+    note) — checked once right after `create_card` and again after every
+    page create/rename/delete via a new `_update_empty_state()` helper.
+    Deleting the last remaining page correctly returns to this same
+    empty state rather than reintroducing a fallback default.
+  - **Verified entirely headless**, deliberately — the user was actively
+    playing Star Citizen through this exchange and asked not to have the
+    game interrupted by a real launch (see the earlier hard lesson about
+    never repositioning/launching windows onto the gaming display,
+    documented in memory and in this file's environment notes). Used
+    `QT_QPA_PLATFORM=offscreen` (no window ever painted to a real
+    display) to drive the actual `MobiNotesModule` instance — not a
+    reimplementation — through the full lifecycle: fresh install shows
+    the empty state with `current_page` still `None` and only the
+    `+ New Page...` sentinel in the combo; creating "Salvaging" (via a
+    mocked `QInputDialog.getText`, since a real modal can't be driven
+    headlessly) flips to the normal content view with the new page
+    selected; saving a note lands on it; renaming to "General" (mocked
+    dialog again) moves the note and leaves the old name with zero
+    notes; deleting the page (mocked `QMessageBox.question` returning
+    Yes) removes the note and returns to the empty state with zero
+    pages. One tooling snag hit along the way: `QWidget.isVisible()`
+    reads ancestor visibility, not just the widget's own `setVisible()`
+    call — same underlying gotcha as the 2026-09-03 Stow/Deploy tray
+    bug — so the empty-state/content-widget visibility assertions read
+    as permanently `False` until the fake card's top-level widget was
+    actually `.show()`-n (still fully offscreen, never touching a real
+    display or the game).
+
+## 2026-09-08 — mobiThrottle built: ThrottleWatch ported as a native module
+
+ThrottleWatch (a separate, already-shipping standalone SC overlay by the
+same author — `throttle_watch.py`, Tkinter) becomes mobiOverlay's 7th
+module, per direct user request. Architected first, in
+docs/modules/mobi-throttle.md, before writing any code — a deliberate
+rewrite, not a copy/paste port, since a lot of ThrottleWatch's complexity
+exists only to work around Tkinter limitations Qt doesn't have.
+
+**What Qt let us delete outright**, not just relocate:
+- The two-window transparent-color-key trick + Win32 `SetWindowRgn`/
+  `CreateRoundRectRgn` panel-shaping (`RECT`, `_apply_window_shape`) —
+  existed only because Tkinter has no real per-pixel alpha compositing on
+  Windows. `Qt.WA_TranslucentBackground` on a single `QWidget` gives real
+  alpha directly; one `paintEvent` now draws the background panel AND the
+  ticks/track/knob, matching the same recipe (Source composition +
+  explicit transparent clear) `host/main_window.py`'s own paintEvent
+  already uses.
+- ThrottleWatch's duplicated `draw_track`/`draw_track_h`,
+  `draw_ticks`/`draw_ticks_h` method pairs for vertical vs. horizontal —
+  collapsed into one drawing path with an along/cross coordinate swap
+  (`to_xy`), since the layout math is identical either way and only the
+  axis mapping differs.
+- The separate Settings `Toplevel` window, ThrottleWatch's own tray icon,
+  and its "Open Settings" hotkey — all folded into/replaced by the card,
+  since a module lives inside mobiOverlay's own window and hotkey system
+  rather than being its own standalone app.
+- Manual `SetProcessDpiAwareness` — Qt6 is per-monitor-DPI-aware by
+  default.
+
+**What ported over almost verbatim** because it was never Tk-specific to
+begin with: the tick/track/knob layout math (`TRACK_MARGIN`, `TICK_COUNT`,
+`panel_radius_for`'s corner-clearance logic), the deadzone-to-amber
+`value_to_color`/`lerp_color` gradient, `list_joysticks`/`find_joystick`
+(pure pygame calls) — though `find_joystick` dropped ThrottleWatch's
+hardcoded `DEVICE_NAME_HINT` ("VKBsim Gladiator EVO L") for a generic
+first-device-with-axes fallback, since mobiOverlay is meant to run on
+someone else's rig eventually, not just this machine's throttle.
+
+**Hotkeys reused, not reimplemented.** `host/hotkey.py`'s `GlobalHotkey`
+is already a proven port of ThrottleWatch's own `HotkeyState`/reconcile-
+watchdog design (ported earlier for the host's Stow/Deploy hotkey) — the
+module just instantiates two of its own instances (bar toggle, position
+toggle). Confirmed two independent low-level `keyboard.hook()` installs
+in the same process don't conflict.
+
+**One real host addition, not just a module-local change:**
+`ModuleBase.shutdown()`, a new optional hook every module can implement,
+called for every loaded module from a new `app.aboutToQuit` connection in
+`host/main.py`. Reason: `host/main_window.py`'s `relaunch()` already had
+to explicitly call `self._hotkey.shutdown()` before spawning the new
+process (2026-09-04 fix — Windows only reclaims a `WH_KEYBOARD_LL` hook
+when the owning *process* dies, not when a Python object is destroyed, so
+skipping this could let the old and new instance both hold a live hook
+for the same combo briefly). mobiThrottle introduces two *more* such
+hooks; without a generic module-shutdown hook, Relaunch would have had
+that exact bug again, just scoped to a module instead of the host. Fixed
+once, generically, for every future module that opens a similar
+process-wide resource instead of patching this one call site again.
+
+**Verified live against the real running app**, not just headlessly:
+- Headless smoke test first (`QT_QPA_PLATFORM=offscreen`): instantiated
+  the module, built its card, exercised `refresh()`'s error path (no
+  device configured with a bogus GUID → correctly raises, caught by the
+  host's error boundary), grabbed the bar widget's pixmap in both
+  orientations, called `shutdown()` — all clean.
+- Then launched the actual packaged entry point (`python host/main.py`)
+  alongside all 6 other modules — no errors in the log, real
+  auto-detected device (a genuinely connected VKB throttle) showed as
+  Connected in the card.
+- Screenshotted both the card and the floating bar via `PrintWindow`
+  (same convention as every other module's live verification — see the
+  Environment/process notes in docs/PROGRESS.md; never repositioned a
+  window onto the primary/gaming monitor to do this). Bar rendered
+  correctly: rounded translucent panel, ticks with corner clearance,
+  center line, knob.
+- Sent the real global toggle hotkey (`keyboard.send('ctrl+alt+o')`) and
+  confirmed via `GetWindowRect`/`IsWindowVisible` that the bar's actual
+  Win32 window visibility changed, then confirmed the new state persisted
+  to `config.json`. Sent the position-toggle hotkey with no positions
+  saved yet and confirmed it safely no-ops (no crash, no log error).
+- Found and fixed a real bug this way: the bar's hardcoded (200, 200)
+  default landed on the primary monitor, which is this machine's active
+  gaming display — the exact mistake `host/main_window.py`'s own
+  `_default_launch_position()` exists to avoid for the main window. Now
+  reuses that identical non-primary-monitor-selection logic
+  (`_default_bar_position()`), applied only when no position has ever
+  been saved for the bar.
+
+**Not yet verified — needs a hand on the actual hardware, not just fed
+synthetic values:** the knob tracking a real throttle movement live, and
+Home Chirp's audible beep actually firing on a real center crossing. The
+poll → paint pipeline itself is proven correct (headless synthetic-value
+test above); what's unverified is only the last link to real human input,
+which no amount of automation can substitute for.
+
+## 2026-09-08 — mobiThrottle: tiny spinbox arrows replaced with a stepper
+
+First real user feedback on mobiThrottle, after testing it live with the
+real throttle: "working well," with one usability complaint — "hard to
+click on the buttons/arrows... that increment or decrement counts on
+fields." The card's Axis, Hold time, and Home Chirp count/cooldown fields
+were stock `QSpinBox`/`QDoubleSpinBox`, whose native up/down arrows are
+only a few px tall (visibly shorter than half the field's own height) —
+an easy miss, especially at the compact width these fields sit in inside
+a card.
+
+Fixed by replacing all four with a new `_Stepper(QWidget)`: a value label
+flanked by explicit `[−]`/`[+]` `QPushButton`s at a fixed 26×24px, themed
+the same as Crosshair's existing nudge buttons (same precedent — that
+module already solved "give the user a big enough click target for a
+small increment/decrement action" for its offset nudging). Exposes
+`value()`/`setValue()`/`valueChanged` so call sites needed almost no
+changes — same method names as the QSpinBox API it replaces.
+
+One coercion gotcha caught during verification: `_Stepper.valueChanged`
+is declared `Signal(float)` (so one class handles both int and
+float-with-decimals fields), but Qt's signal marshaling coerces a
+Python `int` to `float` in transit even when the value is a whole
+number. The two settings that must stay integers (`home_chirp_count`,
+`position_hold_ms`) now cast with an explicit `int(value)` in their
+`_on_*_changed` handlers — without it, `config.json` silently drifted to
+storing `2.0`/`50.0` instead of `2`/`50` for those fields.
+
+Verified headlessly: incrementing/decrementing, clamping at both the
+configured min and max (chirp count 1-10, hold-ms 0-5000, etc.), and
+confirming the final `config.json` values land as the correct Python
+type (`int`, `int`, `float` for cooldown) after driving the buttons
+programmatically.
+
+**Process-hygiene lesson from this pass, worth remembering for the next
+live-verification round on any module:** while re-testing this fix
+against the real running app, a second `python host/main.py` instance
+was launched for screenshotting *without first checking whether the
+user's own instance was already running* — it was, mid-session, with
+settings the user had already hand-tuned (axis index, opacity, chirp
+count/cooldown). A `keyboard.send('f3')` sent to test that second
+instance's deploy/stow behavior is a real OS-level keyboard event with
+no notion of "which process should receive this" — a low-level
+`keyboard.hook()` in *every* running instance sees it, so it went to the
+user's live instance too. No lasting harm this time (config and window
+state were both confirmed intact afterward), but the risk is real:
+check `Get-CimInstance Win32_Process -Filter "Name='python.exe'"` (or
+equivalent) for an already-running instance before launching a second
+one to verify a fix, and prefer the headless smoke-test path (which
+already covers hotkey/logic correctness without touching a real keyboard
+hook) over sending an actual global hotkey once a live user instance
+might be running.
+
+## 2026-09-08 — mobiThrottle: click-through toggle
+
+Direct user request after playing with the bar live: "I occasionally
+click and drag the bar by accident while playing and would like a toggle
+that makes it so it is completely click through while toggled."
+
+Added a "Click-through (disable drag/resize)" checkbox to the card, right
+under the SHOW/HIDE BAR button. Enabling it calls a new
+`_ThrottleBar.set_click_through()`, which sets
+`Qt.WA_TransparentForMouseEvents` on the bar widget — the exact mechanism
+`modules/crosshair/module.py`'s `_CrosshairOverlay` already uses so its
+reticle never intercepts an aim click. With the attribute set, every
+mouse event on the bar's screen area passes straight through to whatever
+is underneath (the game) instead of reaching `mousePressEvent`/
+`mouseMoveEvent`/`mouseReleaseEvent` at all — so drag-to-move and
+right-drag-to-resize are structurally impossible while it's on, not just
+suppressed by a flag check.
+
+`set_click_through()` also clears any in-progress `_drag_offset`/
+`_resize_start` state when called, so toggling click-through mid-drag
+(via the checkbox, reachable at any time) can't leave a stale drag
+anchor that would otherwise jump the bar the next time click-through is
+switched back off and a fresh drag begins.
+
+New setting `click_through` (default `False`, so drag/resize behave
+exactly as before out of the box) — persists via the same
+`self.settings`/`config.set_module_settings()` path as everything else.
+No hotkey for this one; it's a deliberate, occasional toggle (arm it
+before undocking to fly, presumably), not something reached for
+mid-combat the way Stow/Deploy is.
+
+Verified headlessly: default state is click-through off (both the
+checkbox and the underlying Qt attribute), toggling the checkbox flips
+`WA_TransparentForMouseEvents` and `config.json`'s `click_through` in
+both directions correctly. Not yet confirmed with a real mouse against
+the real running game — same category as the axis-tracking/Home-Chirp
+checks still pending a hands-on pass, and per the process-hygiene note
+above, deliberately not verified by spawning a second live instance or
+sending synthetic mouse events against the user's already-running one.

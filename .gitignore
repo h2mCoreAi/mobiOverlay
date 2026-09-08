@@ -12,3 +12,4 @@ dist/
 locations_cache.json
 logistics_hub_debug.jsonl
 logistics_hub_completed.jsonl
+mobinotes_data.json

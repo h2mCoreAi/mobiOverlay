@@ -127,7 +127,22 @@ def safe_create_card(module, parent):
     return card
 
 
+def _install_excepthook():
+    """PySide6 does not stop the process on an exception raised inside a Qt
+    slot/callback (button click, timer, drag handler, hotkey signal) — it
+    just prints to stderr via sys.excepthook, which the packaged exe
+    (console=False) sends nowhere, so these were invisible AND unlogged.
+    Only module refresh() has its own boundary (wrap_refresh); this covers
+    everything else so a bug in, say, a drag handler degrades instead of
+    silently vanishing.
+    """
+    def _hook(exc_type, exc_value, exc_tb):
+        logger.error("Unhandled exception", exc_info=(exc_type, exc_value, exc_tb))
+    sys.excepthook = _hook
+
+
 def main():
+    _install_excepthook()
     startup_start = time.monotonic()
     app = QApplication(sys.argv)
     # MainWindow uses Qt.Tool (see main_window.py), which Qt excludes from
@@ -185,6 +200,14 @@ def main():
             timer.timeout.connect(safe_refresh)
             timer.start(interval_s * 1000)
             timers.append(timer)
+
+    def _shutdown_modules():
+        for module in modules:
+            try:
+                module.shutdown()
+            except Exception:
+                logger.exception("Module '%s' shutdown() failed", getattr(module, "module_id", "?"))
+    app.aboutToQuit.connect(_shutdown_modules)
 
     window.show()
     splash.finish(window)

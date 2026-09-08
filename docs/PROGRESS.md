@@ -1,12 +1,104 @@
 # Progress
 
-## Status: Location-service plan — Phases 1-4 done (shared service,
-## Logistics Hub migrated, real-distance routing, Trade Route
-## Optimizer/Commodity Prices migrated) + extensive live
-## hardening; Phase 5 (shared current
-## location) not started
+## Status: mobiThrottle built, live-verified, and user-confirmed working
+## with a real throttle (7th module) — one usability bug found in real use
+## (tiny spinbox arrows) and fixed same day. mobiNotes built and
+## live-verified (6th module). Location-service plan — Phases 1-4 done
+## (shared service, Logistics Hub migrated, real-distance routing, Trade
+## Route Optimizer/Commodity Prices migrated) + extensive live hardening;
+## Phase 5 (shared current location) not started
 
 ## Done
+
+- **mobiThrottle built (7th module)** — a from-scratch rewrite of
+  ThrottleWatch (a separate, already-shipping standalone SC overlay,
+  `D:\Documents\Mitch\Star Citizen\ThrottleWatch\throttle_watch.py`,
+  Tkinter) as a native mobiOverlay module, not a copy/paste port. Full
+  architecture in docs/modules/mobi-throttle.md, written before any code.
+  Everything the standalone app did carries over (live throttle-axis bar
+  with tick/track/knob and deadzone-to-amber coloring, drag-to-move/
+  right-drag-to-resize, vertical/horizontal orientation, device/axis
+  picker with reverse, two saved SCM/NAV positions with a hotkey toggle,
+  Home Chirp), now driven entirely from the card instead of a separate
+  Settings window. Dropped as redundant once it's a module: the standalone
+  Settings Toplevel, its own tray icon, the Open-Settings hotkey, and —
+  the biggest simplification — the two-window transparent-color-key +
+  `SetWindowRgn`/`CreateRoundRectRgn` panel-shaping hack, which existed
+  only because Tkinter has no real per-pixel alpha on Windows. Qt's
+  `Qt.WA_TranslucentBackground` replaces all of that with one `QWidget`
+  and a single `paintEvent`. Vertical/horizontal is one shared drawing
+  path (an along/cross coordinate swap) rather than ThrottleWatch's
+  duplicated draw_track/draw_track_h-style method pairs.
+  Hotkeys reuse `host/hotkey.py`'s `GlobalHotkey` as-is (already a proven
+  port of ThrottleWatch's own `HotkeyState`) — the module just owns two
+  instances of it (bar toggle, position toggle), no host changes needed
+  for that part. Added a real host extension point though:
+  `ModuleBase.shutdown()`, called for every module via a new
+  `app.aboutToQuit` hook in `host/main.py`, so a module-owned global
+  keyboard hook gets released before Relaunch spawns a new process — the
+  exact class of bug docs/DECISIONS.md's 2026-09-04 Relaunch fix addressed
+  for the host's own Stow/Deploy hotkey, now fixed generically instead of
+  just for that one call site. New dependency: `pygame-ce` (joystick
+  reads), already installed and confirmed working.
+  **Verified live, not just headlessly**: launched the real packaged app
+  (`python host/main.py`) alongside all 6 other modules with no errors;
+  screenshotted (via PrintWindow, same convention as every other module —
+  never repositioned onto the primary/gaming monitor) both the card
+  (device auto-detected the real connected VKB throttle, all sections
+  render correctly) and the floating bar itself (rounded translucent
+  panel, ticks, track, knob all correct); sent the real toggle hotkey
+  (Ctrl+Alt+O) via the `keyboard` library and confirmed the bar's actual
+  Win32 window visibility changed and the state persisted to
+  `config.json`; sent the position-toggle hotkey with no positions saved
+  yet and confirmed it safely no-ops. Also fixed a real bug found during
+  this verification: the bar's hardcoded default (200, 200) landed on the
+  primary/gaming monitor on this machine — switched to the same
+  non-primary-monitor default helper host/main_window.py's own window
+  already uses (`_default_launch_position`).
+  **Human check still needed (the one thing that can't be verified
+  without a hand on the hardware):** move the real throttle and confirm
+  the knob actually tracks it live, and that Home Chirp audibly beeps
+  crossing center — the poll/paint pipeline is proven correct in
+  isolation (fed synthetic axis values headlessly) but never against a
+  hand physically moving the lever.
+
+- **mobiThrottle: click-through toggle added**, direct user request — a
+  "Click-through (disable drag/resize)" checkbox in the card sets
+  `Qt.WA_TransparentForMouseEvents` on the floating bar (same mechanism
+  Crosshair's reticle already uses so it never intercepts an aim click),
+  making every mouse event pass straight through to the game instead of
+  reaching the bar's drag/resize handlers. Fixes an accidental
+  left-click-drag on the bar moving it mid-flight while playing. Defaults
+  off; persists to `config.json` as `click_through`. Verified headlessly
+  (attribute flips correctly both directions, setting persists).
+
+- **mobiThrottle: user tested live with the real throttle, confirmed
+  "working well" — the one issue reported was the card's numeric fields
+  (Axis, Hold time, Home Chirp count/cooldown) using stock `QSpinBox`/
+  `QDoubleSpinBox` up/down arrows, which are only a handful of px tall
+  and hard to hit reliably. Fixed same day: replaced all four with a
+  custom `_Stepper` widget (`[−] value [+]`, 26×24px buttons) matching
+  the nudge-button style Crosshair already established, giving each a
+  real click target instead of a sliver. Verified headlessly (increment/
+  decrement, clamping at both ends, and that values land back in
+  `config.json` as the correct int/float types — a `Signal(float)`
+  crossing coerces even a whole-number Python int to float in transit,
+  so the two integer settings (`home_chirp_count`, `position_hold_ms`)
+  need an explicit `int()` cast on the receiving end).
+  **Process-hygiene note for future live-verification passes:** while
+  re-testing this fix, a second app instance was launched for screenshot
+  verification without first checking whether the user's own instance
+  was already running — it was (mid-session, with settings the user had
+  already tuned by hand). A global hotkey sent to test deploy/stow
+  (`keyboard.send('f3')`) went to *both* instances at once, since a
+  low-level keyboard hook has no notion of which process "should" get an
+  OS-level key event. No harm resulted this time (the user's config and
+  window state were both intact afterward), but the lesson: check for a
+  running instance (`Get-CimInstance Win32_Process -Filter
+  "Name='python.exe'"` or similar) before launching a second one for
+  verification, and never send a real global-hotkey keystroke once one
+  might be live — a headless smoke test covers the same logic without
+  that risk.
 
 - Project pivoted from a Game.log combat-event overlay to a UEX-API-backed
   modular trading overlay (see DECISIONS.md for why)
@@ -729,6 +821,48 @@
   DECISIONS.md, 2026-09-08.
 
 ## Next
+
+- **mobiNotes module — built and live-verified (2026-09-08), the app's
+  6th module.** `modules/mobi_notes/store.py` (`NotesStore` — all
+  read/write/query logic, isolated from the UI) + `module.py` (card:
+  page combo with `+ New Page...`, tag filter, search, pinned notes
+  sorted first, NEW/SAVE/DELETE, and copy/paste as a first-class feature
+  per direct user request — COPY NOTE + per-row ⧉ copy both push
+  formatted text to the real system clipboard, PASTE AS NEW builds a
+  note from whatever's on it). Verified end-to-end: full app launch
+  with all 6 modules loading cleanly, a real note typed and saved via
+  UI Automation round-tripping correctly to `mobinotes_data.json`, and
+  copy/paste confirmed against the real OS clipboard from a separate
+  process (not a stub). One real bug fixed along the way: a relative
+  `from .store import` doesn't work under this project's file-path
+  module-loading scheme — fixed with the same pattern
+  `logistics_hub/module.py` already uses for `gamelog_verify.py`. See
+  docs/modules/mobi-notes.md and DECISIONS.md, 2026-09-08, for the full
+  writeup. Page switcher is a dropdown for now, not tabs — noted as an
+  open question if real usage calls for changing that.
+
+- **mobiNotes page management added same day (2026-09-08), all three
+  driven by real first-use feedback:** a real bug (a newly-created empty
+  page vanished immediately — fixed with a `custom_pages` setting that
+  keeps a page visible before its first note), a new **rename page** (✎)
+  action that bulk-moves every note on a page to a new name, and a new
+  **delete page** (✕) action (confirms, then deletes the page's notes
+  with it). Also **removed the 5 built-in default pages entirely** per
+  direct user request ("the first thing we should have to do is create
+  our first page") — `NotesStore.pages()` now returns only pages that
+  actually have notes, and the card shows an empty-state "create your
+  first page" prompt instead of the normal UI until at least one page
+  exists. Verified the full lifecycle (empty state → create page → save
+  note → rename → delete → back to empty state) entirely **headless**
+  (`QT_QPA_PLATFORM=offscreen`, no window ever painted to a real
+  display) rather than a normal launch, since the user was actively
+  playing Star Citizen through this session and asked not to have that
+  interrupted. See docs/modules/mobi-notes.md and DECISIONS.md,
+  2026-09-08, for the full writeup. **Human check still worth doing**:
+  the rename/delete buttons and empty-state prompt were exercised via
+  mocked dialogs headlessly, not by a human actually clicking them in
+  the real running app — worth a quick real-mouse pass next time the
+  app can be launched without interrupting a play session.
 
 - **Known issue: accept reminder banner clips in the Tracker popout
   instead of wrapping.** Noted 2026-09-08 by the user, live-testing —

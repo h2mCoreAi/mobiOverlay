@@ -27,3 +27,22 @@ class ModuleBase:
         manual refresh. Exceptions propagate to the host's error boundary,
         which puts the card into its error state rather than crashing."""
         raise NotImplementedError
+
+    def shutdown(self):
+        """Optional: release any process-wide resource a module opened for
+        its own lifetime — a global keyboard hook, a background thread/timer
+        outside Qt's normal widget-destruction path, an open device handle.
+        Default no-op; most modules need nothing here (a card being torn
+        down along with the rest of the Qt widget tree is enough on its
+        own). The host calls this for every loaded module on app quit —
+        including a Relaunch, which self-tests exactly this: relaunch()
+        already had to explicitly unhook the host's own Stow/Deploy hotkey
+        before spawning the new process (see docs/DECISIONS.md, 2026-09-04)
+        because Windows only reclaims a WH_KEYBOARD_LL hook when the owning
+        *process* actually dies, not when a Python object is merely
+        destroyed — otherwise the old and new instance could briefly hold a
+        live hook for the same combo at once. Any module doing the same
+        thing (see modules/mobi_throttle) needs the identical cleanup, so
+        it's a first-class hook here rather than a one-off fixed to the host
+        window alone."""
+        pass
