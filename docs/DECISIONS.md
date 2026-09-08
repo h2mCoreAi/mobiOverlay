@@ -2721,3 +2721,32 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   pass (2 new: window-boundary fixture moved from -600s to -2500s to stay
   a genuine out-of-window case at the new 1800s size; new
   `gamelog_nearest_event_gap_ignores_window` check).
+
+- **2026-09-08 — Verify window made config-editable, and the miss on the
+  second test explained.** Two things from the user after the window
+  widening above: (1) they realized the second test's real miss was
+  likely their own workflow, not the window — they scanned+accepted in
+  the app but forgot to accept in-game at all, so there was nothing in
+  Game.log to find regardless of window size; (2) a fixed window will
+  eventually collide with overlapping contracts (two hauls accepted
+  close together), so it needs to be tunable without a code
+  change/rebuild every time.
+
+  `_verify_against_gamelog()` now reads `window_seconds` from
+  `self.settings.get("game_log_verify_window_seconds",
+  gamelog_verify.DEFAULT_WINDOW_SECONDS)` — i.e. straight from
+  `config.json`'s `modules.logistics_hub.game_log_verify_window_seconds`
+  key (that block *is* `self.settings`, confirmed against the real
+  config.json). Editing that key and relaunching changes the window with
+  no code change. `DEFAULT_WINDOW_SECONDS` (1800) stays the fallback when
+  the key isn't present. New regression check
+  `verify_against_gamelog_respects_config_window_override` — a real temp
+  Game.log with one event at -1000s, proving the default window includes
+  it and a config override of 500s excludes it, through the actual
+  `_verify_against_gamelog()` call path (not just `gamelog_verify.py`'s
+  own functions in isolation). 39/39 total checks pass.
+
+  No UI added for this — it's a tuning knob for iterating on the
+  window size, not a normal per-user setting, and adding a UI field
+  would suggest otherwise. Edit `config.json` directly if it needs
+  changing.

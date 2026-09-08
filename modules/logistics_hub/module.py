@@ -2367,7 +2367,19 @@ class LogisticsHubModule(ModuleBase):
             }
         try:
             now = datetime.now(timezone.utc)
-            events = gamelog_verify.find_recent_haul_events(log_path, now)
+            # Read straight from config.json's modules.logistics_hub block
+            # (self.settings *is* that block — see host/config.py) rather
+            # than a fixed constant, so tuning this doesn't need a code
+            # change/rebuild — just edit
+            # config.json -> modules.logistics_hub.game_log_verify_window_seconds
+            # and relaunch. Added 2026-09-08 per user direction, expecting
+            # to need real tuning as more real sessions run (see
+            # nearest_haul_event_gap_seconds below, logged for exactly
+            # that purpose) without it turning into a code-edit each time.
+            window_seconds = self.settings.get(
+                "game_log_verify_window_seconds", gamelog_verify.DEFAULT_WINDOW_SECONDS
+            )
+            events = gamelog_verify.find_recent_haul_events(log_path, now, window_seconds=window_seconds)
             result = gamelog_verify.verify_contract(contract, events, self._locations.display_name)
             # Logged unconditionally (not just on a miss) so a real
             # distribution builds up in the debug log over time — see
@@ -2377,7 +2389,7 @@ class LogisticsHubModule(ModuleBase):
             nearest_gap = gamelog_verify.nearest_haul_event_gap_seconds(log_path, now)
             return {
                 **base, "events_in_window": len(events),
-                "window_seconds": gamelog_verify.DEFAULT_WINDOW_SECONDS,
+                "window_seconds": window_seconds,
                 "nearest_haul_event_gap_seconds": nearest_gap,
                 **result,
             }

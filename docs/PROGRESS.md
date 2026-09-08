@@ -669,8 +669,13 @@
   permanent `nearest_haul_event_gap_seconds` diagnostic logged on every
   attempt so future window sizing is based on a real distribution, not
   another guess. **Still not confirmed to actually match a real
-  contract yet** — next test is the one to watch. 38/38 checks pass.
-  See DECISIONS.md, 2026-09-08.
+  contract yet** — the second test's miss turned out to likely be the
+  user forgetting to accept in-game at all (not a window problem). The
+  window is now a `config.json` value
+  (`modules.logistics_hub.game_log_verify_window_seconds`, default
+  1800s) instead of a hardcoded constant, so it can be tuned without a
+  rebuild once overlapping contracts make that necessary. 39/39 checks
+  pass. See DECISIONS.md, 2026-09-08.
 
 ## Next
 

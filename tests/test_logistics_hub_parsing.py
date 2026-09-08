@@ -747,6 +747,7 @@ def run_ui_state_checks() -> tuple[int, int]:
     `_route_order` even when it's now empty, not only when it's non-empty."""
     import os
     import tempfile
+    from datetime import datetime, timedelta, timezone
     from pathlib import Path
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -849,6 +850,42 @@ def run_ui_state_checks() -> tuple[int, int]:
     if not ok:
         failures += 1
         print(f"    verify_result={verify_result!r}")
+
+    # game_log_verify_window_seconds (2026-09-08) — a real config.json
+    # value (modules.logistics_hub.game_log_verify_window_seconds), so the
+    # window can be tuned by editing the file and relaunching, no rebuild.
+    # Real temp Game.log with one event at -1000s: the default 1800s
+    # window includes it, a config override of 500s must exclude it.
+    name = "verify_against_gamelog_respects_config_window_override"
+    total += 1
+    with tempfile.TemporaryDirectory() as gamelog_tmp_dir:
+        window_test_log = Path(gamelog_tmp_dir) / "Game.log"
+        event_ts = (datetime.now(timezone.utc) - timedelta(seconds=1000)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+        window_test_log.write_text(
+            f'<{event_ts}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
+            '"Contract Accepted:  Rookie | Small Haul | Baijini Point > CRU-L1: " '
+            '[9] to queue. New queue size: 1, MissionId: [22222222-2222-2222-2222-222222222222], '
+            'ObjectiveId: [] [Team_CoreGameplayFeatures][Missions][Comms]\n',
+            encoding="utf-8",
+        )
+        mod.settings["game_log_path"] = str(window_test_log)
+        default_window_result = mod._verify_against_gamelog(contract2)
+        mod.settings["game_log_verify_window_seconds"] = 500
+        narrow_window_result = mod._verify_against_gamelog(contract2)
+        # Restore isolation for every check after this one.
+        mod.settings["game_log_path"] = str(Path(tempfile.gettempdir()) / "mobiov_test_no_such_gamelog.log")
+        del mod.settings["game_log_verify_window_seconds"]
+        ok = (
+            default_window_result["window_seconds"] == 1800
+            and default_window_result["events_in_window"] == 1
+            and narrow_window_result["window_seconds"] == 500
+            and narrow_window_result["events_in_window"] == 0
+        )
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    default_window_result={default_window_result!r}")
+            print(f"    narrow_window_result={narrow_window_result!r}")
 
     # CLEAR LOG button (2026-09-08) — `_clear_debug_log()` writes via
     # `paths.app_root()` directly, NOT through the already-patched
