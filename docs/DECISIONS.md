@@ -2698,3 +2698,26 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   checks pass. Also manually cleared the real `logistics_hub_debug.jsonl`
   once by hand before this button existed, per user request, so their
   next test starts clean.
+
+- **2026-09-08 — Verify window widened 180s → 1800s, plus a permanent
+  tracking signal for tuning it further.** First real live test (see
+  above) came back `events_in_window: 0` — the real in-game accept was
+  ~70 minutes before the app's ACCEPT click (board framed, reviewed,
+  decided — ordinary play, not an edge case), and 180s never had a
+  chance. Raised `DEFAULT_WINDOW_SECONDS` to 1800 (30 min). This doesn't
+  trade accuracy for coverage the way it might elsewhere: matching still
+  requires real origin/destination name overlap
+  (`verify_contract`'s scoring), not just recency, so a wider window only
+  grows the candidate pool scored, not the odds of a false match.
+
+  Per user direction, this needs to keep being data, not another one-off
+  guess: new `gamelog_verify.nearest_haul_event_gap_seconds()` — finds
+  the closest Contract Accepted/Deliver line to "now" ignoring any window
+  at all — logged into every `gamelog_verify` debug entry alongside the
+  window size actually used (`window_seconds`), win or lose. Over time
+  `logistics_hub_debug.jsonl` builds a real distribution of actual
+  accept-to-app-accept gaps, which is what the *next* window decision
+  should be sized from instead of guessing again. 38/38 total checks
+  pass (2 new: window-boundary fixture moved from -600s to -2500s to stay
+  a genuine out-of-window case at the new 1800s size; new
+  `gamelog_nearest_event_gap_ignores_window` check).

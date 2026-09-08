@@ -661,8 +661,16 @@
   `candidates_considered`, log path/existence, event count — always
   present in the debug log's `gamelog_verify` field, not just on a
   match) and a **CLEAR LOG button** on the card (wipes
-  `logistics_hub_debug.jsonl` only, for easy re-testing). 36/36 checks
-  pass. See DECISIONS.md, 2026-09-08.
+  `logistics_hub_debug.jsonl` only, for easy re-testing).
+
+  Second real test used those diagnostics to find a real problem: the
+  180s verify window was far too tight (real in-game accept was ~70 min
+  before the app's ACCEPT click) — widened to 1800s (30 min), plus a
+  permanent `nearest_haul_event_gap_seconds` diagnostic logged on every
+  attempt so future window sizing is based on a real distribution, not
+  another guess. **Still not confirmed to actually match a real
+  contract yet** — next test is the one to watch. 38/38 checks pass.
+  See DECISIONS.md, 2026-09-08.
 
 ## Next
 

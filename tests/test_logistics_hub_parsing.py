@@ -603,10 +603,13 @@ def run_gamelog_verify_checks() -> tuple[int, int]:
         'ObjectiveId: [dropoff_fc5c71cc-df3c-48c8-8a0a-72782541be8d_1] '
         '[Team_CoreGameplayFeatures][Missions][Comms]'
     )
-    # Outside the default 180s window — must not show up in results even
-    # though it's a perfectly well-formed line.
+    # Outside the default window (1800s, widened 2026-09-08 from an initial
+    # 180s guess — see DECISIONS.md) — must not show up in results even
+    # though it's a perfectly well-formed line. -2500s (~42 min) is
+    # comfortably past 1800s so this stays a real "outside the window"
+    # case regardless of further window tuning within that range.
     stale_line = (
-        f'<{ts(-600)}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
+        f'<{ts(-2500)}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
         '"Contract Accepted:  Rookie | Small Haul | Baijini Point > CRU-L1: " '
         '[9] to queue. New queue size: 1, MissionId: [11111111-1111-1111-1111-111111111111], '
         'ObjectiveId: [] [Team_CoreGameplayFeatures][Missions][Comms]'
@@ -633,6 +636,21 @@ def run_gamelog_verify_checks() -> tuple[int, int]:
         if not ok:
             failures += 1
             print(f"    events={events!r}")
+
+        # nearest_haul_event_gap_seconds() ignores the window entirely —
+        # added 2026-09-08 (alongside widening the default window to 1800s
+        # off one real ~70-minute gap) so future window decisions have a
+        # real distribution to look at instead of another guess. The
+        # closest haul line in this fixture is `accepted_line` at -5s, not
+        # the -600s stale line, regardless of what window a caller asks for.
+        name = "gamelog_nearest_event_gap_ignores_window"
+        total += 1
+        gap = gamelog_verify.nearest_haul_event_gap_seconds(log_path, now)
+        ok = gap is not None and abs(gap - 5) < 0.5
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    gap={gap!r}")
 
         # A fake contract shaped like _build_contract's output: one pickup,
         # one dropoff, with a dropoff commodity OCR got wrong (name typo'd,

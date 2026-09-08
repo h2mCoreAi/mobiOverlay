@@ -69,10 +69,17 @@ _DELIVER_RE = re.compile(
 )
 
 # How far from "now" (wall clock, at the moment ACCEPT is clicked) a log
-# line can be and still count as "this scan" — generous because there's no
-# guarantee the player clicked Accept in-game and in mobiOverlay at the
-# same instant, only that they're the same session, close in time.
-DEFAULT_WINDOW_SECONDS = 180
+# line can be and still count as "this scan". Raised from an initial guess
+# of 180s to 30 minutes after the first real live test: the user's real
+# in-game accept was ~70 minutes before their app-side ACCEPT click
+# (framed the board, reviewed, decided — real play, not an edge case), and
+# 180s found nothing at all (`events_in_window: 0`, see docs/DECISIONS.md,
+# 2026-09-08). A wide window doesn't trade away accuracy the way it might
+# elsewhere — matching still requires real origin/destination name overlap
+# (`verify_contract`'s scoring), not just recency, so widening the window
+# only grows the candidate pool it scores, not the odds of a false match.
+# Worth tracking whether even this is enough as more real sessions run.
+DEFAULT_WINDOW_SECONDS = 1800
 
 
 def default_game_log_path() -> str | None:
@@ -184,6 +191,33 @@ def find_recent_haul_events(
         entry["legs"] = legs_by_mission.get(mission_id, [])
         events.append(entry)
     return events
+
+
+def nearest_haul_event_gap_seconds(log_path: str, now: datetime) -> float | None:
+    """How far outside any window the *closest* Contract Accepted/Deliver
+    line in the tail actually is — deliberately ignores `window_seconds`
+    entirely. Added 2026-09-08 alongside widening the default window from
+    180s to 1800s (see that change's comment): that jump was sized off one
+    real data point (~70 min). This is what makes the next window decision
+    data, not another guess — every verify attempt logs this regardless of
+    whether it matched, so a real distribution builds up in
+    `logistics_hub_debug.jsonl` over time. `None` means the tail has no
+    Contract Accepted/Deliver line at all, not that one was found at zero
+    gap."""
+    best_gap: float | None = None
+    for line in _tail_lines(log_path):
+        if "Contract Accepted" not in line and "New Objective: Deliver" not in line:
+            continue
+        ts_match = _LINE_TS_RE.match(line)
+        if not ts_match:
+            continue
+        ts = _parse_ts(ts_match.group("ts"))
+        if ts is None:
+            continue
+        gap = abs((now - ts).total_seconds())
+        if best_gap is None or gap < best_gap:
+            best_gap = gap
+    return best_gap
 
 
 def _normalize(text: str) -> str:

@@ -2366,9 +2366,21 @@ class LogisticsHubModule(ModuleBase):
                 "reason": "game_log_unavailable", "events_in_window": 0, "candidates_considered": [],
             }
         try:
-            events = gamelog_verify.find_recent_haul_events(log_path, datetime.now(timezone.utc))
+            now = datetime.now(timezone.utc)
+            events = gamelog_verify.find_recent_haul_events(log_path, now)
             result = gamelog_verify.verify_contract(contract, events, self._locations.display_name)
-            return {**base, "events_in_window": len(events), **result}
+            # Logged unconditionally (not just on a miss) so a real
+            # distribution builds up in the debug log over time — see
+            # gamelog_verify.nearest_haul_event_gap_seconds's own docstring
+            # and docs/DECISIONS.md, 2026-09-08. This is how the next
+            # window-size decision gets to be data instead of another guess.
+            nearest_gap = gamelog_verify.nearest_haul_event_gap_seconds(log_path, now)
+            return {
+                **base, "events_in_window": len(events),
+                "window_seconds": gamelog_verify.DEFAULT_WINDOW_SECONDS,
+                "nearest_haul_event_gap_seconds": nearest_gap,
+                **result,
+            }
         except Exception as exc:  # never let a verification bug block ACCEPT
             logger.warning("Game.log verification failed: %s", exc)
             return {
