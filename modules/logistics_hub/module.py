@@ -2570,7 +2570,23 @@ class LogisticsHubModule(ModuleBase):
                 "game_log_verify_window_seconds", gamelog_verify.DEFAULT_WINDOW_SECONDS
             )
             events = gamelog_verify.find_recent_haul_events(log_path, now, window_seconds=window_seconds)
-            result = gamelog_verify.verify_contract(contract, events, self._locations.display_name)
+            # Every other contract's already-claimed real mission, so the
+            # same accept can never be attached to two different scanned
+            # contracts — added 2026-09-08 after real evidence of exactly
+            # that (two back-to-back hauls from the same station both
+            # matched the same real mission_id). `is not contract` excludes
+            # only this contract's own prior claim (a re-verify shouldn't
+            # be blocked by its own earlier match), not everyone else's.
+            claimed_mission_ids = {
+                c["gamelog_mission_id"]
+                for c in self.settings.get("contracts", [])
+                if c.get("gamelog_mission_id") and c is not contract
+            }
+            result = gamelog_verify.verify_contract(
+                contract, events, self._locations.display_name, exclude_mission_ids=claimed_mission_ids,
+            )
+            if result.get("matched"):
+                contract["gamelog_mission_id"] = result["mission_id"]
             # Logged unconditionally (not just on a miss) so a real
             # distribution builds up in the debug log over time — see
             # gamelog_verify.nearest_haul_event_gap_seconds's own docstring

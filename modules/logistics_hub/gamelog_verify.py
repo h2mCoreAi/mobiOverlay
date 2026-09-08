@@ -264,7 +264,24 @@ def _entry_display_name(entry: dict, display_name) -> str:
     return display_name(terminal) if terminal else (entry.get("raw") or "")
 
 
-def verify_contract(contract: dict, log_events: list[dict], display_name) -> dict:
+# A match needs BOTH origin and destination name overlap (2 + 2) to be
+# trusted, not just one — added 2026-09-08 after real evidence of exactly
+# the failure a lower bar allows: two different real accepts sharing a
+# pickup station (a very normal thing to do — hauling repeatedly from the
+# same place) each scored a nonzero, single-sided match against the WRONG
+# specific Game.log mission (one matched purely on shared pickup text
+# while its real dropoff was a completely different place; the other tied
+# two distinct real missions at score 4 for sharing an identical route
+# wording and picked one arbitrarily). Neither was a random glitch — both
+# are exactly what "any overlap counts" produces once a player has more
+# than one real accept on file with a shared endpoint, which routine play
+# does. See docs/DECISIONS.md.
+MIN_MATCH_SCORE = 4
+
+
+def verify_contract(
+    contract: dict, log_events: list[dict], display_name, exclude_mission_ids: set[str] | None = None,
+) -> dict:
     """Tries to match one Game.log haul event to `contract` (as built by
     `_build_contract` from OCR) and reports what it found. Never mutates
     `contract` itself, and never raises — the caller decides whether/how
@@ -274,12 +291,22 @@ def verify_contract(contract: dict, log_events: list[dict], display_name) -> dic
     imported so this stays a plain function, testable with fake data and no
     Qt/host dependency.
 
+    `exclude_mission_ids`, added 2026-09-08 alongside `MIN_MATCH_SCORE`:
+    mission ids already claimed by another contract already in your queue
+    — the caller (`_verify_against_gamelog` in module.py) is responsible
+    for tracking which contract claimed which real mission
+    (`contract["gamelog_mission_id"]`) and passing every OTHER contract's
+    claim here, so the same real accept can never be attached to two
+    different scanned contracts. Excluded before scoring, not after, so
+    an excluded event can't win a tie or otherwise skew `candidates_considered`.
+
     Matching is name-overlap scoring, not an exact join — OCR's resolved
     location names and the log's raw destination text are never guaranteed
     to be worded identically ("Teasa Spaceport" vs. a fuller UEX display
     name), so a substring-either-way match on normalized text is the same
     tolerance this module already uses elsewhere (`_candidate_phrases`,
-    `LocationService.resolve_fuzzy`).
+    `LocationService.resolve_fuzzy`). But the *acceptance bar* is strict —
+    see `MIN_MATCH_SCORE`.
 
     Always returns a `reason` and `candidates_considered` (every log event
     that was scored, its title/mission_id and score, highest first) even on
@@ -295,6 +322,8 @@ def verify_contract(contract: dict, log_events: list[dict], display_name) -> dic
     """
     dropoff_names = [_normalize(_entry_display_name(e, display_name)) for e in contract.get("dropoffs", [])]
     pickup_names = [_normalize(_entry_display_name(e, display_name)) for e in contract.get("pickups", [])]
+    if exclude_mission_ids:
+        log_events = [e for e in log_events if e["mission_id"] not in exclude_mission_ids]
 
     scored: list[tuple[int, dict]] = []
     for event in log_events:
@@ -330,13 +359,14 @@ def verify_contract(contract: dict, log_events: list[dict], display_name) -> dic
         }
 
     best_score, best_event = scored[0]
-    if best_score == 0:
+    if best_score < MIN_MATCH_SCORE:
+        reason = "no_name_overlap_with_any_candidate" if best_score == 0 else "best_candidate_below_match_threshold"
         return {
             "matched": False,
             "mission_id": None,
             "title": None,
             "corrections": [],
-            "reason": "no_name_overlap_with_any_candidate",
+            "reason": reason,
             "candidates_considered": candidates_considered,
             "dropoff_names_tried": dropoff_names,
             "pickup_names_tried": pickup_names,

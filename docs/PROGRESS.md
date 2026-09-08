@@ -718,6 +718,15 @@
   entry, which genuinely isn't in UEX's own data, with its correct cargo
   attached) now happens instead. 54/54 checks pass. See DECISIONS.md,
   2026-09-08.
+- **Fixed cross-contract mismatching in Game.log verification**, found by
+  reviewing the last 3 real accepted missions from a session: two
+  different real hauls sharing a pickup station could match the same
+  real mission_id, or a contract could match a mission whose real
+  destination was a completely different place, purely on partial name
+  overlap. Now requires full origin+destination overlap to accept a
+  match, and tracks which real mission each contract already claimed so
+  the same accept can't be attached twice. 60/60 checks pass. See
+  DECISIONS.md, 2026-09-08.
 
 ## Next
 

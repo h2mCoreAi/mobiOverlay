@@ -2954,3 +2954,44 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   then a later recheck if it missed) already covers exactly this race by
   construction; a race this size (seconds) is comfortably inside even the
   original 30s default reminder delay, let alone a longer one.
+
+- **2026-09-08 — Fixed real cross-contract mismatching in Game.log
+  verification, found by reviewing the last 3 accepted missions from a
+  real session.** Two real, distinct bugs in the same review:
+
+  1. Two different real accepts sharing a pickup station (Baijini Point,
+     from routine repeat hauling) both matched the SAME real Game.log
+     mission_id — one legitimately (full origin+destination overlap,
+     score 4), the other only by pickup-name coincidence.
+  2. A contract whose real dropoff was "Lively Pathway Station" matched a
+     real mission whose actual destination was "Everus Harbor" — a
+     completely different place — purely on shared pickup text (score 2,
+     accepted as a match with the old `score > 0` bar).
+
+  Neither corrupted data this time only because neither had a correction
+  to apply — a near miss, not proof the bug was harmless.
+
+  Two fixes in `gamelog_verify.py`/`module.py`:
+
+  1. **`MIN_MATCH_SCORE = 4`** — a match now requires BOTH origin and
+     destination overlap (2+2), not just one. A pickup-only or dropoff-
+     only match is rejected outright (`reason:
+     "best_candidate_below_match_threshold"`) rather than accepted as
+     weak-but-good-enough.
+  2. **`exclude_mission_ids`** — `verify_contract()` now takes a set of
+     mission ids to exclude before scoring at all (so an excluded event
+     can't win a tie or pollute `candidates_considered`).
+     `_verify_against_gamelog()` builds this set from every OTHER
+     contract currently in the queue's own `contract["gamelog_mission_id"]`
+     (new field, set on a successful match) — so the same real accept can
+     never be attached to two different scanned contracts, which #1 alone
+     doesn't prevent (two genuinely full-score matches to the same real
+     mission is exactly what happened in the first bug above).
+
+  6 new regression checks: rejecting a pickup-only partial match,
+  excluding a claimed mission id (down to zero remaining candidates, and
+  separately, correctly falling through to a second real candidate when
+  one exists), and two module-level integration checks proving
+  `_verify_against_gamelog()` itself builds the exclude set from queued
+  contracts and records its own claim on a match — not just
+  `gamelog_verify.py`'s functions in isolation. 60/60 total checks pass.

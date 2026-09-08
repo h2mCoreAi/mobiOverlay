@@ -820,6 +820,75 @@ def run_gamelog_verify_checks() -> tuple[int, int]:
             failures += 1
             print(f"    result={result3!r}")
 
+        # MIN_MATCH_SCORE + exclude_mission_ids (2026-09-08) — real bug from
+        # live play: two different real accepts sharing a pickup station
+        # each scored a nonzero, single-sided match against the WRONG
+        # specific Game.log mission. A contract whose dropoff DOESN'T
+        # overlap the log event's destination (pickup-only, score 2) must
+        # be rejected outright now, not accepted as a weak match.
+        name = "gamelog_verify_rejects_pickup_only_partial_match"
+        total += 1
+        wrong_dropoff_contract = {
+            "pickups": [{"terminal": pickup_terminal, "raw": "Everus Harbor", "commodities": []}],
+            "dropoffs": [{"terminal": {"id": 3, "name": "Lively Pathway Station"}, "raw": "Lively Pathway Station", "commodities": []}],
+        }
+        result4 = gamelog_verify.verify_contract(wrong_dropoff_contract, events, display_name)
+        ok = (
+            result4["matched"] is False
+            and result4["reason"] == "best_candidate_below_match_threshold"
+            and any(c["score"] == 2 for c in result4["candidates_considered"])
+        )
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    result={result4!r}")
+
+        # A second, different real contract sharing the SAME pickup/
+        # dropoff wording as `contract` above (the exact "same route,
+        # different mission" collision from live play) must not be allowed
+        # to claim the same mission_id once it's already excluded.
+        name = "gamelog_verify_exclude_mission_ids_blocks_reuse"
+        total += 1
+        result5 = gamelog_verify.verify_contract(
+            contract, events, display_name,
+            exclude_mission_ids={"acf855f6-8008-4cb8-baac-79be39ce99b1"},
+        )
+        # `events` here only ever contains that one mission (the other
+        # fixture event, "11111111-...", was already dropped by the
+        # window filter before this point) — excluding it leaves nothing
+        # to score at all, correctly reported the same as an empty window.
+        ok = result5["matched"] is False and result5["reason"] == "no_log_events_in_window"
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    result={result5!r}")
+
+        # Stronger version of the exclusion check: TWO distinct real
+        # missions with identical route wording (the exact live-play
+        # collision — two back-to-back Baijini Point -> Everus Harbor
+        # hauls) both in the log. Without exclusion either could win the
+        # tie; excluding the first must deterministically leave the second.
+        name = "gamelog_verify_exclude_mission_ids_prefers_other_candidate"
+        total += 1
+        second_accepted_line = (
+            f'<{ts(-3)}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
+            '"Contract Accepted:  Rookie | DIRECT Small Haul | Everus Harbor > Teasa Spaceport: " '
+            '[10] to queue. New queue size: 1, MissionId: [55555555-5555-5555-5555-555555555555], '
+            'ObjectiveId: [] [Team_CoreGameplayFeatures][Missions][Comms]'
+        )
+        with open(log_path, "a", encoding="utf-8") as handle:
+            handle.write(second_accepted_line + "\n")
+        two_mission_events = gamelog_verify.find_recent_haul_events(log_path, now)
+        result6 = gamelog_verify.verify_contract(
+            contract, two_mission_events, display_name,
+            exclude_mission_ids={"acf855f6-8008-4cb8-baac-79be39ce99b1"},
+        )
+        ok = result6["matched"] is True and result6["mission_id"] == "55555555-5555-5555-5555-555555555555"
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    result={result6!r}")
+
         name = "gamelog_verify_missing_log_file_is_a_clean_no_match"
         total += 1
         try:
@@ -1064,6 +1133,79 @@ def run_ui_state_checks() -> tuple[int, int]:
             failures += 1
             print(f"    default_window_result={default_window_result!r}")
             print(f"    narrow_window_result={narrow_window_result!r}")
+
+    # gamelog_mission_id dedup (2026-09-08) — the real live-play bug:
+    # _verify_against_gamelog() must exclude mission_ids already claimed
+    # by OTHER contracts in the queue, and record its own claim on a
+    # match, through the actual module method (not just gamelog_verify.py
+    # in isolation) — this is the wiring that was missing before.
+    name = "verify_against_gamelog_excludes_already_claimed_mission_ids"
+    total += 1
+    with tempfile.TemporaryDirectory() as dedup_tmp_dir:
+        dedup_log = Path(dedup_tmp_dir) / "Game.log"
+        dedup_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+        dedup_log.write_text(
+            f'<{dedup_ts}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
+            '"Contract Accepted:  Rookie | Small Haul | Everus Harbor > Teasa Spaceport: " '
+            '[9] to queue. New queue size: 1, MissionId: [66666666-6666-6666-6666-666666666666], '
+            'ObjectiveId: [] [Team_CoreGameplayFeatures][Missions][Comms]\n',
+            encoding="utf-8",
+        )
+        already_claimed_contract = {
+            "id": "already-claimed-1",
+            "pickups": [{"terminal": {"id": 1, "name": "Everus Harbor"}, "raw": "Everus Harbor", "commodities": []}],
+            "dropoffs": [{"terminal": {"id": 2, "name": "Teasa Spaceport"}, "raw": "Teasa Spaceport", "commodities": []}],
+            "gamelog_mission_id": "66666666-6666-6666-6666-666666666666",
+        }
+        new_contract = {
+            "id": "new-contract-1",
+            "pickups": [{"terminal": {"id": 1, "name": "Everus Harbor"}, "raw": "Everus Harbor", "commodities": []}],
+            "dropoffs": [{"terminal": {"id": 2, "name": "Teasa Spaceport"}, "raw": "Teasa Spaceport", "commodities": []}],
+        }
+        mod.settings.setdefault("contracts", []).extend([already_claimed_contract, new_contract])
+        mod.settings["game_log_path"] = str(dedup_log)
+        dedup_result = mod._verify_against_gamelog(new_contract)
+        ok = (
+            dedup_result["matched"] is False
+            and dedup_result["reason"] == "no_log_events_in_window"
+            and "gamelog_mission_id" not in new_contract
+        )
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    dedup_result={dedup_result!r}")
+        mod.settings["contracts"] = [
+            c for c in mod.settings["contracts"] if c.get("id") not in ("already-claimed-1", "new-contract-1")
+        ]
+
+    name = "verify_against_gamelog_records_claim_on_match"
+    total += 1
+    with tempfile.TemporaryDirectory() as claim_tmp_dir:
+        claim_log = Path(claim_tmp_dir) / "Game.log"
+        claim_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+        claim_log.write_text(
+            f'<{claim_ts}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
+            '"Contract Accepted:  Rookie | Small Haul | Everus Harbor > Teasa Spaceport: " '
+            '[9] to queue. New queue size: 1, MissionId: [77777777-7777-7777-7777-777777777777], '
+            'ObjectiveId: [] [Team_CoreGameplayFeatures][Missions][Comms]\n',
+            encoding="utf-8",
+        )
+        claim_contract = {
+            "id": "claim-test-1",
+            "pickups": [{"terminal": {"id": 1, "name": "Everus Harbor"}, "raw": "Everus Harbor", "commodities": []}],
+            "dropoffs": [{"terminal": {"id": 2, "name": "Teasa Spaceport"}, "raw": "Teasa Spaceport", "commodities": []}],
+        }
+        mod.settings["game_log_path"] = str(claim_log)
+        claim_result = mod._verify_against_gamelog(claim_contract)
+        ok = (
+            claim_result["matched"] is True
+            and claim_contract.get("gamelog_mission_id") == "77777777-7777-7777-7777-777777777777"
+        )
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    claim_result={claim_result!r}, contract={claim_contract!r}")
+    mod.settings["game_log_path"] = str(Path(tempfile.gettempdir()) / "mobiov_test_no_such_gamelog.log")
 
     # Accept reminder (2026-09-08) — `_schedule_accept_reminder()` must
     # skip scheduling entirely (never call QTimer.singleShot) when already
