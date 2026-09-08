@@ -219,12 +219,23 @@ def verify_contract(contract: dict, log_events: list[dict], display_name) -> dic
     name), so a substring-either-way match on normalized text is the same
     tolerance this module already uses elsewhere (`_candidate_phrases`,
     `LocationService.resolve_fuzzy`).
+
+    Always returns a `reason` and `candidates_considered` (every log event
+    that was scored, its title/mission_id and score, highest first) even on
+    a match — added 2026-09-08 after a live first test raised "why didn't
+    this help" with nothing in the debug log to answer it. This is the
+    thing to read when a scan surfaces something OCR couldn't auto-resolve
+    and you're wondering why Game.log didn't fill the gap: this function
+    only ever *corrects a dropoff's commodity/tonnage*, and only for a
+    dropoff OCR already resolved to a real location — it never resolves an
+    unmatched/ambiguous location candidate itself. A location OCR couldn't
+    resolve at all needs a different fix (better candidate/fuzzy matching
+    in `_build_contract`), not this pass.
     """
     dropoff_names = [_normalize(_entry_display_name(e, display_name)) for e in contract.get("dropoffs", [])]
     pickup_names = [_normalize(_entry_display_name(e, display_name)) for e in contract.get("pickups", [])]
 
-    best_event = None
-    best_score = 0
+    scored: list[tuple[int, dict]] = []
     for event in log_events:
         score = 0
         ev_destination = _normalize(event.get("destination") or "")
@@ -237,16 +248,37 @@ def verify_contract(contract: dict, log_events: list[dict], display_name) -> dic
             leg_destination = _normalize(leg["destination"])
             if any(_names_overlap(leg_destination, name) for name in dropoff_names):
                 score += 1
-        if score > best_score:
-            best_score = score
-            best_event = event
+        scored.append((score, event))
 
-    if best_event is None or best_score == 0:
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    candidates_considered = [
+        {"mission_id": event["mission_id"], "title": event.get("title"), "score": score}
+        for score, event in scored
+    ]
+
+    if not log_events:
         return {
             "matched": False,
             "mission_id": None,
             "title": None,
             "corrections": [],
+            "reason": "no_log_events_in_window",
+            "candidates_considered": [],
+            "dropoff_names_tried": dropoff_names,
+            "pickup_names_tried": pickup_names,
+        }
+
+    best_score, best_event = scored[0]
+    if best_score == 0:
+        return {
+            "matched": False,
+            "mission_id": None,
+            "title": None,
+            "corrections": [],
+            "reason": "no_name_overlap_with_any_candidate",
+            "candidates_considered": candidates_considered,
+            "dropoff_names_tried": dropoff_names,
+            "pickup_names_tried": pickup_names,
         }
 
     corrections: list[dict] = []
@@ -281,4 +313,8 @@ def verify_contract(contract: dict, log_events: list[dict], display_name) -> dic
         "mission_id": best_event["mission_id"],
         "title": best_event.get("title"),
         "corrections": corrections,
+        "reason": "matched_with_corrections" if corrections else "matched_no_corrections_needed",
+        "candidates_considered": candidates_considered,
+        "dropoff_names_tried": dropoff_names,
+        "pickup_names_tried": pickup_names,
     }

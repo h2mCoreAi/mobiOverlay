@@ -2176,11 +2176,21 @@ class LogisticsHubModule(ModuleBase):
         self._route_order = self._plan_route(contracts, route_debug=route_debug)
         self._render_results()
         status = f"Added contract ({len(contracts)} total) at {time.strftime('%H:%M:%S')}"
-        if verify_result and verify_result.get("matched"):
-            status += (
-                f" — Game.log verified, {len(verify_result['corrections'])} field(s) corrected."
-                if verify_result["corrections"] else " — Game.log verified, matches OCR."
-            )
+        # Shown even on a non-match — a silent skip here is exactly what
+        # produced the "why didn't Game.log help" confusion this status
+        # line exists to prevent (see docs/DECISIONS.md, 2026-09-08). The
+        # full detail (candidates considered, scores, log path) is always
+        # in the debug log; this line is just the at-a-glance version.
+        if verify_result is not None:
+            if verify_result.get("matched"):
+                status += (
+                    f" — Game.log verified, {len(verify_result['corrections'])} field(s) corrected."
+                    if verify_result["corrections"] else " — Game.log verified, matches OCR."
+                )
+            elif verify_result.get("reason") == "game_log_unavailable":
+                status += " — Game.log not found, not verified."
+            else:
+                status += " — Game.log: no matching contract found, not verified."
         self._set_status(status)
 
     @classmethod
@@ -2305,18 +2315,36 @@ class LogisticsHubModule(ModuleBase):
 
         Best-effort only: a missing/unreadable log or no confident match
         within the time window leaves the OCR-built contract untouched —
-        this never blocks or delays ACCEPT."""
-        log_path = self.settings.get("game_log_path") or gamelog_verify.default_game_log_path()
-        if not log_path or not os.path.isfile(log_path):
-            return {"matched": False, "mission_id": None, "title": None, "corrections": [],
-                     "reason": "game_log_unavailable"}
+        this never blocks or delays ACCEPT.
+
+        Always returns `log_path`/`log_path_source`/`log_file_exists`/
+        `events_in_window` on top of whatever `gamelog_verify.verify_contract`
+        adds — added 2026-09-08 after a live first test surfaced "why
+        didn't Game.log help here" with nothing in the debug log to answer
+        it from. This is the full record of what the verify step actually
+        saw, every time, not just when it succeeds."""
+        configured_path = self.settings.get("game_log_path")
+        log_path = configured_path or gamelog_verify.default_game_log_path()
+        base = {
+            "log_path": log_path,
+            "log_path_source": "settings" if configured_path else "default_lookup",
+            "log_file_exists": bool(log_path and os.path.isfile(log_path)),
+        }
+        if not base["log_file_exists"]:
+            return {
+                **base, "matched": False, "mission_id": None, "title": None, "corrections": [],
+                "reason": "game_log_unavailable", "events_in_window": 0, "candidates_considered": [],
+            }
         try:
             events = gamelog_verify.find_recent_haul_events(log_path, datetime.now(timezone.utc))
-            return gamelog_verify.verify_contract(contract, events, self._locations.display_name)
+            result = gamelog_verify.verify_contract(contract, events, self._locations.display_name)
+            return {**base, "events_in_window": len(events), **result}
         except Exception as exc:  # never let a verification bug block ACCEPT
             logger.warning("Game.log verification failed: %s", exc)
-            return {"matched": False, "mission_id": None, "title": None, "corrections": [],
-                     "reason": f"error: {exc}"}
+            return {
+                **base, "matched": False, "mission_id": None, "title": None, "corrections": [],
+                "reason": f"error: {exc}", "events_in_window": 0, "candidates_considered": [],
+            }
 
     def _on_review_accept(self):
         if self._pending_scan is not None:

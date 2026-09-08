@@ -663,6 +663,14 @@ def run_gamelog_verify_checks() -> tuple[int, int]:
             and any(c["commodity"] == "Pressurized Ice" and c["need"] == 16 for c in result["corrections"])
             and any(c["commodity"] == "Processed Food" and c["need"] == 313 for c in result["corrections"])
             and contract["dropoffs"][0]["commodities"] == [("Processed Food", "313")]
+            # Diagnostic fields (2026-09-08) — these are what a debug-log
+            # reader actually needs to answer "why did/didn't this match",
+            # not just the boolean.
+            and result["reason"] == "matched_with_corrections"
+            and result["candidates_considered"] == [
+                {"mission_id": "acf855f6-8008-4cb8-baac-79be39ce99b1",
+                 "title": "Experienced | DIRECT Medium Haul | Everus Harbor > Teasa Spaceport", "score": 6}
+            ]
         )
         print(f"[{'PASS' if ok else 'FAIL'}] {name}")
         if not ok:
@@ -677,11 +685,25 @@ def run_gamelog_verify_checks() -> tuple[int, int]:
             "dropoffs": [{"terminal": {"name": "GrimHEX"}, "raw": "GrimHEX", "commodities": []}],
         }
         result2 = gamelog_verify.verify_contract(unrelated_contract, events, display_name)
-        ok = result2["matched"] is False and result2["corrections"] == []
+        ok = (
+            result2["matched"] is False
+            and result2["corrections"] == []
+            and result2["reason"] == "no_name_overlap_with_any_candidate"
+            and len(result2["candidates_considered"]) == 1
+        )
         print(f"[{'PASS' if ok else 'FAIL'}] {name}")
         if not ok:
             failures += 1
             print(f"    result={result2!r}")
+
+        name = "gamelog_verify_no_events_reason"
+        total += 1
+        result3 = gamelog_verify.verify_contract(unrelated_contract, [], display_name)
+        ok = result3["matched"] is False and result3["reason"] == "no_log_events_in_window"
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    result={result3!r}")
 
         name = "gamelog_verify_missing_log_file_is_a_clean_no_match"
         total += 1
@@ -790,6 +812,26 @@ def run_ui_state_checks() -> tuple[int, int]:
     if popup is not None:
         popup.close()
 
+    # `_verify_against_gamelog()`'s always-present diagnostic fields — the
+    # thing meant to answer "why didn't Game.log help" without needing a
+    # real Star Citizen session. `game_log_path` is deliberately pointed
+    # at a nonexistent file (set right after create_card() above), so this
+    # exercises the "log_file_exists is False" branch specifically.
+    name = "verify_against_gamelog_reports_missing_log_diagnostics"
+    total += 1
+    verify_result = mod._verify_against_gamelog(contract2)
+    ok = (
+        verify_result["matched"] is False
+        and verify_result["log_file_exists"] is False
+        and verify_result["log_path_source"] == "settings"
+        and verify_result["reason"] == "game_log_unavailable"
+        and verify_result["events_in_window"] == 0
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    verify_result={verify_result!r}")
+
     # Two checks: REJECT must leave the contract list untouched, ACCEPT
     # must add exactly the pending one.
     name = "review_popup_reject_does_not_add"
@@ -842,6 +884,11 @@ def run_ui_state_checks() -> tuple[int, int]:
         logged is not None
         and logged.get("grade") == grade_info[0]
         and logged.get("compatibility_ratings_given") == expected_ratings
+        # 2026-09-08: the debug log's own copy of the verify diagnostics —
+        # this is what you'd actually open logistics_hub_debug.jsonl to
+        # read after a real scan, so the entry must carry it, not just
+        # `_verify_against_gamelog`'s direct return value.
+        and logged.get("gamelog_verify", {}).get("reason") == "game_log_unavailable"
     )
     print(f"[{'PASS' if ok else 'FAIL'}] {name}")
     if not ok:

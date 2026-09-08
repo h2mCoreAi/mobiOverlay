@@ -2632,3 +2632,45 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   contract, scan it, confirm the debug log's `gamelog_verify` entry and
   any correction against what actually happened) — code-reviewed and
   unit-tested against synthetic data only so far.
+
+- **2026-09-08 — Game.log verify diagnostics, after the first live test
+  raised a real expectation gap.** User ran the first real scan on this
+  branch and got an "amber not-auto-resolved" location message, expecting
+  Game.log to have prevented it. Root cause: that message
+  (`f"{text!r} ({hint}) could be: {options} — not auto-resolved"`,
+  `_build_contract()`) fires on an OCR candidate matching *multiple*
+  distinct UEX locations — it happens at **scan time**, before the review
+  popup, well before Game.log verification (which only runs later, at
+  ACCEPT). `verify_contract()` was never going to touch this: it only
+  corrects a dropoff's commodity/tonnage, and only for a dropoff OCR
+  *already* resolved to one real location. Multi-candidate disambiguation
+  is a different, unimplemented capability — worth a future look (the
+  log's origin/destination text could plausibly pick the right candidate
+  among several UEX matches), not done here.
+
+  Fixed the actual ask — no way to tell *why* Game.log did or didn't help
+  from the debug log before this. `verify_contract()` now always returns
+  `reason` (`matched_with_corrections` / `matched_no_corrections_needed`
+  / `no_log_events_in_window` / `no_name_overlap_with_any_candidate`) and
+  `candidates_considered` (every log event scored, its title/mission_id/
+  score, highest first — not just the winner), plus the exact normalized
+  names it tried to match against (`dropoff_names_tried`/
+  `pickup_names_tried`), even on a match. `_verify_against_gamelog()` in
+  module.py adds its own always-present layer on top:
+  `log_path`/`log_path_source` (settings vs. default lookup)/
+  `log_file_exists`/`events_in_window`. The full dict lands in the debug
+  log's `gamelog_verify` field on every ACCEPT, matched or not.
+
+  Card status line after ACCEPT now also says outright when Game.log
+  wasn't found or found nothing to match ("Game.log not found, not
+  verified." / "Game.log: no matching contract found, not verified.")
+  instead of only ever mentioning it on a hit — a silent skip is exactly
+  what produced this confusion.
+
+  5 new/tightened regression checks (candidates_considered/reason
+  asserted on both the match and no-match gamelog_verify cases, a new
+  no-events case, a new `_verify_against_gamelog` module-level check for
+  the missing-log-file diagnostic fields, and the existing
+  `review_outcome_logs_grade_and_ratings` check now also asserts the
+  debug log entry carries `gamelog_verify.reason`). 35/35 total checks
+  pass.
