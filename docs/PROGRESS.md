@@ -698,6 +698,15 @@
   window while the Tracker is open made the reminder invisible entirely.
   Either banner dismisses both. 49/49 checks pass. See DECISIONS.md,
   2026-09-08.
+- **Fixed the real cause behind two consecutive live-test verify
+  misses**, found after the user completed a full real accept-to-complete
+  cycle twice: `Game.log`'s tail read was a fixed 500KB regardless of the
+  configured time window, and on this project's own real log that covers
+  only ~34 minutes on average (measured), well short of even the
+  already-widened 1800s window. The byte budget now scales with
+  `window_seconds` (floored at the old 500KB, capped at 20MB). **Not yet
+  confirmed against a real accept** — next live test is the one to
+  watch. 51/51 checks pass. See DECISIONS.md, 2026-09-08.
 
 ## Next
 

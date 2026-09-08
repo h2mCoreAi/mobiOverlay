@@ -108,9 +108,31 @@ def _parse_ts(raw: str) -> datetime | None:
         return None
 
 
-def _tail_lines(log_path: str, max_bytes: int = 500_000) -> list[str]:
+DEFAULT_TAIL_BYTES = 500_000
+MIN_TAIL_BYTES = 500_000
+MAX_TAIL_BYTES = 20_000_000
+# Estimated worst-case Game.log growth rate, used to size how far back
+# `_tail_lines()` needs to read to reliably cover `window_seconds` of real
+# game time — added 2026-09-08 after two real ACCEPTs both missed
+# verification despite the (already-widened) 1800s time window: measured
+# against this project's own real log, a fixed 500KB tail reliably covered
+# only ~34 minutes on average (~14.5KB/min observed) and considerably less
+# during busier stretches, silently undercutting whatever window_seconds
+# promised. Set several times higher than the observed average as a
+# safety margin for combat/loading/heavy-network-chatter periods that spike
+# well above it — a byte budget that scales with the window, not a fixed
+# guess independent of it.
+ESTIMATED_BYTES_PER_MINUTE = 100_000
+
+
+def _estimate_tail_bytes(window_seconds: int) -> int:
+    estimated = int(window_seconds / 60 * ESTIMATED_BYTES_PER_MINUTE)
+    return max(MIN_TAIL_BYTES, min(estimated, MAX_TAIL_BYTES))
+
+
+def _tail_lines(log_path: str, max_bytes: int = DEFAULT_TAIL_BYTES) -> list[str]:
     """Reads only the last `max_bytes` of the log — it can run into the
-    hundreds of MB over a session, and only the last few minutes are ever
+    hundreds of MB over a session, and only the last little while is ever
     relevant to a just-clicked ACCEPT. Never raises: an unreadable/missing
     file just means "nothing found", same as no match."""
     try:
@@ -125,7 +147,8 @@ def _tail_lines(log_path: str, max_bytes: int = 500_000) -> list[str]:
 
 
 def find_recent_haul_events(
-    log_path: str, now: datetime, window_seconds: int = DEFAULT_WINDOW_SECONDS
+    log_path: str, now: datetime, window_seconds: int = DEFAULT_WINDOW_SECONDS,
+    max_bytes: int | None = None,
 ) -> list[dict]:
     """Scans the tail of Game.log for Contract Accepted / Deliver lines
     within `window_seconds` of `now`, grouped by mission id.
@@ -144,7 +167,9 @@ def find_recent_haul_events(
     accepted: dict[str, dict] = {}
     legs_by_mission: dict[str, list[dict]] = {}
 
-    for line in _tail_lines(log_path):
+    if max_bytes is None:
+        max_bytes = _estimate_tail_bytes(window_seconds)
+    for line in _tail_lines(log_path, max_bytes=max_bytes):
         ts_match = _LINE_TS_RE.match(line)
         if not ts_match:
             continue
@@ -196,16 +221,18 @@ def find_recent_haul_events(
 def nearest_haul_event_gap_seconds(log_path: str, now: datetime) -> float | None:
     """How far outside any window the *closest* Contract Accepted/Deliver
     line in the tail actually is — deliberately ignores `window_seconds`
-    entirely. Added 2026-09-08 alongside widening the default window from
-    180s to 1800s (see that change's comment): that jump was sized off one
-    real data point (~70 min). This is what makes the next window decision
-    data, not another guess — every verify attempt logs this regardless of
-    whether it matched, so a real distribution builds up in
-    `logistics_hub_debug.jsonl` over time. `None` means the tail has no
-    Contract Accepted/Deliver line at all, not that one was found at zero
-    gap."""
+    entirely, so it always reads at `MAX_TAIL_BYTES` (not whatever budget
+    a particular window_seconds would earn it) to have the best real shot
+    at finding something genuinely distant. Added 2026-09-08 alongside
+    widening the default window from 180s to 1800s (see that change's
+    comment): that jump was sized off one real data point (~70 min). This
+    is what makes the next window decision data, not another guess —
+    every verify attempt logs this regardless of whether it matched, so a
+    real distribution builds up in `logistics_hub_debug.jsonl` over time.
+    `None` means the tail has no Contract Accepted/Deliver line at all,
+    not that one was found at zero gap."""
     best_gap: float | None = None
-    for line in _tail_lines(log_path):
+    for line in _tail_lines(log_path, max_bytes=MAX_TAIL_BYTES):
         if "Contract Accepted" not in line and "New Objective: Deliver" not in line:
             continue
         ts_match = _LINE_TS_RE.match(line)

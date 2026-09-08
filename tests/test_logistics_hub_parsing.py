@@ -735,6 +735,67 @@ def run_gamelog_verify_checks() -> tuple[int, int]:
         if not ok:
             failures += 1
 
+    # Tail-byte scaling (2026-09-08) — the real bug behind two real misses:
+    # a fixed 500KB tail reliably covered only ~34 minutes of this
+    # project's own real Game.log on average, well short of the (already-
+    # widened) 1800s time window it was supposedly serving. `_tail_lines`
+    # now reads a budget that scales with `window_seconds` instead.
+    name = "estimate_tail_bytes_scales_with_window_within_bounds"
+    total += 1
+    ok = (
+        gamelog_verify._estimate_tail_bytes(60) == gamelog_verify.MIN_TAIL_BYTES  # floor
+        and gamelog_verify._estimate_tail_bytes(1800) == 1800 // 60 * gamelog_verify.ESTIMATED_BYTES_PER_MINUTE
+        and gamelog_verify._estimate_tail_bytes(3600 * 24) == gamelog_verify.MAX_TAIL_BYTES  # ceiling
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    60s={gamelog_verify._estimate_tail_bytes(60)!r}, "
+              f"1800s={gamelog_verify._estimate_tail_bytes(1800)!r}, "
+              f"1day={gamelog_verify._estimate_tail_bytes(3600 * 24)!r}")
+
+    name = "find_recent_haul_events_reaches_past_old_fixed_500kb_budget"
+    total += 1
+    with tempfile.TemporaryDirectory() as scale_tmp_dir:
+        scale_log_path = str(Path(scale_tmp_dir) / "Game.log")
+        # An event ~25 minutes old, followed by >500KB of unrelated filler
+        # lines (simulating busy gameplay logging volume) before "now" —
+        # the OLD fixed-500KB tail would never reach back far enough to
+        # see it; the new window-scaled budget (1800s default) should.
+        old_event_ts = (now - timedelta(minutes=25)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+        old_event_line = (
+            f'<{old_event_ts}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
+            '"Contract Accepted:  Rookie | Small Haul | Everus Harbor > Teasa Spaceport: " '
+            '[9] to queue. New queue size: 1, MissionId: [44444444-4444-4444-4444-444444444444], '
+            'ObjectiveId: [] [Team_CoreGameplayFeatures][Missions][Comms]'
+        )
+        filler_line = (
+            f'<{old_event_ts}Z> [Notice] <SomeOtherEvent> padding line to simulate real '
+            "gameplay log volume between the accept and now " + ("x" * 200)
+        )
+        filler_needed = 600_000  # comfortably past the OLD 500KB fixed budget
+        with open(scale_log_path, "w", encoding="utf-8") as handle:
+            handle.write(old_event_line + "\n")
+            written = 0
+            while written < filler_needed:
+                handle.write(filler_line + "\n")
+                written += len(filler_line) + 1
+        scaled_events = gamelog_verify.find_recent_haul_events(scale_log_path, now)  # default 1800s window
+        old_fixed_budget_events = gamelog_verify.find_recent_haul_events(
+            scale_log_path, now, max_bytes=500_000
+        )
+        ok = (
+            any(e["mission_id"] == "44444444-4444-4444-4444-444444444444" for e in scaled_events)
+            and not any(
+                e["mission_id"] == "44444444-4444-4444-4444-444444444444" for e in old_fixed_budget_events
+            )
+        )
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    scaled_events={scaled_events!r}")
+            print(f"    old_fixed_budget_events={old_fixed_budget_events!r}")
+
     return failures, total
 
 

@@ -2866,3 +2866,42 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   reminder firing while the popout is already open reaches both. 49/49
   total checks pass. Verified visually — rendered the popout with an
   active reminder and confirmed it renders correctly.
+
+- **2026-09-08 — Fixed the real cause of two consecutive live-test
+  misses: the fixed 500KB tail-read, not the time window.** User
+  completed a full real cycle (accept in-game + in-app, deliver, complete
+  in-game + in-app) twice; both `gamelog_verify` debug entries showed no
+  match despite the already-widened 1800s window. Root cause found by
+  measuring this project's own real `Game.log`: 4.1MB spanning ~4h43m,
+  averaging **~14.5KB/min** — a fixed 500KB tail read reliably covers only
+  **~34 minutes** of that on average, well short of even the 1800s window
+  it was nominally serving, and considerably less during busier stretches
+  (combat, loading, heavy network chatter can spike well above the
+  average rate). The time window and the byte-read budget were two
+  independent limits, and the byte budget was silently the tighter one.
+
+  `_tail_lines()`'s `max_bytes` is no longer fixed — `find_recent_haul_events()`
+  now computes it via `_estimate_tail_bytes(window_seconds)`:
+  `ESTIMATED_BYTES_PER_MINUTE = 100_000` (~7x the observed real average,
+  a safety margin for busy periods), floored at `MIN_TAIL_BYTES` (500KB,
+  the old fixed value) and capped at `MAX_TAIL_BYTES` (20MB) so a very
+  large configured window can't force reading an unreasonable chunk of a
+  multi-hundred-MB log. `nearest_haul_event_gap_seconds()` (which
+  deliberately ignores the window entirely, by design) now always reads
+  at the `MAX_TAIL_BYTES` ceiling rather than the old fixed 500KB, giving
+  it the best real shot at finding something genuinely distant.
+
+  2 new regression checks: `_estimate_tail_bytes()`'s floor/scale/ceiling
+  behavior, and a real reproduction of the bug itself — an event ~25
+  minutes old followed by >500KB of filler (simulating real gameplay log
+  volume) is found with the new window-scaled budget and confirmed
+  invisible under the old fixed 500KB one, in the same test. 51/51 total
+  checks pass.
+
+  Also noted from this same real test data (not yet acted on): the first
+  of the two real accepts *did* find a Contract-Accepted line in-window
+  (108s gap) — but for an unrelated contract ("Seraphim Station >
+  Baijini Point", score 0), correctly rejected rather than
+  cross-contaminating. Worth a second look once this fix is live to see
+  whether it was a genuinely different, separately-accepted contract or
+  a sign of something else — can't tell from one data point.
