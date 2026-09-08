@@ -429,6 +429,103 @@ def run_distance_checks(mod) -> tuple[int, int]:
     return failures, total
 
 
+# Real OCR capture, 2026-09-08 — the "Covalex Orison" bug: "Covalex
+# Shipping" (the mission-giver company's own name in the contract's flavor
+# text) was substring-matching a real UEX location literally named
+# "Covalex Orison", producing a phantom dropoff with no real cargo data
+# and, since it can never appear in Game.log's own text, silently blocking
+# Game.log's commodity/tonnage correction from ever attaching. Confirmed
+# live via a real accept — see docs/DECISIONS.md.
+_COVALEX_ORISON_BUG_RAW_TEXT = """ACCEPTED (0/10)
+OFFERS
+Experienced / DIRECT Medium Haul [ Everus
+Harbor z HDPC-Cassillo [BP]*
+DETAILS
+Hello,
+Need a contractor for a simple cargo haul going from a freight
+elevator at Everus Harbor above Hurston to a freight elevator at
+HDPC-Cassillo on Hurston: At most the containers will be 16 SCU
+in size:
+Also, we strongly encourage contractors to bring a handheld
+tractor beam along:
+chance you re available to take care of it for us?
+Any
+Have a good one,
+Chase Hewitt
+Jr. Logistics Coordinator
+Covalex Shipping
+'Anything you need, anywhere you need it:'
+Covalex Shipping is a limited liabilitv corporation: To encouraqe
+BEACONS
+HISTORY
+Urtu Ha
+4 163,250
+Reward
+lh 2m
+Contract Availability
+Covalex Independent Contractors
+Contracted By
+PRIMARY OBJECTIVES
+Deliver 0/22 SCU of Pressurized Ice to HDPC-Cassillo on
+Hurston:
+Collect Pressurized Ice from Everus Harbor.
+Deliver 0/302 SCU of Processed Food to HDPC-Cassillo on
+Hurston:
+Collect Processed Food from Everus Harbor.
+ACCEPT OFFER"""
+
+
+def run_covalex_orison_check(mod) -> tuple[int, int]:
+    """Returns (failures, total_checks). Not a FIXTURES entry — that
+    format's comparison silently drops any dropoff/pickup with no
+    resolved terminal (`if p["terminal"]`), which is exactly the honest
+    fallback state this fix produces (HDPC-Cassillo genuinely isn't in
+    the cached UEX location data at all — confirmed by grepping
+    locations_cache.json — so "unresolved, correct raw text" is the right
+    outcome here, not a resolved terminal to compare against)."""
+    contract = mod._build_contract(_COVALEX_ORISON_BUG_RAW_TEXT)
+    dropoff_names = [d.get("raw") for d in contract.get("dropoffs", [])]
+    pickup = next((p for p in contract.get("pickups", []) if p.get("terminal")), None)
+
+    failures, total = 0, 1
+    name = "covalex_shipping_never_becomes_a_phantom_dropoff"
+    ok = (
+        not any("covalex" in (n or "").lower() for n in dropoff_names)
+        and any("hdpc-cassillo" in (n or "").lower() for n in dropoff_names)
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    dropoffs={contract.get('dropoffs')!r}")
+
+    total += 1
+    name = "covalex_bug_fixture_still_resolves_real_pickup_with_cargo"
+    ok = (
+        pickup is not None
+        and pickup["terminal"].get("name") == "Admin - Everus Harbor"
+        and sorted(pickup.get("commodities") or []) == sorted(
+            [("Pressurized Ice", "22"), ("Processed Food", "302")]
+        )
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    pickups={contract.get('pickups')!r}")
+
+    total += 1
+    name = "covalex_bug_fixture_dropoff_keeps_correct_cargo_once_honest"
+    dropoff = next((d for d in contract.get("dropoffs", []) if "hdpc-cassillo" in (d.get("raw") or "").lower()), None)
+    ok = dropoff is not None and sorted(dropoff.get("commodities") or []) == sorted(
+        [("Pressurized Ice", "22"), ("Processed Food", "302")]
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    dropoff={dropoff!r}")
+
+    return failures, total
+
+
 def run_manifest_and_capacity_checks(mod) -> tuple[int, int]:
     """Pure-logic checks (no Qt event loop needed) for the two 2026-09-07
     additions: `_freight_manifest()` flagging the same commodity split
@@ -1336,6 +1433,10 @@ def run() -> int:
     distance_failures, distance_total = run_distance_checks(mod)
     failures += distance_failures
     print(f"\n{distance_total - distance_failures}/{distance_total} distance checks passed")
+
+    covalex_failures, covalex_total = run_covalex_orison_check(mod)
+    failures += covalex_failures
+    print(f"\n{covalex_total - covalex_failures}/{covalex_total} Covalex-Orison-bug checks passed")
 
     manifest_failures, manifest_total = run_manifest_and_capacity_checks(mod)
     failures += manifest_failures

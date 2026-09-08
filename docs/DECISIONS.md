@@ -2905,3 +2905,52 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   cross-contaminating. Worth a second look once this fix is live to see
   whether it was a genuinely different, separately-accepted contract or
   a sign of something else — can't tell from one data point.
+
+- **2026-09-08 — Fixed the "Covalex Orison" phantom-dropoff bug, confirmed
+  with real evidence from tonight's live test.** "Covalex Shipping" (the
+  mission-giver company's own name, present in every Covalex contract's
+  flavor text) was substring-matching a real UEX location literally named
+  "Covalex Orison", producing a phantom dropoff with no real cargo data
+  ("cargo unknown") — and, worse, blocking Game.log's commodity/tonnage
+  correction from ever attaching, since Game.log's own destination text
+  can never mention a company name. Confirmed as a repeat offender across
+  two separate real sessions (2026-09-07 and 2026-09-08).
+
+  Added `"covalex shipping"` (the exact real offending phrase) and
+  `"covalex shippina"` (the same real phrase via a common OCR letter
+  typo, added pre-emptively — only ever observed failing to match
+  harmlessly so far, but it's the identical underlying noise source) to
+  `_PHRASE_STOPWORDS` — the same established, narrow, evidence-driven
+  exclusion mechanism already used for "PICK UP"/"DROP OFF" false
+  substring matches. Confirmed with tonight's exact real captured OCR
+  text: the real dropoff, "HDPC-Cassillo", isn't in the cached UEX
+  location data at all (confirmed by grepping `locations_cache.json` —
+  genuinely absent, not a naming mismatch this project can fix), so with
+  the phantom Covalex Orison match removed, it now correctly falls back
+  to an honest "HDPC-Cassillo" unresolved raw entry — **with its correct
+  commodities attached** (22 SCU Pressurized Ice, 302 SCU Processed
+  Food), since commodity extraction can now anchor to the real
+  own-line-hinted dropoff phrase instead of losing to the false match.
+  A real, honestly-labeled unresolved location beats a wrong one shown as
+  if it were real.
+
+  New `run_covalex_orison_check()` — not a FIXTURES entry, since that
+  format's comparison silently drops any dropoff/pickup with no resolved
+  terminal (exactly this fix's correct outcome) — using tonight's exact
+  real captured raw OCR text. 3 checks: the phantom dropoff never
+  reappears, the real pickup (Everus Harbor) still resolves with correct
+  cargo, and the correct dropoff commodities survive once honestly
+  unresolved. 54/54 total checks pass.
+
+- **The ACCEPT-timing race (Game.log verify's immediate check missing a
+  contract accepted within ~1-2 seconds of the app's own ACCEPT click) is
+  already handled — confirmed working for real tonight, not just in
+  theory.** This was the exact scenario `_schedule_accept_reminder()`/
+  `_recheck_accept_reminder()` (see the accept-reminder entry above) was
+  built for: the immediate check at ACCEPT missed (log line not written
+  yet, `events_in_window: 0`), but the delayed recheck 11 seconds later
+  found and matched it (`matched: true`, real mission ID). No further
+  change needed here — the existing two-stage design (immediate check,
+  then a later recheck if it missed) already covers exactly this race by
+  construction; a race this size (seconds) is comfortably inside even the
+  original 30s default reminder delay, let alone a longer one.

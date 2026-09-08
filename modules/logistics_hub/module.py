@@ -596,6 +596,20 @@ _PHRASE_STOPWORDS = {
     # unrelated place. Excluding them here is a second, independent guard
     # alongside the section regexes actually consuming these lines.
     "pick up", "drop off",
+    # "Covalex Shipping" — the mission-giver company's own name, mentioned
+    # in every Covalex contract's flavor text ("Covalex Shipping is a
+    # limited liability corporation...") — substring-matches a real UEX
+    # location literally named "Covalex Orison", producing a phantom
+    # dropoff with no real cargo data ("cargo unknown") and, worse,
+    # blocking Game.log verification's commodity/tonnage correction from
+    # ever attaching (it can't match a dropoff name Game.log never
+    # mentions). Confirmed real and repeated across two separate sessions'
+    # debug logs (2026-09-07 and 2026-09-08) — see docs/DECISIONS.md.
+    # "Covalex Shippina" is the same real phrase via a common OCR
+    # letter-substitution typo; excluded alongside it pre-emptively even
+    # though it's only ever been observed failing to match harmlessly so
+    # far, since it's the identical underlying noise source.
+    "covalex shipping", "covalex shippina",
 }
 
 

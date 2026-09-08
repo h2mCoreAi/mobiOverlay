@@ -704,9 +704,20 @@
   configured time window, and on this project's own real log that covers
   only ~34 minutes on average (measured), well short of even the
   already-widened 1800s window. The byte budget now scales with
-  `window_seconds` (floored at the old 500KB, capped at 20MB). **Not yet
-  confirmed against a real accept** — next live test is the one to
-  watch. 51/51 checks pass. See DECISIONS.md, 2026-09-08.
+  `window_seconds` (floored at the old 500KB, capped at 20MB). Confirmed
+  the same night: a real accept's immediate check missed by ~2.5s (log
+  line not written yet), and the accept-reminder's delayed recheck
+  caught it 11 seconds later — first real confirmed Game.log match.
+  51/51 checks pass. See DECISIONS.md, 2026-09-08.
+- **Fixed the "Covalex Orison" phantom-dropoff bug** — "Covalex Shipping"
+  (mission-giver company name in flavor text) was substring-matching a
+  real UEX location, producing a fake dropoff with no cargo data and
+  blocking Game.log's correction from ever attaching. Added to the
+  existing phrase-stopword list; confirmed with tonight's real captured
+  text that the correct fallback (an honest "HDPC-Cassillo" unresolved
+  entry, which genuinely isn't in UEX's own data, with its correct cargo
+  attached) now happens instead. 54/54 checks pass. See DECISIONS.md,
+  2026-09-08.
 
 ## Next
 
