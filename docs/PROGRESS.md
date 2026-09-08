@@ -62,6 +62,23 @@
   isolation (fed synthetic axis values headlessly) but never against a
   hand physically moving the lever.
 
+- **mobiThrottle: click-through toggle fixed** — user reported it did
+  nothing ("everything else works as expected with it"). Root cause: Qt's
+  `WA_TransparentForMouseEvents` attribute doesn't reliably re-push into
+  the native window's real `WS_EX_TRANSPARENT` extended style when
+  toggled on an already-shown top-level widget on this Qt/Windows combo —
+  it only reliably applies at window-creation time. Fixed by setting the
+  `WS_EX_TRANSPARENT` bit directly via `GetWindowLongW`/`SetWindowLongW`
+  on the widget's real HWND instead, which Windows checks live on every
+  hit-test. See docs/DECISIONS.md, 2026-09-08 follow-up entry, for the
+  full root-cause writeup, including why the earlier headless test didn't
+  catch this (it only checked the Qt-side attribute, not the real OS
+  window style) and why live verification via `WindowFromPoint` was a
+  dead end this time (Star Citizen's exclusive-fullscreen window dominated
+  hit-testing across both monitors while testing). Mechanism is the
+  standard proven Win32 technique for overlay click-through; final
+  confirmation is the user's own next real-mouse test.
+
 - **mobiThrottle: click-through toggle added**, direct user request — a
   "Click-through (disable drag/resize)" checkbox in the card sets
   `Qt.WA_TransparentForMouseEvents` on the floating bar (same mechanism

@@ -14,6 +14,7 @@ card only controls, the same separation Crosshair already established
 between its card and its reticle overlay. All configuration lives in the
 card; there is no second settings window.
 """
+import ctypes
 import threading
 import time
 
@@ -35,6 +36,13 @@ from PySide6.QtWidgets import (
 from host import theme
 from host.hotkey import GlobalHotkey
 from host.module_base import ModuleBase
+
+GWL_EXSTYLE = -20
+WS_EX_TRANSPARENT = 0x00000020
+ctypes.windll.user32.GetWindowLongW.restype = ctypes.c_long
+ctypes.windll.user32.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+ctypes.windll.user32.SetWindowLongW.restype = ctypes.c_long
+ctypes.windll.user32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
 
 AXIS_POLL_HZ = 60
 DEADZONE = 0.03
@@ -173,12 +181,30 @@ class _ThrottleBar(QWidget):
         self.set_click_through(s["click_through"])
 
     def set_click_through(self, enabled: bool):
-        """WA_TransparentForMouseEvents makes every mouse event on this
-        widget fall straight through to whatever's underneath (the game)
-        instead of reaching mousePressEvent/etc. here — same mechanism
-        Crosshair's own reticle uses to never intercept an aim click.
-        Requested directly by the user: an accidental left-click-drag on
-        the bar mid-flight was moving it while playing."""
+        """Toggles real OS-level click-through via the WS_EX_TRANSPARENT
+        extended window style, set directly through Win32 rather than
+        relying on Qt's WA_TransparentForMouseEvents attribute alone.
+
+        WA_TransparentForMouseEvents is what Crosshair's reticle uses, but
+        that reticle sets it once at construction and never changes it —
+        here the user reported it doing nothing when *toggled* on an
+        already-shown window: Qt only reliably pushes that attribute down
+        into the native window's extended style at window-creation time,
+        not on every later setAttribute() call on some Qt/Windows
+        combinations, so a live toggle on an already-visible top-level
+        widget can silently no-op. Setting the WS_EX_TRANSPARENT bit
+        directly (same class of direct-Win32-API fix as this app's other
+        window-shape/behavior code, e.g. host/hotkey.py's GetAsyncKeyState
+        watchdog) takes effect immediately regardless of when the window
+        was created — Windows checks this bit on every hit-test, live.
+        """
+        hwnd = int(self.winId())
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        style = (style | WS_EX_TRANSPARENT) if enabled else (style & ~WS_EX_TRANSPARENT)
+        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+        # Also keep Qt's own notion of this in sync (harmless, and avoids
+        # Qt fighting the bit back on some future internal window-flag
+        # update triggered by, say, a resize/orientation swap).
         self.setAttribute(Qt.WA_TransparentForMouseEvents, enabled)
         # Dragging/resizing is exactly what click-through disables — clear
         # any in-progress gesture so a stale offset doesn't jump the bar

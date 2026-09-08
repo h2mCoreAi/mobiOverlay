@@ -3361,3 +3361,44 @@ the real running game — same category as the axis-tracking/Home-Chirp
 checks still pending a hands-on pass, and per the process-hygiene note
 above, deliberately not verified by spawning a second live instance or
 sending synthetic mouse events against the user's already-running one.
+
+**Follow-up (2026-09-08, same day): user reported click-through doesn't
+actually work** ("Everything else works as expected with it"). Root
+cause: `WA_TransparentForMouseEvents` is a Qt *widget attribute*, and
+Qt's Windows platform plugin only reliably pushes that attribute down
+into the native window's real `WS_EX_TRANSPARENT` extended style at
+window-*creation* time — toggling it later via `setAttribute()` on an
+already-shown top-level widget doesn't consistently re-push the change
+into the live native window on this Qt/Windows combination, so the
+click-through checkbox silently no-op'd in practice even though the
+Qt-side attribute and the persisted setting were both flipping correctly
+(confirmed by the headless test above — the bug was invisible to that
+test precisely because it only checks the Qt-side attribute, not the
+real OS-level window style).
+
+Fixed with the same category of fix this app already uses elsewhere for
+window behavior Qt doesn't expose reliably (see host/hotkey.py's
+`GetAsyncKeyState` watchdog, or ThrottleWatch's own
+`SetWindowRgn`/`CreateRoundRectRgn` panel-shaping this module's
+architecture doc describes replacing): `_ThrottleBar.set_click_through()`
+now reads/writes the `WS_EX_TRANSPARENT` bit directly via
+`GetWindowLongW`/`SetWindowLongW` on the widget's real `HWND`
+(`int(self.winId())`), which Windows checks live on every hit-test —
+no window-creation-time dependency, no caching to fight. The Qt
+attribute is still set alongside it (harmless, keeps Qt's own internal
+bookkeeping consistent) but the actual click-through behavior no longer
+depends on it taking effect.
+
+Attempted to verify this the same way as the rest of mobiThrottle's live
+checks — a standalone test widget plus `WindowFromPoint` to prove a
+screen coordinate's hit-test target genuinely changes when the bit
+flips, without touching the user's already-running instance — but Star
+Citizen's own window (`CryENGINE`), running fullscreen-exclusive on the
+primary monitor at the time, dominated `WindowFromPoint` results across
+*both* monitors regardless of where the test widget was placed or
+whether the bit was set, making that harness unreliable while the game
+is running. The underlying mechanism (`WS_EX_TRANSPARENT`) is the
+standard, decades-proven Win32 technique for click-through overlays —
+correct by construction — but this specific instance of it is only
+confirmed by the user's own next real-mouse test after relaunching, not
+by an automated check.

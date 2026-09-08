@@ -163,11 +163,21 @@ that test and fixed same day (tiny spinbox arrows → the `_Stepper`
 widget, see above).
 
 **Click-through toggle added (2026-09-08, direct user request):** a
-"Click-through (disable drag/resize)" checkbox in the card. Enabling it
-sets `Qt.WA_TransparentForMouseEvents` on the bar — the same mechanism
-Crosshair's reticle already uses to never intercept an aim click — so
-every mouse event passes straight through to the game underneath instead
-of reaching the bar's drag/resize handlers. Requested because an
-accidental left-click-drag on the bar mid-flight was moving it while
-playing. Defaults off (so drag/resize still work out of the box); persists
-to `config.json` as `click_through`.
+"Click-through (disable drag/resize)" checkbox in the card, so every
+mouse event passes straight through to the game underneath instead of
+reaching the bar's drag/resize handlers. Requested because an accidental
+left-click-drag on the bar mid-flight was moving it while playing.
+Defaults off (so drag/resize still work out of the box); persists to
+`config.json` as `click_through`.
+
+First implementation (`Qt.WA_TransparentForMouseEvents`, the same
+mechanism Crosshair's reticle uses) didn't actually work when toggled at
+runtime — reported by the user same day. Root cause: that Qt attribute
+only reliably reaches the native window's real `WS_EX_TRANSPARENT`
+extended style at window-*creation* time on this Qt/Windows combination;
+toggling it later on an already-shown widget silently no-ops. Fixed by
+setting `WS_EX_TRANSPARENT` directly via `GetWindowLongW`/
+`SetWindowLongW` on the widget's real HWND, which Windows checks live on
+every hit-test. Full writeup in docs/DECISIONS.md, 2026-09-08 (two
+entries — original add, then the same-day fix). **Confirmed working by
+the user with a real click, same day** — "works great."
