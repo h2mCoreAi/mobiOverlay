@@ -45,10 +45,25 @@ pickup — and never visits a drop-off before every pickup on its own
 contract has been visited, since cargo can't be delivered before it's
 been collected.
 """
+import importlib.util
 import json
+import os
 import re
 import time
 import uuid
+from datetime import datetime, timezone
+
+# File-path import, not `from modules.logistics_hub import gamelog_verify` —
+# `modules/` is not guaranteed to be an importable package once frozen (see
+# host/module_loader.py's own docstring: modules ship external to the exe,
+# not on sys.path as a package). Same mechanism the host uses to load this
+# very file.
+_gamelog_verify_spec = importlib.util.spec_from_file_location(
+    "mobioverlay_logistics_hub_gamelog_verify",
+    os.path.join(os.path.dirname(__file__), "gamelog_verify.py"),
+)
+gamelog_verify = importlib.util.module_from_spec(_gamelog_verify_spec)
+_gamelog_verify_spec.loader.exec_module(gamelog_verify)
 
 from PySide6.QtCore import Qt, QRect, QRectF, QPoint, QTimer, Signal
 from PySide6.QtGui import (
@@ -64,6 +79,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QCompleter,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -1115,7 +1131,10 @@ class _HaulerProfilePopup(QWidget):
     click/focus loss, which would silently discard an in-progress edit
     here too); only SAVE closes it."""
 
-    def __init__(self, parent_widget, profile: dict, capacity: int | None, thresholds: dict | None, on_save):
+    def __init__(
+        self, parent_widget, profile: dict, capacity: int | None, thresholds: dict | None,
+        game_log_path: str | None, on_save,
+    ):
         super().__init__(None, Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"""
@@ -1212,6 +1231,43 @@ class _HaulerProfilePopup(QWidget):
         self._good_edit = self._add_number_row(layout, "GOOD ≥", merged_thresholds["good"])
         self._ok_edit = self._add_number_row(layout, "OK ≥", merged_thresholds["ok"])
 
+        # GAME.LOG PATH — added alongside the OCR+Game.log verification
+        # feature (see docs/DECISIONS.md): every ACCEPT now cross-checks
+        # what OCR found against Star Citizen's own Game.log, which needs
+        # to know where that file is. Pre-filled with the common install
+        # path when it exists; BROWSE lets a different install location
+        # (or a backup log for testing) override it.
+        log_title = QLabel("GAME.LOG PATH")
+        log_title.setStyleSheet(
+            f"color: {theme.ACCENT_CYAN}; font-family: {theme.FONT_DISPLAY}; "
+            f"font-weight: 800; font-size: {theme.fpx(10)}px; letter-spacing: 1px;"
+        )
+        layout.addWidget(log_title)
+        log_row = QHBoxLayout()
+        self._game_log_edit = QLineEdit(game_log_path or "")
+        self._game_log_edit.setPlaceholderText("Path to Game.log")
+        self._game_log_edit.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
+                padding: 4px 6px; font-family: "{theme.FONT_MONO}";
+                font-size: {theme.fpx(9)}px;
+            }}
+            """
+        )
+        log_row.addWidget(self._game_log_edit, 1)
+        browse_btn = QPushButton("BROWSE")
+        browse_btn.setStyleSheet(
+            f"background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN}; "
+            f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
+            f"padding: 4px 8px; font-family: {theme.FONT_DISPLAY}; font-weight: 700; "
+            f"font-size: {theme.fpx(9)}px;"
+        )
+        browse_btn.clicked.connect(self._browse_game_log)
+        log_row.addWidget(browse_btn)
+        layout.addLayout(log_row)
+
         save_btn = QPushButton("SAVE")
         save_btn.setStyleSheet(
             f"background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN}; "
@@ -1275,6 +1331,12 @@ class _HaulerProfilePopup(QWidget):
         layout.addLayout(row)
         return edit
 
+    def _browse_game_log(self):
+        start_dir = os.path.dirname(self._game_log_edit.text().strip()) or ""
+        path, _ = QFileDialog.getOpenFileName(self, "Select Game.log", start_dir, "Log files (*.log);;All files (*)")
+        if path:
+            self._game_log_edit.setText(path)
+
     def _save(self):
         capacity_text = self._capacity_edit.text().strip()
         self._on_save(
@@ -1291,6 +1353,7 @@ class _HaulerProfilePopup(QWidget):
                 "good": int(self._good_edit.text() or DEFAULT_GRADING_THRESHOLDS["good"]),
                 "ok": int(self._ok_edit.text() or DEFAULT_GRADING_THRESHOLDS["ok"]),
             },
+            self._game_log_edit.text().strip() or None,
         )
         self.close()
 
@@ -1718,7 +1781,10 @@ class LogisticsHubModule(ModuleBase):
         profile = self.settings.get("hauler_profile") or {}
         capacity = self.settings.get("cargo_capacity_scu")
         thresholds = self.settings.get("grading_thresholds")
-        popup = _HaulerProfilePopup(self._card_widget, profile, capacity, thresholds, self._on_profile_saved)
+        game_log_path = self.settings.get("game_log_path") or gamelog_verify.default_game_log_path()
+        popup = _HaulerProfilePopup(
+            self._card_widget, profile, capacity, thresholds, game_log_path, self._on_profile_saved,
+        )
         # Same reference-keeping fix as _review_popup below — a real
         # Qt.Window has no implicit reference keeping it alive once this
         # method returns.
@@ -1727,10 +1793,11 @@ class LogisticsHubModule(ModuleBase):
         popup.move(anchor)
         popup.show()
 
-    def _on_profile_saved(self, profile: dict, capacity: int | None, thresholds: dict):
+    def _on_profile_saved(self, profile: dict, capacity: int | None, thresholds: dict, game_log_path: str | None):
         self.settings["hauler_profile"] = profile
         self.settings["cargo_capacity_scu"] = capacity
         self.settings["grading_thresholds"] = thresholds
+        self.settings["game_log_path"] = game_log_path
         self._save_settings()
         self._set_status(f"Profile saved: {profile.get('ship') or 'no ship set'}.")
         self._profile_popup = None
@@ -2100,15 +2167,21 @@ class LogisticsHubModule(ModuleBase):
         except OSError:
             logger.warning("Failed to write logistics_hub %s entry", filename, exc_info=True)
 
-    def _add_contract(self, contract: dict, route_debug: dict | None = None) -> None:
+    def _add_contract(
+        self, contract: dict, route_debug: dict | None = None, verify_result: dict | None = None,
+    ) -> None:
         contracts = self.settings.setdefault("contracts", [])
         contracts.append(contract)
         self._save_settings()
         self._route_order = self._plan_route(contracts, route_debug=route_debug)
         self._render_results()
-        self._set_status(
-            f"Added contract ({len(contracts)} total) at {time.strftime('%H:%M:%S')}"
-        )
+        status = f"Added contract ({len(contracts)} total) at {time.strftime('%H:%M:%S')}"
+        if verify_result and verify_result.get("matched"):
+            status += (
+                f" — Game.log verified, {len(verify_result['corrections'])} field(s) corrected."
+                if verify_result["corrections"] else " — Game.log verified, matches OCR."
+            )
+        self._set_status(status)
 
     @classmethod
     def _is_likely_duplicate(cls, a: dict, b: dict) -> bool:
@@ -2197,13 +2270,17 @@ class LogisticsHubModule(ModuleBase):
         popup.move(anchor)
         popup.show()
 
-    def _log_review_outcome(self, contract: dict, outcome: str) -> None:
+    def _log_review_outcome(self, contract: dict, outcome: str, verify_result: dict | None = None) -> None:
         """Appended when ACCEPT/REJECT is actually clicked — separate from
         the 'pending_review' entry `_log_scan_debug` writes at scan time,
         since that entry is written before the user has seen the popup
         and can't know the outcome yet. Added 2026-09-07 alongside the
         grading/compatibility-DB feature so a real session's decisions
-        (not just its OCR/parsing) show up in the debug log."""
+        (not just its OCR/parsing) show up in the debug log.
+
+        `verify_result`, only set on ACCEPT, is `_verify_against_gamelog`'s
+        return value — whether Game.log confirmed this contract and what,
+        if anything, it corrected. See docs/DECISIONS.md."""
         entry = {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "note": f"review_{outcome}",
@@ -2213,12 +2290,38 @@ class LogisticsHubModule(ModuleBase):
             "grade_capped": self._pending_grade[2] if self._pending_grade else None,
             "compatibility_prompts_shown": self._pending_unrated_names,
             "compatibility_ratings_given": self._pending_ratings_given,
+            "gamelog_verify": verify_result,
         }
         self._append_debug_log(entry)
 
+    def _verify_against_gamelog(self, contract: dict) -> dict:
+        """Cross-checks a freshly-scanned contract, right before it's added
+        to the queue, against Star Citizen's own Game.log record of the
+        contract you just accepted in-game. Game.log wins whenever it
+        reports something (destination/commodity/tonnage) — OCR fills in
+        anything the log doesn't cover (reward, per-box detail). See
+        `modules/logistics_hub/gamelog_verify.py` and docs/DECISIONS.md
+        for the full design.
+
+        Best-effort only: a missing/unreadable log or no confident match
+        within the time window leaves the OCR-built contract untouched —
+        this never blocks or delays ACCEPT."""
+        log_path = self.settings.get("game_log_path") or gamelog_verify.default_game_log_path()
+        if not log_path or not os.path.isfile(log_path):
+            return {"matched": False, "mission_id": None, "title": None, "corrections": [],
+                     "reason": "game_log_unavailable"}
+        try:
+            events = gamelog_verify.find_recent_haul_events(log_path, datetime.now(timezone.utc))
+            return gamelog_verify.verify_contract(contract, events, self._locations.display_name)
+        except Exception as exc:  # never let a verification bug block ACCEPT
+            logger.warning("Game.log verification failed: %s", exc)
+            return {"matched": False, "mission_id": None, "title": None, "corrections": [],
+                     "reason": f"error: {exc}"}
+
     def _on_review_accept(self):
         if self._pending_scan is not None:
-            self._log_review_outcome(self._pending_scan, "accepted")
+            verify_result = self._verify_against_gamelog(self._pending_scan)
+            self._log_review_outcome(self._pending_scan, "accepted", verify_result)
             # Stashed on the contract itself (not just the transient debug
             # log) so COMPLETE can report what a contract actually scored
             # when it was accepted, even long after this scan's debug
@@ -2226,7 +2329,7 @@ class LogisticsHubModule(ModuleBase):
             if self._pending_grade is not None:
                 self._pending_scan["grade_at_accept"] = self._pending_grade[0]
                 self._pending_scan["grade_reason_at_accept"] = self._pending_grade[1]
-            self._add_contract(self._pending_scan)
+            self._add_contract(self._pending_scan, verify_result=verify_result)
         self._pending_scan = None
         self._review_popup = None
 

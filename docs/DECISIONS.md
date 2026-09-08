@@ -2554,3 +2554,81 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   as shown at accept time — then deleted (disposable verification file,
   same as other live checks this session). `config.json` confirmed
   untouched throughout.
+
+- **2026-09-08 — Game.log verification added on top of OCR (not instead
+  of it) — new branch `logistics-hub-gamelog-verify`.** User found
+  github.com/SubliminalsTV-Projects/sc-overlay, which reads hauling
+  contract data (accept, tonnage, commodity, destination, payout) straight
+  out of Star Citizen's own `Game.log`. Investigated: their
+  `missions-parser.ts`/`hauling.ts` are real, well-documented (479+ real
+  logs' worth of observed line shapes) and the exact same signals were
+  confirmed live in this project's own current Game.log (a real Covalex
+  hauling contract, `CreateMarker`/`Contract Accepted`/`Deliver` lines all
+  present and matching their documented shapes).
+
+  Considered a full pivot away from OCR. Rejected: the log only has data
+  *after* in-game ACCEPT — no pre-accept board browse, unlike OCR — and
+  per-box manifests for SCU commodity hauls (Covalex/RedWind/GoblinG)
+  aren't logged at all, only total tonnage. OCR stays required for both.
+
+  Scope landed on, per user direction: **OCR remains the only trigger and
+  primary data source; Game.log is a one-shot verification pass run when
+  ACCEPT is clicked** (not at scan time — the log has nothing to check
+  against before the in-game accept happens), correcting whatever it can
+  confirm. Log wins when it reports something (destination name,
+  commodity, tonnage via the `Deliver <have>/<need> <unit> of <commodity>
+  to <destination>` line); OCR's own extraction is left untouched for
+  everything else (reward — never in the log until the later, unrelated
+  `MissionEnded`/payout lines this pass doesn't touch — and per-box
+  detail). No live tracking, no payout confirmation — that's the much
+  larger surface sc-overlay covers and is explicitly out of scope here.
+
+  Implementation: new `modules/logistics_hub/gamelog_verify.py` — pure
+  functions, no Qt/host dependency, so testable with synthetic log text.
+  `find_recent_haul_events()` tails the last 500KB of Game.log (never the
+  whole file — sessions run to hundreds of MB), regex-parses
+  `Contract Accepted`/`Deliver` lines within a 180s window of "now",
+  groups by `MissionId`. `verify_contract()` matches one event to the
+  OCR-built contract by normalized name-overlap scoring on
+  origin/destination text (never an exact string match — OCR's resolved
+  UEX display name and the log's raw in-game text are not guaranteed to
+  read identically), then corrects a matched drop-off's `commodities` to
+  the log's own commodity/tonnage. Imported into `module.py` via the same
+  `importlib.util.spec_from_file_location` file-path mechanism
+  `host/module_loader.py` uses for `module.py` itself — a plain `from
+  modules.logistics_hub import gamelog_verify` would break once packaged,
+  since `modules/` is deliberately not an importable package in the
+  frozen build (see module_loader.py's own docstring).
+
+  Wired into `_on_review_accept()` (verification runs, result logged to
+  the debug log alongside the existing grade/rating outcome entry, then
+  `_add_contract()` proceeds exactly as before) — REJECT is untouched, no
+  point verifying a contract that's about to be discarded. Never raises
+  or blocks ACCEPT: a missing/unreadable log, no match, or an internal
+  exception all resolve to `{"matched": False, ...}` and the OCR contract
+  goes through unmodified.
+
+  New settings key `game_log_path` (falls back to the common install path
+  via `default_game_log_path()` when unset) with a GAME.LOG PATH field +
+  BROWSE button added to the Hauler Profile popup — the natural home for
+  a "set once" field, same as CARGO CAPACITY and the GRADING SCALE.
+
+  New regression check group `run_gamelog_verify_checks()` (4 checks) —
+  synthetic Game.log text modeled on the real captured line shapes,
+  covering: window filtering (a stale line outside the 180s window is
+  correctly excluded), a real match-and-correct case (OCR typo'd/missing
+  commodity+quantity corrected from the log), a genuine no-match case
+  (unrelated contract), and a missing-file case (clean empty result, no
+  exception). Existing UI-state checks (`run_ui_state_checks()`) updated
+  to point `game_log_path` at a deliberately nonexistent file — otherwise
+  `_on_review_accept()`'s new verification step would fall through to
+  `default_game_log_path()` and read the *real* Game.log during a
+  regression run, which exists and is live on this dev machine. Read-only
+  (not the config/debug-log write hazard from earlier test-hygiene fixes
+  this session), but still real-machine state a test must never depend
+  on. 33/33 total checks pass.
+
+  Not yet done: live end-to-end verification (accept a real in-game
+  contract, scan it, confirm the debug log's `gamelog_verify` entry and
+  any correction against what actually happened) — code-reviewed and
+  unit-tested against synthetic data only so far.

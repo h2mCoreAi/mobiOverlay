@@ -641,6 +641,20 @@
   only ever has contracts actually delivered. 29/29 regression checks
   pass. See DECISIONS.md, 2026-09-07.
 
+- **Game.log verification added on top of OCR** (branch
+  `logistics-hub-gamelog-verify`, not yet merged) — every ACCEPT now
+  cross-checks the OCR-built contract against Star Citizen's own
+  Game.log (`Contract Accepted`/`Deliver` lines), correcting destination
+  commodity/tonnage when the log confirms something OCR got wrong or
+  missed. OCR remains the only trigger and the only pre-accept data
+  source — this is a one-shot correction pass at ACCEPT, not a
+  replacement or a live tracker. New `game_log_path` setting (Hauler
+  Profile popup). New `modules/logistics_hub/gamelog_verify.py`
+  (pure functions, unit-tested against synthetic log text — 4 new
+  regression checks, 33/33 total pass). See DECISIONS.md, 2026-09-08,
+  for the full investigation (sc-overlay project) and design writeup.
+  **Not yet live-tested against a real in-game accept.**
+
 ## Next
 
 - **OCR pipeline optimization pass — in progress, incremental, one

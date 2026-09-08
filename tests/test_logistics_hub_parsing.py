@@ -34,6 +34,7 @@ from host.api_client import UexApiClient
 from modules.logistics_hub.module import (
     LogisticsHubModule, GRADE_CAP_ON_WARNING, CAPACITY_OVERFLOW_CAP, COMPLETED_LOG_FILENAME,
 )
+from modules.logistics_hub import gamelog_verify
 
 
 # Each fixture: (name, raw_text, expected_pickups, expected_dropoffs)
@@ -565,6 +566,138 @@ def run_grading_checks() -> tuple[int, int]:
     return failures, total
 
 
+def run_gamelog_verify_checks() -> tuple[int, int]:
+    """Pure-function checks for `modules/logistics_hub/gamelog_verify.py`
+    against synthetic Game.log lines shaped exactly like the real ones
+    captured live 2026-09-08 (see that module's docstring for the actual
+    log excerpt this is modeled on). No Qt, no real Game.log — a temp file
+    with hand-written lines and a fixed `now`."""
+    import tempfile
+    from datetime import datetime, timedelta, timezone
+
+    failures, total = 0, 0
+
+    now = datetime(2026, 9, 8, 0, 30, 0, tzinfo=timezone.utc)
+
+    def ts(offset_seconds: float) -> str:
+        return (now + timedelta(seconds=offset_seconds)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+
+    accepted_line = (
+        f'<{ts(-5)}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
+        '"Contract Accepted:  Experienced | <EM3>DIRECT</EM3> Medium Haul | '
+        'Everus Harbor > Teasa Spaceport <EM4>[BP]*</EM4>: " [3] to queue. '
+        'New queue size: 1, MissionId: [acf855f6-8008-4cb8-baac-79be39ce99b1], '
+        'ObjectiveId: [] [Team_CoreGameplayFeatures][Missions][Comms]'
+    )
+    deliver_line_1 = (
+        f'<{ts(-4.9)}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
+        '"New Objective: Deliver 0/16 SCU of Pressurized Ice to Teasa Spaceport: " '
+        '[4] to queue. New queue size: 2, MissionId: [acf855f6-8008-4cb8-baac-79be39ce99b1], '
+        'ObjectiveId: [dropoff_fc5c71cc-df3c-48c8-8a0a-72782541be8d_0] '
+        '[Team_CoreGameplayFeatures][Missions][Comms]'
+    )
+    deliver_line_2 = (
+        f'<{ts(-4.8)}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
+        '"New Objective: Deliver 0/313 SCU of Processed Food to Teasa Spaceport: " '
+        '[5] to queue. New queue size: 3, MissionId: [acf855f6-8008-4cb8-baac-79be39ce99b1], '
+        'ObjectiveId: [dropoff_fc5c71cc-df3c-48c8-8a0a-72782541be8d_1] '
+        '[Team_CoreGameplayFeatures][Missions][Comms]'
+    )
+    # Outside the default 180s window — must not show up in results even
+    # though it's a perfectly well-formed line.
+    stale_line = (
+        f'<{ts(-600)}Z> [Notice] <SHUDEvent_OnNotification> Added notification '
+        '"Contract Accepted:  Rookie | Small Haul | Baijini Point > CRU-L1: " '
+        '[9] to queue. New queue size: 1, MissionId: [11111111-1111-1111-1111-111111111111], '
+        'ObjectiveId: [] [Team_CoreGameplayFeatures][Missions][Comms]'
+    )
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        log_path = str(Path(tmp_dir) / "Game.log")
+        with open(log_path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join([stale_line, accepted_line, deliver_line_1, deliver_line_2]) + "\n")
+
+        name = "gamelog_finds_events_in_window_not_out_of_window"
+        total += 1
+        events = gamelog_verify.find_recent_haul_events(log_path, now)
+        mission_ids = {e["mission_id"] for e in events}
+        matched_event = next((e for e in events if e["mission_id"] == "acf855f6-8008-4cb8-baac-79be39ce99b1"), None)
+        ok = (
+            "11111111-1111-1111-1111-111111111111" not in mission_ids
+            and matched_event is not None
+            and matched_event["origin"] == "Everus Harbor"
+            and matched_event["destination"] == "Teasa Spaceport"
+            and len(matched_event["legs"]) == 2
+        )
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    events={events!r}")
+
+        # A fake contract shaped like _build_contract's output: one pickup,
+        # one dropoff, with a dropoff commodity OCR got wrong (name typo'd,
+        # quantity missing) — the real motivating case for this feature.
+        pickup_terminal = {"id": 1, "name": "Everus Harbor", "nickname": None}
+        dropoff_terminal = {"id": 2, "name": "Teasa Spaceport", "nickname": None}
+        contract = {
+            "pickups": [{"terminal": pickup_terminal, "raw": "Everus Harbor", "commodities": []}],
+            "dropoffs": [
+                {
+                    "terminal": dropoff_terminal, "raw": "Teasa Spaceport",
+                    "commodities": [("Pressurized Ise", None)],  # OCR typo + no qty
+                }
+            ],
+        }
+
+        def display_name(terminal):
+            # Same shape as LocationService.display_name: takes a terminal
+            # record directly, not a pickup/dropoff entry.
+            return terminal.get("name") or terminal.get("nickname") or ""
+
+        name = "gamelog_verify_matches_and_corrects_commodity"
+        total += 1
+        result = gamelog_verify.verify_contract(contract, events, display_name)
+        ok = (
+            result["matched"] is True
+            and result["mission_id"] == "acf855f6-8008-4cb8-baac-79be39ce99b1"
+            and any(c["commodity"] == "Pressurized Ice" and c["need"] == 16 for c in result["corrections"])
+            and any(c["commodity"] == "Processed Food" and c["need"] == 313 for c in result["corrections"])
+            and contract["dropoffs"][0]["commodities"] == [("Processed Food", "313")]
+        )
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    result={result!r}")
+            print(f"    contract dropoffs after verify={contract['dropoffs']!r}")
+
+        name = "gamelog_verify_no_match_for_unrelated_contract"
+        total += 1
+        unrelated_contract = {
+            "pickups": [{"terminal": {"name": "Port Olisar"}, "raw": "Port Olisar", "commodities": []}],
+            "dropoffs": [{"terminal": {"name": "GrimHEX"}, "raw": "GrimHEX", "commodities": []}],
+        }
+        result2 = gamelog_verify.verify_contract(unrelated_contract, events, display_name)
+        ok = result2["matched"] is False and result2["corrections"] == []
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    result={result2!r}")
+
+        name = "gamelog_verify_missing_log_file_is_a_clean_no_match"
+        total += 1
+        try:
+            missing_events = gamelog_verify.find_recent_haul_events(str(Path(tmp_dir) / "no_such_file.log"), now)
+            ok = missing_events == []
+        except Exception as exc:
+            ok = False
+            print(f"    raised on missing file: {exc!r}")
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+
+    return failures, total
+
+
 def run_ui_state_checks() -> tuple[int, int]:
     """Returns (failures, total_checks). Needs a real (offscreen-OK) Qt
     event loop, unlike the two check groups above — set QT_QPA_PLATFORM=
@@ -604,6 +737,14 @@ def run_ui_state_checks() -> tuple[int, int]:
     mod._append_debug_log = debug_log_entries.append
     container = CardContainer(config)
     mod.create_card(container)
+    # Points at a path that can't exist, not left unset — unset falls back
+    # to gamelog_verify.default_game_log_path(), which would read the
+    # REAL Game.log on any machine that has Star Citizen installed (this
+    # one included), making _on_review_accept's behavior depend on
+    # whatever's actually in that file. Read-only, so not the config/
+    # debug-log write hazard noted above, but still real-machine state a
+    # regression test must never depend on.
+    mod.settings["game_log_path"] = str(Path(tempfile.gettempdir()) / "mobiov_test_no_such_gamelog.log")
 
     name = "clear_syncs_open_tracker_popout"
     failures, total = 0, 1
@@ -749,6 +890,7 @@ def run_ui_state_checks() -> tuple[int, int]:
         popup._great_edit.setText("2000")
         popup._good_edit.setText("1000")
         popup._ok_edit.setText("500")
+        popup._game_log_edit.setText(r"C:\fake\Game.log")
         popup._save()
         app.processEvents()
         saved = mod.settings.get("hauler_profile", {})
@@ -759,16 +901,22 @@ def run_ui_state_checks() -> tuple[int, int]:
             }
             and mod.settings.get("cargo_capacity_scu") == 512
             and mod.settings.get("grading_thresholds") == {"great": 2000, "good": 1000, "ok": 500}
+            and mod.settings.get("game_log_path") == r"C:\fake\Game.log"
         )
         if not ok:
             print(f"    unexpected saved state: profile={saved}, capacity={mod.settings.get('cargo_capacity_scu')!r}, "
-                  f"thresholds={mod.settings.get('grading_thresholds')!r}")
+                  f"thresholds={mod.settings.get('grading_thresholds')!r}, "
+                  f"game_log_path={mod.settings.get('game_log_path')!r}")
     except Exception as exc:
         ok = False
         print(f"    profile popup raised: {exc!r}")
     print(f"[{'PASS' if ok else 'FAIL'}] {name}")
     if not ok:
         failures += 1
+    # Restore the isolated (nonexistent) log path the save above just
+    # overwrote — later checks in this function must not fall through to
+    # gamelog_verify.default_game_log_path() either.
+    mod.settings["game_log_path"] = str(Path(tempfile.gettempdir()) / "mobiov_test_no_such_gamelog.log")
 
     # 2026-09-07: COMPLETE should log every queued contract to the
     # completed-contracts JSONL (reward/cargo/locations/grade), then clear
@@ -847,6 +995,10 @@ def run() -> int:
     grading_failures, grading_total = run_grading_checks()
     failures += grading_failures
     print(f"\n{grading_total - grading_failures}/{grading_total} grading checks passed")
+
+    gamelog_failures, gamelog_total = run_gamelog_verify_checks()
+    failures += gamelog_failures
+    print(f"\n{gamelog_total - gamelog_failures}/{gamelog_total} Game.log verify checks passed")
 
     try:
         ui_failures, ui_total = run_ui_state_checks()
