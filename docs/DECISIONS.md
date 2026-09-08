@@ -2799,3 +2799,42 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   requested in the same message — two independent changes, easier to
   test/review separately; the tab redesign is a separate commit
   immediately after this one.
+
+- **2026-09-08 — Card redesigned with a tabbed action layout.** Second of
+  two builds split from the same user request (see the accept-reminder
+  entry above). Five workflow buttons (SCAN CONTRACT/COPY ROUTE/
+  REPROCESS/COMPLETE/CLEAR) and three setup buttons (SET SCAN AREA/
+  PROFILE/CLEAR LOG) had accumulated across sessions into two flat rows
+  that had gotten genuinely noisy. Grouped into a `QTabWidget` with two
+  tabs — **SCAN** (the workflow row + status label, default/selected tab)
+  and **SETUP** (the setup row + region status label) — same buttons,
+  same handlers, no behavior changes, purely a layout reorganization.
+  LOCATION picker stays outside the tabs (always-visible context, not a
+  "noisy button"); CONTRACTS/FREIGHT MANIFEST/ROUTE sections below are
+  completely untouched. The accept-reminder banner (built in the prior
+  commit) also stays outside the tabs on purpose — it needs to be visible
+  regardless of which tab is active.
+
+  `action_tabs.currentChanged` is wired to `card.apply_size()` — a tab
+  switch changes the visible content's size the same way collapse/error
+  transitions already do, and needed the same explicit resize nudge (see
+  `Card.apply_size()`'s own docstring) or the card would size itself for
+  whichever tab happened to be active at creation.
+
+  New regression check `action_tabs_group_buttons_with_scan_default`
+  confirms the actual `QTabWidget` structure (tab labels, SCAN selected
+  by default, SCAN CONTRACT living inside the SCAN tab, the reminder
+  banner NOT nested inside either tab). 46/46 total checks pass.
+
+  Verified visually, not just via the regression suite: rendered the
+  real card standalone (offscreen, with `host/main.py`'s actual
+  `load_fonts()` so text isn't tofu boxes — same discipline as prior
+  popup verification this project has needed before) and screenshotted
+  both tabs. Confirmed clean side-by-side grouping, correct default tab,
+  and no regressions to CONTRACTS/FREIGHT MANIFEST/ROUTE below. Hit and
+  worked around one render-order quirk in the offscreen QPA platform
+  itself (the very first `grab()` after a resize comes back at the old,
+  pre-layout size regardless of which tab — a throwaway warm-up grab
+  first fixes it) — a test-script artifact, not a real app bug; not
+  worth writing up further since it doesn't affect the actual running app
+  (which paints continuously, not via one-shot `grab()` calls).

@@ -87,6 +87,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizeGrip,
     QSlider,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -1515,6 +1516,51 @@ class LogisticsHubModule(ModuleBase):
         location_row.addWidget(self._location_combo, 1)
         layout.addLayout(location_row)
 
+        # ---- action tabs (SCAN / SETUP) ------------------------------
+        # Redesigned 2026-09-08 per user direction: five workflow buttons
+        # plus three setup buttons in two flat rows had gotten noisy as the
+        # card grew feature by feature this session. Grouped into tabs
+        # instead — same buttons, same handlers, just organized: SCAN for
+        # the things done every contract, SETUP for the things set up once
+        # (or rarely revisited) per session. CONTRACTS/MANIFEST/ROUTE below
+        # stay exactly as they were — this only touches the button rows.
+        action_tabs = QTabWidget()
+        action_tabs.setStyleSheet(
+            f"""
+            QTabWidget::pane {{
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
+                top: -1px;
+            }}
+            QTabBar::tab {{
+                background: {theme.BG_VOID}; color: {theme.TEXT_MUTED};
+                border: 1px solid {theme.BORDER_FLAT}; border-bottom: none;
+                border-top-left-radius: {theme.RADIUS}px; border-top-right-radius: {theme.RADIUS}px;
+                padding: 4px 12px; margin-right: 2px;
+                font-family: {theme.FONT_DISPLAY}; font-weight: 700;
+                font-size: {theme.fpx(9)}px; letter-spacing: 1px;
+            }}
+            QTabBar::tab:selected {{
+                background: {theme.BG_PANEL}; color: {theme.ACCENT_CYAN};
+            }}
+            """
+        )
+        # Card sizing depends on `card.apply_size()` re-running any time
+        # visible content changes size (see its own docstring — this is
+        # the same pattern collapse/error-state transitions already use);
+        # a tab switch changes which row of buttons is visible/sized the
+        # same way, so it needs the same nudge or the card can be left
+        # sized for whichever tab happened to be active at creation.
+        action_tabs.currentChanged.connect(lambda _index: card.apply_size())
+        layout.addWidget(action_tabs)
+
+        scan_tab = QWidget()
+        scan_tab_layout = QVBoxLayout(scan_tab)
+        scan_tab_layout.setContentsMargins(6, 6, 6, 6)
+
+        setup_tab = QWidget()
+        setup_tab_layout = QVBoxLayout(setup_tab)
+        setup_tab_layout.setContentsMargins(6, 6, 6, 6)
+
         # ---- region status row --------------------------------------
         region_row = QHBoxLayout()
         self._region_label = QLabel("Region: not set")
@@ -1553,7 +1599,8 @@ class LogisticsHubModule(ModuleBase):
         clear_log_btn.setStyleSheet(self._button_style())
         clear_log_btn.clicked.connect(self._clear_debug_log)
         region_row.addWidget(clear_log_btn)
-        layout.addLayout(region_row)
+        setup_tab_layout.addLayout(region_row)
+        action_tabs.addTab(setup_tab, "SETUP")
 
         # ---- action row ---------------------------------------------
         action_row = QHBoxLayout()
@@ -1620,7 +1667,12 @@ class LogisticsHubModule(ModuleBase):
         clear_btn.setStyleSheet(self._button_style())
         clear_btn.clicked.connect(self._clear_contracts)
         action_row.addWidget(clear_btn)
-        layout.addLayout(action_row)
+        scan_tab_layout.addLayout(action_row)
+        # Inserted before SETUP (added above, when SETUP happened to be
+        # built first) so SCAN — the tab used every contract — is the one
+        # shown by default, not whichever tab construction order left last.
+        action_tabs.insertTab(0, scan_tab, "SCAN")
+        action_tabs.setCurrentWidget(scan_tab)
 
         # ---- accept reminder banner (hidden until needed) ---------------
         # Added 2026-09-08: if Game.log still hasn't confirmed a contract

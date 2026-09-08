@@ -777,7 +777,7 @@ def run_ui_state_checks() -> tuple[int, int]:
     debug_log_entries: list[dict] = []
     mod._append_debug_log = debug_log_entries.append
     container = CardContainer(config)
-    mod.create_card(container)
+    card = mod.create_card(container)
     # Points at a path that can't exist, not left unset — unset falls back
     # to gamelog_verify.default_game_log_path(), which would read the
     # REAL Game.log on any machine that has Star Citizen installed (this
@@ -787,8 +787,28 @@ def run_ui_state_checks() -> tuple[int, int]:
     # regression test must never depend on.
     mod.settings["game_log_path"] = str(Path(tempfile.gettempdir()) / "mobiov_test_no_such_gamelog.log")
 
-    name = "clear_syncs_open_tracker_popout"
+    # Tabbed action layout (2026-09-08) — buttons grouped into a SCAN tab
+    # (used every contract) and a SETUP tab (set up once/rarely revisited),
+    # replacing two flat rows that had gotten noisy. Checks the actual
+    # QTabWidget the card built, not just that create_card() didn't raise.
+    name = "action_tabs_group_buttons_with_scan_default"
     failures, total = 0, 1
+    from PySide6.QtWidgets import QTabWidget as _QTabWidget
+    tab_widget = next((w for w in card.findChildren(_QTabWidget)), None)
+    ok = (
+        tab_widget is not None
+        and [tab_widget.tabText(i) for i in range(tab_widget.count())] == ["SCAN", "SETUP"]
+        and tab_widget.currentWidget() is tab_widget.widget(0)
+        and mod._scan_btn in tab_widget.widget(0).findChildren(type(mod._scan_btn))
+        and mod._reminder_banner not in tab_widget.widget(0).findChildren(type(mod._reminder_banner))
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    tab_widget={tab_widget!r}")
+
+    name = "clear_syncs_open_tracker_popout"
+    total += 1
     contract = mod._build_contract(FIXTURES[0][1])  # any real fixture will do
     mod._add_contract(contract)
     mod._open_route_popout()

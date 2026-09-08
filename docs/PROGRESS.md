@@ -684,6 +684,15 @@
   account/ban risk from synthetic input, not worth it. No game input is
   ever touched; this only reminds. 45/45 checks pass. See DECISIONS.md,
   2026-09-08.
+- **Card redesigned with a tabbed action layout** — the workflow buttons
+  (SCAN CONTRACT/COPY ROUTE/REPROCESS/COMPLETE/CLEAR) and setup buttons
+  (SET SCAN AREA/PROFILE/CLEAR LOG) had gotten noisy as two flat rows;
+  now grouped into SCAN (default) and SETUP tabs, same buttons/handlers,
+  no behavior change. LOCATION picker and the accept-reminder banner
+  stay outside the tabs (always visible); CONTRACTS/MANIFEST/ROUTE below
+  untouched. Verified visually (real card render, both tabs
+  screenshotted), not just via tests. 46/46 checks pass. See
+  DECISIONS.md, 2026-09-08.
 
 ## Next
 
