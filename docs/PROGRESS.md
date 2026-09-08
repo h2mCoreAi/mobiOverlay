@@ -653,7 +653,16 @@
   (pure functions, unit-tested against synthetic log text — 4 new
   regression checks, 33/33 total pass). See DECISIONS.md, 2026-09-08,
   for the full investigation (sc-overlay project) and design writeup.
-  **Not yet live-tested against a real in-game accept.**
+  **Not yet live-tested against a real in-game accept.** One real test
+  session so far shows `gamelog_verify: matched: false` on both real
+  ACCEPTs — reason unknown until a fresh test with the diagnostics below.
+
+  Added rich diagnostics after that test (`reason`,
+  `candidates_considered`, log path/existence, event count — always
+  present in the debug log's `gamelog_verify` field, not just on a
+  match) and a **CLEAR LOG button** on the card (wipes
+  `logistics_hub_debug.jsonl` only, for easy re-testing). 36/36 checks
+  pass. See DECISIONS.md, 2026-09-08.
 
 ## Next
 

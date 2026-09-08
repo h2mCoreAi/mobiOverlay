@@ -832,6 +832,32 @@ def run_ui_state_checks() -> tuple[int, int]:
         failures += 1
         print(f"    verify_result={verify_result!r}")
 
+    # CLEAR LOG button (2026-09-08) — `_clear_debug_log()` writes via
+    # `paths.app_root()` directly, NOT through the already-patched
+    # `_append_jsonl`, so this monkeypatches `host.paths.app_root` itself
+    # for the duration of one call — the same "never touch the real file"
+    # discipline as everywhere else in this suite, just a different seam
+    # since this method doesn't go through the usual one.
+    name = "clear_debug_log_wipes_only_the_debug_log"
+    total += 1
+    import host.paths as _paths_module
+    tmp_log_dir = Path(tempfile.gettempdir()) / f"mobiov_test_logdir_{os.getpid()}"
+    tmp_log_dir.mkdir(exist_ok=True)
+    from modules.logistics_hub.module import DEBUG_LOG_FILENAME as _DEBUG_LOG_FILENAME
+    debug_log_path = tmp_log_dir / _DEBUG_LOG_FILENAME
+    debug_log_path.write_text('{"note": "old_entry"}\n', encoding="utf-8")
+    original_app_root = _paths_module.app_root
+    _paths_module.app_root = lambda: tmp_log_dir
+    try:
+        mod._clear_debug_log()
+        ok = debug_log_path.exists() and debug_log_path.read_text(encoding="utf-8") == ""
+    finally:
+        _paths_module.app_root = original_app_root
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    debug_log_path contents={debug_log_path.read_text(encoding='utf-8')!r}")
+
     # Two checks: REJECT must leave the contract list untouched, ACCEPT
     # must add exactly the pending one.
     name = "review_popup_reject_does_not_add"

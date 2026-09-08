@@ -1496,6 +1496,22 @@ class LogisticsHubModule(ModuleBase):
         profile_btn.setStyleSheet(self._button_style())
         profile_btn.clicked.connect(self._show_profile_popup)
         region_row.addWidget(profile_btn)
+
+        # CLEAR LOG — added 2026-09-08 for testing the Game.log verify
+        # feature: wiping logistics_hub_debug.jsonl used to mean closing
+        # the app and deleting the file by hand between test scans. Only
+        # ever touches the debug log (this scan's raw OCR/candidates/
+        # resolution trace/gamelog_verify diagnostics) — never the
+        # contract queue, config, or logistics_hub_completed.jsonl.
+        clear_log_btn = QPushButton("CLEAR LOG")
+        clear_log_btn.setToolTip(
+            "Wipes logistics_hub_debug.jsonl (this scan's raw OCR text, "
+            "candidates, resolution trace, and Game.log verify result). "
+            "Does not touch your contract queue or completed-contracts log."
+        )
+        clear_log_btn.setStyleSheet(self._button_style())
+        clear_log_btn.clicked.connect(self._clear_debug_log)
+        region_row.addWidget(clear_log_btn)
         layout.addLayout(region_row)
 
         # ---- action row ---------------------------------------------
@@ -2166,6 +2182,20 @@ class LogisticsHubModule(ModuleBase):
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except OSError:
             logger.warning("Failed to write logistics_hub %s entry", filename, exc_info=True)
+
+    def _clear_debug_log(self) -> None:
+        """Wipes DEBUG_LOG_FILENAME only — never COMPLETED_LOG_FILENAME,
+        which is a deliberately durable record of contracts actually
+        delivered (see its own module-level comment). Added 2026-09-08 so
+        testing the Game.log verify feature doesn't need closing the app
+        and deleting the file by hand between scans."""
+        try:
+            log_path = paths.app_root() / DEBUG_LOG_FILENAME
+            log_path.write_text("", encoding="utf-8")
+            self._set_status(f"Debug log cleared at {time.strftime('%H:%M:%S')}.")
+        except OSError as exc:
+            logger.warning("Failed to clear %s", DEBUG_LOG_FILENAME, exc_info=True)
+            self._set_status(f"Could not clear debug log: {exc}")
 
     def _add_contract(
         self, contract: dict, route_debug: dict | None = None, verify_result: dict | None = None,

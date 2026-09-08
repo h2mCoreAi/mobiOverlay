@@ -2674,3 +2674,27 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   `review_outcome_logs_grade_and_ratings` check now also asserts the
   debug log entry carries `gamelog_verify.reason`). 35/35 total checks
   pass.
+
+  Also: real `logistics_hub_debug.jsonl` from the user's one live test
+  session inspected directly — both real ACCEPTs logged
+  `gamelog_verify: {"matched": false, ...}` (pre-diagnostics format, no
+  `reason` yet), so Game.log verification hasn't actually helped even
+  once yet in practice; why is still unknown pending a fresh test with
+  these diagnostics in place. Also visible in that same log, unrelated to
+  Game.log: the "Teasa Spaceport" ambiguous-candidate case (New Deal
+  Lorville vs. Kel-To Lorville, still unresolved) and the same contract
+  scanned twice assigning pickup/dropoff roles inconsistently between the
+  two scans — both real, unfixed issues worth their own look.
+
+- **2026-09-08 — CLEAR LOG button added to the card.** Wiping
+  `logistics_hub_debug.jsonl` between test scans meant closing the app
+  and deleting the file by hand. New `_clear_debug_log()` (module.py),
+  wired to a CLEAR LOG button next to PROFILE — truncates only
+  `DEBUG_LOG_FILENAME`, never `COMPLETED_LOG_FILENAME` or the contract
+  queue. New regression check `clear_debug_log_wipes_only_the_debug_log`,
+  monkeypatching `host.paths.app_root` for the one call (this method
+  writes via `paths.app_root()` directly, not through the already-patched
+  `_append_jsonl`, so it needed its own test-isolation seam). 36/36 total
+  checks pass. Also manually cleared the real `logistics_hub_debug.jsonl`
+  once by hand before this button existed, per user request, so their
+  next test starts clean.
