@@ -1,37 +1,43 @@
 # Module: Logistics Hub
 
 Status: built, working, and human-verified live in the running app across
-many rounds of real captured Star Citizen contracts (SELECT REGION + SCAN
-CONTRACT on real mission panels, console + COPY ROUTE export reviewed
-together each round). Full design/bug-fix history in DECISIONS.md.
+many rounds of real captured Star Citizen contracts and several real
+accept-to-complete cycles. Full design/bug-fix history in DECISIONS.md.
 
 ## Scope
 
 OCR-driven hauling logistics helper: capture a screen region over an
 in-game mission contract panel, extract pickup(s)/drop-off(s)/reward via
-OCR, resolve every location against real UEX data, and plan a visiting
-order across every accepted contract.
+OCR, resolve every location against real UEX data, plan a visiting order
+across every accepted contract, grade each scan against your own
+preferences, and (optionally) cross-check what OCR found against Star
+Citizen's own `Game.log`.
 
-- Input: a user-drawn screen region (SELECT REGION) over one contract's
+- Input: a user-drawn screen region (SET SCAN AREA) over one contract's
   detail panel per scan; a CURRENT LOCATION picker for where the route
-  should start from
+  should start from; a one-time Hauler Profile (ship, preferences,
+  cargo capacity, grading scale, Game.log path, accept-reminder delay)
 - Output: a running list of contracts (pickups → drop-offs, commodities,
-  reward) and a suggested visiting order across all of them
+  reward, a 0-100% grade), a suggested visiting order across all of them,
+  and a running Freight Manifest
 - On-demand scan only (SCAN CONTRACT button) — no auto-rescan, per the
   original design goal of not continuously burning CPU/memory watching a
   region (an opt-in auto-rescan toggle existed briefly but was removed
   2026-09-04, unused)
+- Every scan pauses on a review popup (ACCEPT/REJECT) before joining the
+  queue — added 2026-09-07, replacing straight-to-queue behavior
 
 ## OCR engine
 
 `easyocr` (Apache-2.0, pip-installable, no separate binary). Considered
 `pytesseract` first (Aider's initial pick, needs a separate Tesseract
 install) and native Windows OCR via `winsdk` (no PyTorch download at
-all) — `winsdk` has no prebuilt wheel for this machine's Python 3.14 and
-building from source needs Visual Studio's C++ tools, which aren't
-installed, so reverted to `easyocr`. Heavy dependency (~500MB, pulls in
-PyTorch/torchvision) — distribution is all-inclusive (see DECISIONS.md)
-so this is a real part of the app's dependency set, not opt-in.
+all) — `winsdk` has no prebuilt wheel past Python 3.12 (this machine runs
+3.14) and building from source needs Visual Studio's C++ tools, which
+aren't installed, so reverted to `easyocr`. Heavy dependency (~500MB,
+pulls in PyTorch/torchvision) — distribution is all-inclusive (see
+DECISIONS.md) so this is a real part of the app's dependency set, not
+opt-in.
 
 ## How a contract gets parsed
 
@@ -49,10 +55,11 @@ collision bug that made a shared, endpoint-safe service worth building.
    backward-lookback keyword > section header > neutral) — a later,
    more-trustworthy mention of the same real place (even under different
    OCR-garbled wording) can override an earlier, less-trustworthy one.
-   This mattered twice in practice: once for the text-keyed candidate
-   list, and again for the separately-keyed resolved-terminal merge
-   (differently-worded mentions resolving to the same place don't share
-   a text key) — both needed the same priority signal.
+   `_PHRASE_STOPWORDS` excludes known chrome/noise phrases up front —
+   UI buttons, section headers, and (added 2026-09-08) the mission-giver
+   company name "Covalex Shipping"/"Covalex Shippina", which was
+   substring-matching a real UEX location ("Covalex Orison") and
+   producing a phantom dropoff — see DECISIONS.md for the full writeup.
 2. Every candidate is checked against `LocationService.resolve_all()` —
    only phrases that resolve to a real place survive. Ambiguous matches
    (a bare phrase matching several distinct real places) get two
@@ -67,10 +74,10 @@ collision bug that made a shared, endpoint-safe service worth building.
    OCR names garbled just enough to miss substring matching ("Seraphim
    Staton"), but visibly flagged with the same amber-warning mechanism
    ("fuzzy-matched to X (NN% confidence) — please verify") rather than
-   silently trusted. Never used for `neutral`-hint candidates, and never
-   folded into `resolve()`/`resolve_all()` themselves — see
-   `host/locations.py`'s docstring for why (other callers have no way to
-   show the uncertainty warning).
+   silently trusted. A location that genuinely isn't in UEX's own cached
+   data at all (confirmed real: "HDPC-Cassillo", 2026-09-08) falls back
+   to an honest unresolved raw-text entry — still carrying its own
+   correctly-extracted commodities, never silently dropped.
 3. Resolved pickups/drop-offs (a contract can have several of *either*)
    get their commodity extracted from "Collect X from Y"/"Deliver...of X
    to Y" lines, searched against every raw OCR spelling that resolved to
@@ -79,27 +86,15 @@ collision bug that made a shared, endpoint-safe service worth building.
    text" label rather than a silent blank — a blank read as "confirmed
    nothing to carry," which is never actually true for a real contract.
    A pickup's quantity is the *sum* across every "Deliver...to..." line
-   for that commodity, not just one of them — a single pickup can feed
-   several drop-offs of the same commodity (e.g. 52 SCU Titanium to one
-   station, 50 SCU to another, 102 total to actually collect), confirmed
-   real and under-reported before this was fixed (see DECISIONS.md,
-   2026-09-05). Each drop-off still shows its own individual amount, never
-   the combined total.
+   for that commodity, not just one of them.
 4. Newly-scanned contracts are checked against every already-added one:
    same reward + at least one resolved location in common (not a full
    exact-set match, which real OCR noise varying scan-to-scan can break)
-   triggers a themed CONFIRM/DENY popup instead of silently duplicating
-   the route.
+   flags a duplicate warning inline on the review popup (see below).
 5. Route planning is greedy nearest-neighbour from the CURRENT LOCATION
-   pick, followed by alternating precedence-aware 2-opt (segment reversal —
-   fixes backtracking routes the greedy pass alone can produce) and Or-opt
-   (single-stop relocation) improvement passes, run until neither improves
-   further. Or-opt added 2026-09-05: 2-opt alone can't merge two
-   non-adjacent visits to the same real terminal (once as a pickup for one
-   contract, once as a dropoff for another) into a single stop, since that
-   requires moving one node past several others without reversing anything
-   between them — confirmed missed on live data before the fix (see
-   DECISIONS.md). Hard constraint throughout both passes: a drop-off is
+   pick, followed by alternating precedence-aware 2-opt (segment reversal)
+   and Or-opt (single-stop relocation) improvement passes, run until
+   neither improves further. Hard constraint throughout: a drop-off is
    ineligible until every pickup on its own contract has been visited.
 
 ## UEX endpoints used (via the shared LocationService)
@@ -108,111 +103,235 @@ collision bug that made a shared, endpoint-safe service worth building.
   per available system — one name → location-record index, endpoint-
   tagged so dedup/lookup never collides two unrelated real places
   sharing a bare numeric id across endpoints.
-- `terminals_distances` (terminal-to-terminal — finer precision, avoids
-  collapsing two different terminals on the same planet to zero) and
-  `orbits_distances` (works for any location, including cross-system) —
-  **wired in as the primary route cost** (`LocationService.distance()`,
-  queried lazily per pair/system-pair, cached per-session). Falls back to
-  a coarse same-terminal/body/system/different-system tier, rescaled
-  into the same numeric range, only when a real distance can't be
-  determined.
+- `terminals_distances` (terminal-to-terminal) and `orbits_distances`
+  (any location, including cross-system) — the primary route cost
+  (`LocationService.distance()`, queried lazily per pair, cached
+  per-session). Falls back to a coarse same-terminal/body/system/
+  different-system tier only when a real distance can't be determined.
+
+## Scan → review → accept flow
+
+Every SCAN CONTRACT capture builds a candidate contract, then pauses on
+`_ReviewPopup` (a real `Qt.Window`, not `Qt.Popup` — the latter auto-
+closes on any outside click/focus loss, wrong for a popup needing a
+deliberate decision) showing pickups → dropoffs, reward, SCU, a duplicate
+warning when relevant, the contract's grade (see below), and any
+unrated ship/location compatibility prompts. Nothing joins the queue
+until ACCEPT is clicked; REJECT discards it. On ACCEPT:
+
+1. `_verify_against_gamelog()` runs (see Game.log verification below).
+2. The contract is appended to the queue, the route replans, and the
+   card re-renders.
+3. If Game.log didn't confirm the contract immediately, a delayed
+   recheck is scheduled (see Accept reminder below).
+
+## Grading and the Hauler Profile
+
+`_grade_contract()` scores every scan 0-100%, shown directly on the
+review popup (no letter grades — switched from a 5-band scale
+2026-09-07 per user preference). Inputs: reward/SCU efficiency (against
+a user-editable **GRADING SCALE** — GREAT ≥ / GOOD ≥ / OK ≥ aUEC/SCU,
+`self.settings["grading_thresholds"]`, defaults 500/200/80 but the
+project's own real fixture data showed those miscalibrated low, so it's
+tunable, not hardcoded), marginal route detour cost, and profile-driven
+nudges (cross-system vs. Region preference, Pyro vs. Risk Tolerance).
+Reads every setting fresh on each call — a saved profile/threshold
+change applies to the very next scan, no restart.
+
+Three things cap the score hard, regardless of how well everything else
+scores (a cap never blocks ACCEPT — it only warns, visibly, amber):
+- A known-BAD ship/location compatibility rating, or a commodity already
+  queued in another contract (via the Freight Manifest logic) —
+  `GRADE_CAP_ON_WARNING` (55). Both are things you *can* still physically
+  complete, just annoying/risky.
+- Combined peak cargo (existing queue + this candidate) exceeding your
+  cargo capacity — `CAPACITY_OVERFLOW_CAP` (20), stricter than the above,
+  since exceeding your hold means the run is physically impossible to
+  complete as queued, not just annoying.
+
+**Hauler Profile** (`PROFILE` button, `_HaulerProfilePopup`, set once and
+edited whenever, `self.settings["hauler_profile"]`):
+- **Ship** — free text (no reliable static ship-data source exists to
+  validate against; doubles as the compatibility-DB key below)
+- **Cargo Capacity** (SCU) — manual entry, not a UEX vehicle-data picker
+  (a picker can't reflect a customized cargo-grid loadout); feeds both
+  the card's summary-line overflow warning and grading's capacity cap
+- **Goal / Risk Tolerance / Session Time / Region** — fixed dropdown
+  choices, not free text, so grading has a closed set of values to branch
+  on
+- **Grading Scale** — the GREAT/GOOD/OK aUEC/SCU thresholds above
+- **Game.log path** + **BROWSE** — see Game.log verification below
+- **Accept Reminder (sec, 0=off)** — see Accept reminder below
+
+**Ship/location compatibility** (`self.settings["ship_location_ratings"]`,
+a plain `{"<ship>::<endpoint>:<id>": "good"|"bad"}` dict): starts empty
+and only grows from your own GOOD/BAD answers, prompted inline on the
+review popup for any pickup/dropoff terminal your current ship hasn't
+been rated at yet — never re-asked once answered. No static/AI-generated
+compatibility table is used; one was tried and found partly fabricated
+against real sources.
+
+## Game.log verification
+
+OCR remains the only scan trigger and primary data source — Game.log
+verification is a one-shot correction pass, not a replacement or a live
+tracker. See `modules/logistics_hub/gamelog_verify.py` (pure functions,
+no Qt/host dependency) and DECISIONS.md, 2026-09-08, for the full
+investigation (sc-overlay project) and design writeup.
+
+**Signals used**, both written by Star Citizen itself into `Game.log` the
+instant a contract is accepted in-game:
+- `Contract Accepted:  <title>` — for the common "<rank> | <DIRECT?>
+  <size> Haul | <Origin> > <Destination>" title template, names both
+  stops directly, plus the real `MissionId`.
+- `New Objective: Deliver <have>/<need> <unit> of <commodity> to
+  <destination>` — one per drop-off leg; exact tonnage/commodity/
+  destination Game.log actually has, vs. what OCR had to guess from a
+  screenshot.
+
+**Matching**: `verify_contract()` scores every recent Game.log haul event
+by normalized name-overlap against the contract's own pickup/dropoff
+names (2 points each for origin/destination overlap, 1 for each
+Deliver-line leg overlap). A match requires **both** origin and
+destination overlap (`MIN_MATCH_SCORE = 4`) — a partial, single-sided
+match is rejected outright, not accepted as weak-but-good-enough (fixed
+2026-09-08 after real evidence of exactly that going wrong on repeat
+same-station hauls). Every other contract already in the queue's own
+claimed `MissionId` (`contract["gamelog_mission_id"]`, set on a
+successful match) is excluded before scoring, so the same real accept
+can never be attached to two different scanned contracts.
+
+**Reading window**: `find_recent_haul_events()` reads only the tail of
+`Game.log` (it can run into hundreds of MB), within
+`window_seconds` (default 1800s/30min — widened from an initial 180s
+guess after real evidence it was too tight) of "now." The *byte* budget
+that tail read uses **scales with the window** (`_estimate_tail_bytes`,
+~100KB/min, floored at 500KB, capped at 20MB) rather than a fixed size —
+fixed at 500KB originally, this silently covered as little as ~34
+minutes of this project's own real log on average, undercutting even the
+already-widened time window. Both `window_seconds` and the game log path
+are `config.json` values
+(`modules.logistics_hub.game_log_verify_window_seconds` /
+`game_log_path`), not hardcoded — the window in particular is expected to
+need further real-world tuning.
+
+**What it can and can't do**: Game.log wins whenever it reports something
+(destination name, commodity, tonnage) — corrects a matched dropoff's
+`commodities` directly. It does **not** resolve a location OCR couldn't
+resolve at all (that needs `_build_contract`'s own candidate/fuzzy
+matching), doesn't cover reward (never in Game.log until the unrelated,
+not-yet-implemented `MissionEnded`/payout lines), and doesn't track live
+delivery progress or completion — see sc-overlay for that much larger
+surface, deliberately out of scope here.
+
+**Diagnostics**: every verify attempt (matched or not) logs its full
+result into the debug log's `gamelog_verify` field — `reason`,
+`candidates_considered` (every event scored, highest first),
+`events_in_window`, `nearest_haul_event_gap_seconds` (the closest
+haul-related log line regardless of window — building a real
+distribution over time for tuning `window_seconds` further),
+`log_path`/`log_path_source`/`log_file_exists`. The card's status line
+after ACCEPT also reports a miss, not just a hit, so a silent failure is
+never invisible.
+
+## Accept reminder
+
+If Game.log didn't confirm a contract immediately at ACCEPT (common —
+the log line can lag, or the in-game accept genuinely hasn't happened
+yet), `_schedule_accept_reminder()` queues a one-shot delayed recheck
+(`accept_reminder_seconds`, Hauler Profile, default 30s, 0 disables it
+entirely). `_recheck_accept_reminder()` re-runs verification later; a
+late match applies silently (exactly like the original check, just
+delayed); still-unmatched shows a blinking, click-to-dismiss banner —
+mirrored onto **both** the card and the Tracker popout if it's open
+(added 2026-09-08 after a real gap: stowing the main window while the
+Tracker is open made a card-only banner invisible), since either can
+dismiss both. No game input is ever touched or automated — an auto-click
+"ACCEPT OFFER" idea was explicitly considered and rejected on account-
+risk grounds (synthetic input is flagged by Windows itself, which is
+exactly what anti-cheat/monitoring checks for) before landing on this
+safer reminder-only design. Confirmed working end-to-end live: a real
+accept's immediate check missed by ~2.5s, the recheck caught it 11
+seconds later.
+
+Known issue (not yet fixed): the popout's reminder banner clips instead
+of wrapping to window width in a narrow Tracker window.
 
 ## Card contents
 
-- Region status label + SELECT REGION button (drag-draw a capture
-  rectangle on any monitor)
-- CURRENT LOCATION picker — editable combo + `QCompleter` (`MatchContains`,
-  case-insensitive) over the full resolved location index, labeled with
-  both name and short code (`"Shallow Frontier Station (MIC-L1)"`) so
-  searching by either works
-- SCAN CONTRACT button (flips to "SCANNING…" and disables itself while
-  OCR/API work runs, since it's fully synchronous on the GUI thread — no
-  progress signal without a threading redesign), COPY ROUTE (exports the
-  full contract list + suggested route + per-edge cost/distance + raw OCR
-  text as plain text, to the clipboard; briefly shows "COPIED" on click),
-  REPROCESS (re-runs parsing — locations + commodities — against every
-  saved contract's own stored raw OCR text and replans the route, no
-  rescan needed; added 2026-09-05 so a parsing fix can be picked up on
-  contracts already sitting in a session, see DECISIONS.md), and CLEAR
-  (placed away from SCAN/COPY/REPROCESS since it's destructive and easy to
-  hit by reflex reaching for the others)
-- An at-a-glance summary line below CONTRACTS' title ("4 contracts ·
-  268,750 aUEC · 143 SCU peak cargo") — added 2026-09-05, always visible
-  without scrolling either list. Peak cargo is the running max along the
-  *planned route* (+SCU on pickup, -SCU on dropoff), not a flat sum of
-  every pickup, since some cargo gets delivered before more is picked up.
-- The card's own ROUTE area shows only a stop count + prompt to use
-  TRACKER — the full stop-by-stop list (with done/skip toggling) lives
-  solely in the Tracker popout now. Briefly tried inline on the card too
-  (a NEXT STOP banner plus the full row list, both 2026-09-05) — reverted
-  same day: went invisible on the card in live testing (root cause not
-  pinned down — a scroll-position fix didn't resolve it) and the Tracker
-  popout is the tool actually used for working a route anyway, so this
-  removes the broken code path instead of continuing to chase it blind.
-  See DECISIONS.md.
-- A CONTRACTS section (pickups → drop-offs, commodities, reward, each
-  with a per-contract remove button, plus amber warning rows for any
-  still-ambiguous location) in its own dedicated scroll area on the card.
-  Briefly tried as a detached popup window (2026-09-04) — reverted same
-  day: the popup's title bar close button triggered
-  `quitOnLastWindowClosed`, quitting the whole app (the main window's
-  `Qt.Tool` flag excludes it from Qt's "last window" count — fixed at the
-  host level regardless, see DECISIONS.md, but the user also didn't want
-  a popup for this). Landed on a second, independent `QScrollArea` inside
-  the card instead of sharing one with ROUTE below it — the original
-  inline version shared one scroll area with ROUTE and a freshly-scanned
-  contract could leave that viewport scrolled into ROUTE, hiding
-  CONTRACTS; two independent scroll areas can't do that to each other.
-- A ROUTE section (suggested visiting order) inline on the card, in its
-  own scroll area. Each stop is click-toggleable (marks it done/skipped,
-  greyed out with strikethrough) and the whole section can be popped out
-  into its own always-on-top window (no minimize button — closing it
-  returns the view to the card; the underlying route/done-state lives on
-  the module regardless of whether the popout is open)
-- A themed CONFIRM/DENY popup (same `Qt.Popup` pattern as the app's
-  Settings/Tray panels) when a scan looks like a duplicate of an
-  already-added contract
-- No auto-rescan — on-demand SCAN CONTRACT only (removed 2026-09-04, see
-  DECISIONS.md)
+Buttons are grouped into two tabs (`QTabWidget`, added 2026-09-08 to
+reduce clutter as the button count grew) — same buttons/handlers as
+always, just organized:
+
+- **SCAN tab** (default): status label, SCAN CONTRACT, COPY ROUTE,
+  REPROCESS (re-runs parsing against every saved contract's own stored
+  raw OCR text and replans, no rescan needed), COMPLETE (logs every
+  queued contract's reward/cargo/locations/grade-at-accept to
+  `logistics_hub_completed.jsonl`, then clears the queue — distinct from
+  CLEAR, which discards without a trace, for mistakes/duplicates), CLEAR
+- **SETUP tab**: region status label, SET SCAN AREA, PROFILE, CLEAR LOG
+  (wipes `logistics_hub_debug.jsonl` only, for easy re-testing — never
+  touches the contract queue or the completed-contracts log)
+
+Outside the tabs (always visible regardless of which tab is active):
+- CURRENT LOCATION picker — editable combo + `QCompleter` over the full
+  resolved location index
+- The accept-reminder banner (hidden unless active)
+- An at-a-glance summary line ("4 contracts · 268,750 aUEC · 143 SCU peak
+  cargo · ⚠ EXCEEDS N SCU CAPACITY"), always visible without scrolling
+- CONTRACTS section (pickups → drop-offs, commodities, reward, grade,
+  per-contract remove, amber warning rows for ambiguous locations) in its
+  own scroll area
+- FREIGHT MANIFEST — running commodity totals across every active
+  contract's pickup side; any commodity in 2+ contracts renders as an
+  amber warning row (the game makes it very hard to tell two pickups of
+  the same commodity apart once both are in the hold)
+- ROUTE section (suggested visiting order), its own scroll area; each
+  stop click-toggleable done/skipped; can pop out into its own
+  always-on-top TRACKER window (no minimize — closing it returns the
+  view to the card; the underlying route/done-state lives on the module
+  either way)
 
 ## Debug log
 
 Always-on, append-only JSON Lines file at `paths.app_root() /
-"logistics_hub_debug.jsonl"` (next to `config.json`, not inside the module
-folder). One JSON object per scan (`_log_scan_debug()`, called from
-`refresh()`): timestamp, raw OCR text, candidate phrases with role
-hint/priority, the built contract, a per-candidate `resolution_trace` (which
-of the five resolution paths won each `resolved` candidate, or why one was
-`dropped_no_match`/`ambiguous_unresolved` — including a near-miss fuzzy score
-for a dropped candidate even when it missed the cutoff, added 2026-09-05 to
-close the "vanished with zero trace" gap; see DECISIONS.md), a `fuzzy_matches`
-convenience field derived from that trace, a `route_debug` field (greedy
-pre-2-opt route + cost alongside the final route + cost, so a review can tell
-whether 2-opt actually improved anything on that scan), and a route snapshot
-(reuses `_format_route_text()`, the same text COPY ROUTE produces). No
-cap/rotation — user manages the file manually. See DECISIONS.md, 2026-09-04,
-for scoping.
+"logistics_hub_debug.jsonl"` (next to `config.json`). One entry per scan
+(`pending_review`: raw OCR text, candidate phrases, the built contract, a
+per-candidate resolution trace, grade), a second entry per ACCEPT/REJECT
+(`review_accepted`/`review_rejected`: grade, compatibility prompts/
+answers, and — since 2026-09-08 — the full `gamelog_verify` diagnostic
+dict), and a third, optional entry per delayed reminder recheck
+(`accept_reminder_recheck`, same `gamelog_verify` shape). A REPROCESS run
+logs one entry covering every reprocessed contract at once. No cap/
+rotation; a **CLEAR LOG** button on the card wipes it on demand (added
+2026-09-08, replacing "close the app and delete the file by hand").
 
-A REPROCESS run also logs one entry (`_log_reprocess_debug()`, added
-2026-09-05) — same shape, but covering every reprocessed contract at once
-(`contracts`, `resolution_traces` as a list of per-contract traces,
-`fuzzy_matches`, `route_debug`, `route_snapshot`) rather than one fresh
-scan's `raw_text`/`candidates`/`contract`, since REPROCESS re-parses
-everything already saved in one pass instead of adding a new contract.
-Without this, a REPROCESS run (or a location change picked up by one) left
-nothing reviewable in the log at all.
+`logistics_hub_completed.jsonl` (separate file, same directory) is a
+distinct, durable record — only contracts explicitly marked COMPLETE
+land here, never touched by CLEAR LOG.
 
 ## Settings (modules.logistics_hub in config.json)
 
 - `region`: `{x, y, w, h}` of the last selected capture rectangle
 - `contracts`: accumulated list of parsed contracts, each
   `{id, pickups: [{raw, terminal, commodities}], dropoffs: [...], reward,
-  scanned_at, ambiguous, raw_text}`
+  scanned_at, ambiguous, raw_text, grade_at_accept, grade_reason_at_accept,
+  gamelog_mission_id}`
 - `current_location_name` / `current_location`: the picked starting point
-  (display label + full resolved terminal record)
 - `route_done`: list of `"{contract_id}:{role}:{index}"` keys for route
-  stops toggled done/skipped (per-stop, not per-contract, since a
-  contract can have several pickups or drop-offs)
+  stops toggled done/skipped
+- `hauler_profile`: `{ship, goal, risk, time_budget, region_pref}`
+- `cargo_capacity_scu`: manual hold size (SCU)
+- `grading_thresholds`: `{great, good, ok}` aUEC/SCU
+- `ship_location_ratings`: `{"<ship>::<endpoint>:<id>": "good"|"bad"}`
+- `game_log_path`: path to `Game.log`, or unset (falls back to the
+  common install path if present)
+- `game_log_verify_window_seconds`: verify-window size, config-only, no
+  UI (expected to need real tuning; see Game.log verification above)
+- `accept_reminder_seconds`: delay before the reminder banner can fire,
+  0 disables it
+- `tracker_geometry` / `tracker_opacity_pct`: Tracker popout window state
+- `refresh_interval_seconds`: forced to 0 (no auto-rescan timer)
 
 ## Done criteria
 
@@ -226,4 +345,7 @@ nothing reviewable in the log at all.
   pickup(s)
 - Route cost uses real UEX distance data, not a guessed heuristic
 - Human-verified inside the real running app across many rounds of real
-  captured contracts — not just backend/API calls
+  captured contracts, not just backend/API calls
+- Human-verified across at least one full real accept-to-complete cycle
+  (in-game accept, deliver, in-game complete, app-side complete) with
+  Game.log verification live
