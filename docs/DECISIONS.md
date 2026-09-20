@@ -3648,6 +3648,60 @@ by an automated check.
   `home_chirp_cooldown` all work unchanged; edge-detection logic
   (deadzone, reverse, startup-at-home) untouched.
 
+- **2026-09-20 — Location resolution fix for hauling contracts.**
+  **Problem (CEO-reported, verified live against UEX API)**: Logistics Hub
+  was resolving OCR text to wrong terminal IDs:
+    - "Seraphim Station" → id 27 (logged as "Seraphim Station", but live
+      terminals id 27 is "Admin - GrimHEX", a completely different place)
+    - "Beautiful Glen Station" → id 9 (logged as "CRU-L5 Beautiful Glen
+      Station", but live terminals id 9 is "ArcCorp Mining Area 061")
+  The local `locations_cache.json` had a stale/mixed ID space that didn't
+  match the live UEX terminal IDs. This was a systemic failure — any station
+  renamed or re-IDed in UEX could produce the same class of wrong resolution.
+  **Root cause**: Multiple issues combined:
+    1. **No cache versioning**: Stale caches with wrong ID mappings were
+       loaded indefinitely as long as they weren't older than 7 days.
+    2. **Space_station vs Terminal ID collision**: UEX's `terminals` and
+       `space_stations` endpoints use independent ID sequences. space_stations
+       id 27 = "Seraphim Station", but terminals id 27 = "Admin - GrimHEX".
+       The code tagged rows with `_endpoint` but didn't always prefer the
+       correct endpoint for hauling contracts.
+    3. **No alias table**: In-game contract text often uses different names
+       than UEX's data (e.g. "Beautiful Glen Station" vs "CRU-L5 Beautiful
+       Glen Station").
+    4. **No validation**: Resolution could return a terminal whose name
+       didn't match the OCR text at all, producing false positives.
+  **Fix (`host/locations.py`)**:
+    1. **Cache versioning**: Added `CACHE_VERSION` (now v2). Stale-versioned
+       caches auto-invalidate on load, forcing a fresh API fetch.
+    2. **`resolve_for_hauling()` method**: New resolution specifically for
+       hauling contracts that:
+       - Checks `LOCATION_ALIASES` first (known game-text-to-UEX mappings)
+       - Prefers Admin terminals (the actual commodity kiosks used by UEX
+         commodity/route APIs) over structural space_station/outpost/city
+         records
+       - Validates matches against OCR text (fuzzy threshold 0.6), rejecting
+         false positives like "Seraphim Station" → GrimHEX
+       - Looks up Admin terminals via FK when resolving structural records
+         (e.g. "Shallow Fields Station" → space_stations id → Admin - CRU-L4
+         via `id_space_station` FK)
+    3. **`LOCATION_ALIASES`**: Table mapping known in-game text to UEX names
+       (starting with Beautiful Glen variants → CRU-L5 Beautiful Glen Station)
+    4. **`find_admin_terminal_for_station()`**: Given a space_station/outpost/
+       city, finds its Admin terminal via FK lookup.
+  **Logistics Hub update**: `_build_contract()` now calls `resolve_for_hauling()`
+  instead of `resolve_all()` for candidate location resolution.
+  **Tests added**: `HAULING_RESOLUTION_FIXTURES` in `test_logistics_hub_parsing.py`
+  with 11 checks verifying:
+    - Seraphim Station → Admin - Seraphim (NOT GrimHEX)
+    - Beautiful Glen Station → Admin - CRU-L5 (NOT ArcCorp Mining Area)
+    - Baijini Point, Everus Harbor, Port Tressler still resolve correctly
+  **Verified against live UEX API (2026-09-20)**:
+    - terminals id 259 = "Admin - Seraphim" (correct)
+    - terminals id 27 = "Admin - GrimHEX" (the wrong match we now reject)
+    - terminals id 22 = "Admin - CRU-L5" (correct for Beautiful Glen)
+    - terminals id 9 = "ArcCorp Mining Area 061" (the wrong match we now reject)
+
 - **2026-09-20 — M2: Background OCR for Logistics Hub.**
   **Problem**: Logistics Hub's SCAN CONTRACT froze the entire UI for 1-3s
   during EasyOCR/PyTorch inference, making the overlay appear unresponsive.

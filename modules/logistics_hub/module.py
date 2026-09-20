@@ -3051,9 +3051,11 @@ class LogisticsHubModule(ModuleBase):
 
         # Pass 1: every candidate that resolves to exactly one real place —
         # these are the ground truth the ambiguous pass below leans on.
+        # Use resolve_for_hauling() for hauling-contract-aware resolution:
+        # checks aliases, prefers Admin terminals, validates against OCR text.
         pending_ambiguous: list[tuple[str, str, int, list[dict]]] = []
         for text, hint, priority in candidates:
-            matches = self._locations.resolve_all(text)
+            matches = self._locations.resolve_for_hauling(text)
             if not matches:
                 # No exact/substring hit at all — for a candidate that
                 # actually carries a real pickup/dropoff signal (never for

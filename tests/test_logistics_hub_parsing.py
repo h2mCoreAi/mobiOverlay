@@ -88,10 +88,16 @@ FIXTURES = [
         "Thanks in advance for ensuring prompt service,\nChase Hewitt\nJr\n"
         "Logistics Coordinator\nCovalex Shipping\n"
         "'Anything you need, anywhere you need it.\nABANDON\nSHARE\nTRACK\nLong\nget\nand\nfree.",
+        # NOTE: Pickup uses the space_station name because that's what the OCR text
+        # extraction finds. The resolution correctly prefers the Admin terminal,
+        # but the fixture compares against what _build_contract actually produces.
         {"MIC-L2 Long Forest Station": [("Quartz", "70"), ("Corundum", "22")]},
         {
             "Admin - Port Tressler": [("Quartz", "37"), ("Corundum", "11")],
-            "Seraphim Station": [("Quartz", "33"), ("Corundum", "11")],
+            # 2026-09-20: Updated to Admin - Seraphim (terminal 259), the actual
+            # commodity kiosk, instead of Seraphim Station (space_stations id 27).
+            # This is the correct resolution for hauling contracts.
+            "Admin - Seraphim": [("Quartz", "33"), ("Corundum", "11")],
         },
     ),
     (
@@ -99,6 +105,9 @@ FIXTURES = [
         # This is THE contract that exposed the role-assignment bug
         # (2026-09-06): "Ambitious Dream Station" must resolve as a
         # DROPOFF, not a pickup.
+        # 2026-09-20: Updated to use Admin terminal names (the actual commodity
+        # kiosks) instead of space_station names. This is the correct resolution
+        # for hauling contracts.
         "OFFERS\nACCEPTED (3/10)\nHISTORY\nBEACONS\nAcnmm\n"
         "Member | Small Haul | from Seraphim Station\nReward\n4 90,250\n"
         "Contract Deadline\nNZA\n[BP]*\nContracted By\n"
@@ -128,15 +137,17 @@ FIXTURES = [
         "Lagrange\nBy the way; we strongly encourage contractors to\n"
         "handheld tractor beam\nThanks in advance for ensuring prompt service;\n"
         "ABANDON\nSHARE\nTRACK\nIce\npoint\nbring\nalong:",
-        {"Seraphim Station": [("Pressurized Ice", "11"), ("Processed Food", "11")]},
+        {"Admin - Seraphim": [("Pressurized Ice", "11"), ("Processed Food", "11")]},
         {
-            "CRU-L5 Beautiful Glen Station": [("Pressurized Ice", "6"), ("Processed Food", "5")],
-            "CRU-L4 Shallow Fields Station": [("Processed Food", "6")],
-            "CRU-L1 Ambitious Dream Station": [("Pressurized Ice", "5")],
+            "Admin - CRU-L5": [("Pressurized Ice", "6"), ("Processed Food", "5")],
+            "Admin - CRU-L4": [("Processed Food", "6")],
+            "Admin - CRU-L1": [("Pressurized Ice", "5")],
         },
     ),
     (
         "seraphim_4stop_v2_clean",
+        # 2026-09-20: Updated to use Admin terminal names (the actual commodity
+        # kiosks) instead of space_station names.
         "OFFERS\nACCEPTED (1/10)\nHISTORY\nBEACONS\nMember | Small Haul | from Seraphim Station\n"
         "Reward\n4 90,250\nContract Deadline\nNA\n[BP]*\nContracted By\n"
         "Covalex Independent Contractors\nDETAILS\nPRIMARY OBJECTIVES\nHi;\n"
@@ -163,17 +174,18 @@ FIXTURES = [
         "Freight elevator at Beautiful Glen Station at Crusader'$ LS\nLagrange\n"
         "By the way; we strongly encourage contractors to bring a\nhandheld tractor beam\n"
         "Thanks in advance for ensuring prompt service,\nABANDON\nSHARE\nUNTRACK\ngoods\npoint\nalong:",
-        {"Seraphim Station": [("Pressurized Ice", "12"), ("Processed Food", "9")]},
+        {"Admin - Seraphim": [("Pressurized Ice", "12"), ("Processed Food", "9")]},
         {
-            "CRU-L4 Shallow Fields Station": [("Pressurized Ice", "7"), ("Processed Food", "3")],
-            "CRU-L1 Ambitious Dream Station": [("Processed Food", "6")],
-            "CRU-L5 Beautiful Glen Station": [("Pressurized Ice", "5")],
+            "Admin - CRU-L4": [("Pressurized Ice", "7"), ("Processed Food", "3")],
+            "Admin - CRU-L1": [("Processed Food", "6")],
+            "Admin - CRU-L5": [("Pressurized Ice", "5")],
         },
     ),
     (
         "ambitious_dream_pickup_to_seraphim_everus",
         # Pickup at Ambitious Dream Station this time — confirms the role
         # fix generalizes both directions, not just one hardcoded way.
+        # 2026-09-20: Updated to use Admin terminal names.
         "OFFERS\nACCEPTED (2/10)\nHISTORY\nBEACONS\nMember | Medium Haul | from CRU-LI Ambitious\n"
         "Reward\n79,250\nContract Deadline\nNZA\nDream Station [BP]*\nContracted By\n"
         "Covalex Independent Contractors\nDETAILS\nPRIMARY OBJECTIVES\nGreetings,\n"
@@ -194,9 +206,9 @@ FIXTURES = [
         "Deliver 0/24 SCU of Titanium to Everus Harbor above\nJr. Logistics Coordinator\n"
         "Hurston:\nCovalex Shipping\n'Anything you need, anywhere you need it.\n"
         "Collect Titanium from CRU-LI Ambitious Dream\nStation.\nABANDON\nSHARE\nTRACK",
-        {"CRU-L1 Ambitious Dream Station": [("Aluminum", "43"), ("Titanium", "51")]},
+        {"Admin - CRU-L1": [("Aluminum", "43"), ("Titanium", "51")]},
         {
-            "Seraphim Station": [("Aluminum", "23"), ("Titanium", "27")],
+            "Admin - Seraphim": [("Aluminum", "23"), ("Titanium", "27")],
             "Admin - Everus Harbor": [("Aluminum", "20"), ("Titanium", "24")],
         },
     ),
@@ -245,6 +257,8 @@ FIXTURES = [
         # physical place — confirmed via a live `resolve_all()` call, not
         # guessed. Before the 2026-09-06 same-place merge fix, these
         # produced two separate dropoff entries for one real stop.
+        # 2026-09-20: Updated to Admin - Seraphim (the fix now prefers Admin
+        # terminals for hauling).
         "duplicate_stop_same_place_two_records_synthetic",
         "OFFERS\nACCEPTED (1/10)\nHISTORY\nBEACONS\nMember | Small Haul\nReward\n50,000\n"
         "Contract Deadline\nNZA\nContracted By\nCovalex Independent Contractors\n"
@@ -255,7 +269,7 @@ FIXTURES = [
         "Freight elevator at Seraphim Trade above Crusader\n"
         "Thanks in advance for ensuring prompt service,\nABANDON\nSHARE\nTRACK",
         {"Admin - Everus Harbor": [("Waste", "10")]},
-        {"Seraphim Station": [("Waste", "10")]},
+        {"Admin - Seraphim": [("Waste", "10")]},
     ),
     (
         # SYNTHETIC, not a real OCR capture — the original real contract
@@ -317,6 +331,7 @@ FIXTURES = [
         # confirming fixture (3-commodity single-pickup/single-dropoff,
         # each commodity split across its own Deliver/Collect line pair)
         # so a future change can't silently break this shape either.
+        # 2026-09-20: Updated to use Admin - HUR-L2 (the actual commodity kiosk).
         "real_faithful_dream_station_three_commodities",
         "ACCEPTED (2/10)\nOFFERS\nExperienced [ DIRECT Medium Haul [ Everus\n"
         "Harbor z HUR-L2 Faithful Dream Station [BP]*\nDETAILS\nHello,\n"
@@ -343,7 +358,7 @@ FIXTURES = [
         {"Admin - Everus Harbor": [
             ("Quantum Fuel", "84"), ("Hydrogen Fuel", "115"), ("Ship Ammunition", "108"),
         ]},
-        {"HUR-L2 Faithful Dream Station": [
+        {"Admin - HUR-L2": [
             ("Quantum Fuel", "84"), ("Hydrogen Fuel", "115"), ("Ship Ammunition", "108"),
         ]},
     ),
@@ -396,6 +411,91 @@ DISTANCE_FIXTURES = [
         "terminals", 109, "terminals", 110, False,
     ),
 ]
+
+
+# Location resolution fixtures for hauling contracts (2026-09-20 fix):
+# each is (name, ocr_text, expected_first_match_name, must_not_match_name).
+# These test that resolve_for_hauling() returns the correct Admin terminal
+# for hauling contracts, and specifically rejects the false-positive matches
+# that were the root cause of the Seraphim→GrimHEX and Beautiful Glen→
+# ArcCorp Mining Area bugs.
+HAULING_RESOLUTION_FIXTURES = [
+    (
+        "seraphim_station_resolves_to_admin_seraphim",
+        "Seraphim Station",
+        "Admin - Seraphim",  # Expected first match (terminal 259)
+        "Admin - GrimHEX",   # Must NOT match (terminal 27 is GrimHEX, not Seraphim)
+    ),
+    (
+        "seraphim_alone_resolves_to_admin_seraphim",
+        "Seraphim",
+        "Admin - Seraphim",
+        "Admin - GrimHEX",
+    ),
+    (
+        "beautiful_glen_station_resolves_to_admin_cru_l5",
+        "Beautiful Glen Station",
+        "Admin - CRU-L5",    # Expected first match via alias
+        "ArcCorp Mining Area 061",  # Must NOT match (id 9 in terminals is this, not Beautiful Glen)
+    ),
+    (
+        "beautiful_glen_alone_resolves_via_alias",
+        "Beautiful Glen",
+        "Admin - CRU-L5",    # Expected via alias
+        "ArcCorp Mining Area 061",
+    ),
+    (
+        "baijini_point_still_works",
+        "Baijini Point",
+        "Admin - Baijini Point",
+        None,
+    ),
+    (
+        "everus_harbor_still_works",
+        "Everus Harbor",
+        "Admin - Everus Harbor",
+        None,
+    ),
+    (
+        "port_tressler_still_works",
+        "Port Tressler",
+        "Admin - Port Tressler",
+        None,
+    ),
+]
+
+
+def run_hauling_resolution_checks(locations) -> tuple[int, int]:
+    """Returns (failures, total_checks). Tests resolve_for_hauling() against
+    known problematic OCR text patterns that previously caused wrong terminal
+    resolution (Seraphim→GrimHEX, Beautiful Glen→ArcCorp Mining Area)."""
+    failures = 0
+    total = 0
+
+    for name, ocr_text, expected_first, must_not_match in HAULING_RESOLUTION_FIXTURES:
+        total += 1
+        matches = locations.resolve_for_hauling(ocr_text)
+
+        # Check expected first match
+        first_name = matches[0].get("name") if matches else None
+        ok_first = first_name == expected_first
+        print(f"[{'PASS' if ok_first else 'FAIL'}] {name}")
+        if not ok_first:
+            failures += 1
+            print(f"    expected first match: {expected_first!r}")
+            print(f"    actual first match:   {first_name!r}")
+
+        # Check must-not-match exclusion
+        if must_not_match:
+            total += 1
+            match_names = [m.get("name") for m in matches]
+            ok_exclude = must_not_match not in match_names
+            print(f"[{'PASS' if ok_exclude else 'FAIL'}] {name}_excludes_false_positive")
+            if not ok_exclude:
+                failures += 1
+                print(f"    {must_not_match!r} should NOT be in results but was")
+
+    return failures, total
 
 
 def run_distance_checks(mod) -> tuple[int, int]:
@@ -571,8 +671,10 @@ def run_grading_checks() -> tuple[int, int]:
     tmp_path = Path(tempfile.gettempdir()) / f"mobiov_test_grading_config_{os.getpid()}.json"
     config = _Config(path=tmp_path)
     api_client = UexApiClient(config.data["api"]["uex_base_url"], config.data["api"]["uex_token"])
-    mod = LogisticsHubModule(api_client, config)
-    mod._locations.ensure_loaded()
+    from host.locations import LocationService
+    locations = LocationService(api_client)
+    locations.ensure_loaded()
+    mod = LogisticsHubModule(api_client, config, locations)
 
     failures, total = 0, 0
     contract = mod._build_contract(FIXTURES[0][1])  # everus_harbor_to_baijini, real pickup/dropoff terminals
@@ -991,8 +1093,10 @@ def run_ui_state_checks() -> tuple[int, int]:
     tmp_path = Path(tempfile.gettempdir()) / f"mobiov_test_config_{os.getpid()}.json"
     config = _Config(path=tmp_path)
     api_client = UexApiClient(config.data["api"]["uex_base_url"], config.data["api"]["uex_token"])
-    mod = LogisticsHubModule(api_client, config)
-    mod._locations.ensure_loaded()
+    from host.locations import LocationService
+    locations = LocationService(api_client)
+    locations.ensure_loaded()
+    mod = LogisticsHubModule(api_client, config, locations)
     # `_append_jsonl()` (which both the debug log and, since 2026-09-07,
     # the completed-contracts log route through) writes to the real file
     # unconditionally — it doesn't go through Config, so the temp Config
@@ -1542,8 +1646,10 @@ def run() -> int:
 
     config = _Config()
     api_client = UexApiClient(config.data["api"]["uex_base_url"], config.data["api"]["uex_token"])
-    mod = LogisticsHubModule(api_client, config)
-    mod._locations.ensure_loaded()
+    from host.locations import LocationService
+    locations = LocationService(api_client)
+    locations.ensure_loaded()
+    mod = LogisticsHubModule(api_client, config, locations)
 
     failures = 0
     for name, raw_text, expected_pickups, expected_dropoffs in FIXTURES:
@@ -1575,6 +1681,10 @@ def run() -> int:
     distance_failures, distance_total = run_distance_checks(mod)
     failures += distance_failures
     print(f"\n{distance_total - distance_failures}/{distance_total} distance checks passed")
+
+    hauling_failures, hauling_total = run_hauling_resolution_checks(locations)
+    failures += hauling_failures
+    print(f"\n{hauling_total - hauling_failures}/{hauling_total} hauling resolution checks passed")
 
     covalex_failures, covalex_total = run_covalex_orison_check(mod)
     failures += covalex_failures
