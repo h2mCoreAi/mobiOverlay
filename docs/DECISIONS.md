@@ -1,3670 +1,3692 @@
-# Decisions
-
-Append-only. Newest at bottom. Short entries — rationale, not essays.
-
-- **2026-09-03 — Pivoted from Game.log combat overlay to UEX-API trading overlay.**
-  Investigated Game.log on current patch (4.10, build ~12545750) across 51
-  real sessions covering ~1 week of the user's actual PvE combat. Found no
-  attacker/weapon/kill-attribution data at all — only signal was a bare
-  `[ActorState] Dead` line for the player's own death, no cause info. Concept
-  wasn't worth building on. Pivoted to UEX Corp API (community SC trade data)
-  instead.
-
-- **2026-09-03 — PySide6/Qt chosen over CustomTkinter and pywebview.**
-  A prior overlay (pygame + Tkinter, different SC tool) hit packaging
-  failures getting all dependencies into one distributable exe. PySide6 +
-  PyInstaller is a more reliable one-file packaging path, and Qt's widget
-  system handles card drag/drop and custom-font styling natively.
-
-- **2026-09-03 — Modules are folder-per-module, auto-discovered.**
-  Chosen over an explicit registry list so adding a module is purely
-  additive — drop a folder in `modules/`, zero edits to host code or other
-  modules.
-
-- **2026-09-03 — Project name: mobiOverlay.**
-  Nods to Star Citizen's in-game MobiGlas UI, generic enough for public
-  open-source release (doesn't use the user's in-game callsign).
-
-- **2026-09-03 — Visual design approved.**
-  Mockup at https://claude.ai/code/artifact/63a18572-a046-4045-aa3c-caa8dfa0f4bc
-  (working source: `design/Main.dc.html`). Approved as-is, no revisions
-  requested. Key values to carry into Qt/QSS:
-  - Fonts: Orbitron (headers, 600/800/900 weight) + Share Tech Mono (data/body),
-    both via Google Fonts — must be bundled as files for the packaged exe,
-    not linked at runtime
-  - Background: deep charcoal/near-black (`#06090b` void, `#0d1417` card panel,
-    `#101a1e` card header)
-  - Primary accent: cyan `#2de1d0`, glow via `box-shadow: 0 0 0 1px + 0 0 14px`
-  - Alert/error accent: amber `#ffb443`, same glow treatment, used for the
-    Market Alerts / error-state card
-  - Text: `#dff5f2` primary, `#7fa3a1` muted, `#3f5c5a` dim/labels
-  - Sharp corners everywhere — no border-radius
-  - Card header: small circular status dot + Orbitron label (letter-spaced,
-    uppercase) + collapse chevron + close X, all right-aligned
-  - Optional subtle scanline overlay (1px repeating gradient, very low
-    opacity, blend-mode overlay) on the outer container
-  - Card states to replicate in Qt: expanded (full body), collapsed
-    (header-only), error (amber border + warning icon + retry action)
-
-- **2026-09-03 — Modules ship external, not bundled into the packaged exe.**
-  Decided before a third module made this expensive to reverse. Two
-  reasons: (1) preserves the original "drop a folder in `modules/`, zero
-  rebuild" goal — bundling would've quietly broken that; (2) directly helps
-  the exe-trust-skepticism problem raised in conversation — a `modules/`
-  folder of plain readable `.py` sitting next to the exe is auditable in a
-  way a monolithic compiled binary isn't. `config.json` gets the same
-  external treatment for an unrelated but equally load-bearing reason: a
-  PyInstaller onefile build's temp extraction directory is wiped every
-  launch, so a config path resolved relative to that would never actually
-  persist. Both resolved via the new `host/paths.py` `app_root()` (exe's
-  own folder when frozen, project root when running from source). Required
-  switching the module loader from a dotted `modules.<name>.module` package
-  import to file-path loading (`importlib.util.spec_from_file_location`),
-  since external `modules/` won't be a real importable package once frozen.
-  Fonts stay bundled inside the exe (not pluggable, no reason to externalize).
-
-- **2026-09-03 — Project's own git repo initialized separately from the
-  home-directory repo.** Found that `C:\Users\mhoward` itself is a git repo
-  (tracking the whole home directory, including things like `.ssh/` and
-  `NTUSER.DAT` — no commits made there by this project). Initialized an
-  independent `git init` inside `mobiOverlay/` instead, since a GitHub
-  Actions workflow needs to live at an actual repo root, and this project
-  clearly shouldn't be nested inside a home-directory-wide repo.
-
-- **2026-09-03 — CI release build verified end-to-end before wiring up
-  automation.** Built `mobiOverlay.exe` locally with PyInstaller
-  (`mobioverlay.spec`, onefile + windowed) and ran the actual packaged exe
-  with a `modules/` folder copied next to it, matching the real
-  distribution layout. Confirmed: bundled fonts render, both real modules
-  load externally, live API data fetches correctly, config persists next
-  to the exe. One non-obvious thing hit during verification: a PyInstaller
-  **onefile** build's visible top-level window belongs to a **child
-  process** the bootloader spawns, not the process you launched — checking
-  `Get-Process`/window enumeration against the original PID shows nothing
-  useful (tiny working set, no window); you have to find the child via its
-  parent PID to see the real app. `.github/workflows/release.yml` builds
-  the exe the same way (same spec file) on a tag push and publishes it as
-  a GitHub Release with a SHA256 checksum; `BUILD.md` documents the
-  identical steps for anyone who'd rather build it themselves.
-
-- **2026-09-03 — Repo pushed to GitHub, public: github.com/h2mCoreAi/mobiOverlay.**
-  License: MIT (matches the user's prior ThrottleWatch project). Bundled
-  fonts (Orbitron, Share Tech Mono) stay separately licensed under SIL OFL —
-  see `host/assets/fonts/LICENSE.txt` — not superseded by the root MIT
-  LICENSE. No release tag pushed yet — user is still heavily testing;
-  `.github/workflows/release.yml` only fires on a `v*.*.*` tag, so nothing
-  auto-publishes until that's deliberately pushed.
-
-- **2026-09-03 — Card hide/show renamed to Stow/Deploy, dropdown replaced
-  with a themed tray panel.** User's own instinct: generic desktop "hide/
-  add" language didn't fit, asked how SC itself would handle it. SC already
-  has the exact concept under different words — stowing a weapon/tool,
-  deploying it again — so reused that vocabulary throughout, not just in
-  UI text: `Card.stowed` signal (was `closed`), `CardContainer.stow_card`/
-  `deploy_card` (was `hide_card`/`show_card`), the title-bar button reads
-  "TRAY (n)" (was "+ ADD CARD"), and the plain `QMenu` dropdown became a
-  custom `_TrayPanel` styled like the rest of the HUD (dark panel, cyan
-  border) listing only stowed cards with a DEPLOY action, rather than a
-  native OS menu checklist of everything.
-  Hit and fixed a real bug while building this: `Card.isVisible()` is
-  unreliable for tracking stow state — Qt's `isVisible()` reflects
-  ancestor visibility too, so every card read as "not visible" (and the
-  tray badge showed everything as stowed) until the top-level window
-  itself had been shown. Fixed by having `CardContainer` track stowed
-  card IDs itself (`self._stowed: set[str]`) instead of querying Qt
-  widget visibility.
-  Verified the full stow → tray → deploy cycle end-to-end via UI
-  Automation (`System.Windows.Automation`, `InvokePattern` on real
-  buttons, `BoundingRectangle`-derived clicks for the plain-QWidget tray
-  rows) — not coordinate-guessed clicks, which proved unreliable on this
-  multi-window desktop (a "click" can land on whatever window is actually
-  topmost at that screen position, which `PrintWindow`-based screenshots
-  don't reveal since they capture by window handle, not screen region).
-  Testing stayed entirely on the secondary monitor throughout — never
-  touched the user's active game session on the primary display.
-
-- **2026-09-03 — Clicking anywhere in a card raises it to front.**
-  User-requested. Implemented as an application-wide event filter in
-  `CardContainer` (`QApplication.instance().installEventFilter(self)`)
-  rather than a `mousePressEvent` override on `Card` — a press on a child
-  widget (combo box, button, label) never bubbles up to the parent Card's
-  own `mousePressEvent`, so watching at the application level is the only
-  reliable way to catch a click anywhere inside a card, not just its
-  header. Smoke-tested via UI Automation (click doesn't crash the app);
-  full visual confirmation of the raise (two overlapping cards) needs a
-  human dragging one over the other, not yet done by this session.
-
-- **2026-09-03 — Never embed our own UEX token; "most profitable" done as
-  a client-side brute-force scan instead.** User asked how to make
-  Commodity Prices smarter (query for most profitable) and separately
-  drew a hard line on distribution: no shared app token baked into the
-  exe, ever — it'd get extracted from the public repo immediately and
-  either get abused by randoms or revoked by UEX, breaking the feature for
-  everyone at once. Investigated the "real" ranking path first:
-  `commodities_ranking` is deprecated (confirmed live, returns empty). Its
-  documented replacement `commodities_averages` requires a bearer token
-  AND is still per-commodity (`id_commodity` required) — not actually a
-  ranking/discovery query even with a token. With per-user tokens ruled
-  out as a *requirement* (optional/degraded is fine, required for a core
-  feature is not) and the "official" path a dead end anyway, landed on:
-  scan every commodity via `commodities_prices` (already anonymous, ~150-
-  200 calls), compute margin client-side, cache 30 min, chunk via `QTimer`
-  so it doesn't freeze the UI or look like a stub while running. See
-  docs/modules/commodity-prices.md for the mechanics.
-
-- **2026-09-03 — Price Lookup renamed to Commodity Prices.** User noticed
-  it only covers commodities (ore, agricultural goods) — the old name
-  implied broader scope (items, ship components) it never had. Renamed
-  the module folder, `module_id`, and class to match
-  (`price_lookup`/`PriceLookupModule` → `commodity_prices`/
-  `CommodityPricesModule`), not just the display string, since it's still
-  pre-release and there's no cost to getting the internal name right too.
-  Also dropped a hardcoded "default to Laranite if present" fallback that
-  existed only because that's what got typed in while first building the
-  module — not tied to profitability or any real signal. Removing it
-  surfaced a latent bug (see PROGRESS.md): the new alphabetical-first
-  default landed on a commodity with zero active listings, and `refresh()`
-  treated that as a hard error instead of the graceful empty state the
-  per-row display logic already supports. Fixed the actual bug rather than
-  reintroducing a hardcoded "safe" commodity to paper over it.
-
-- **2026-09-03 — Settings menu added; Window/Card Opacity split, Text Size
-  added.** User: opacity slider belonged in a real settings surface, not
-  loose in the title bar, and 1440p made the default text hard to read.
-  Added `_SettingsPanel` (same themed Qt.Popup pattern as the Tray).
-  Window Opacity (existing slider, relocated) and the new Card Opacity
-  (card background alpha, independent of the window — lets you see through
-  cards without making window chrome/text transparent too) both apply
-  live: `Card._apply_border` now composites `theme.BG_PANEL` through
-  `theme.hex_to_rgba` at the card's stored opacity, and
-  `CardContainer.set_all_card_opacity` broadcasts a change to every
-  existing card immediately. Text Size does NOT apply live — every
-  font-size in the app is a literal baked into a stylesheet string built
-  once (`theme.fpx()`, a scale-aware helper, reads `theme.FONT_SCALE` at
-  the moment each stylesheet function runs); rebuilding and reapplying
-  every stylesheet on every existing widget live was out of scope for this
-  pass, so it's an honest "applies next launch" setting instead, labeled
-  as such in the panel. `theme.FONT_SCALE` must be set from config
-  (`main.py`) before `MainWindow` is constructed and before modules are
-  imported — `host/main_window.py`'s top-level `STYLESHEET` constant had
-  to be converted from a module-level string (frozen at import time, i.e.
-  before config even loads) into a function called at construction time,
-  otherwise the scale-aware helper would always see the default 1.0.
-
-- **2026-09-03 — Dropped real-time text scaling; kept everything else from
-  that request.** Considered actually attempting live font rescaling
-  (every stylesheet rebuilt and reapplied to every existing widget on a
-  Settings change) rather than assuming it was too painful, per the user's
-  instruction. User then explicitly cut it before implementation to keep
-  scope sane. In its place: reworded the existing Text Size description
-  to point at the new Relaunch button rather than building a separate
-  toast/notice — the panel already had a persistent description line, no
-  new UI needed.
-
-- **2026-09-03 — Find Most Profitable split into Retrieve Data +
-  Find Most Profitable; user caught a real correctness bug.** The
-  original combined scan computed sell-minus-buy margin across ALL
-  systems, silently ignoring the Best Sell/Best Buy system filters right
-  above it on the same card — a real bug the user found by asking "does
-  it take into account the selected system filters?" rather than one
-  caught by our own testing. Fixed by separating concerns: "Retrieve
-  Data" does only the network fetch (~150-200 calls, cached in
-  `_all_commodity_data`, no margin math); "Find Most Profitable" is a
-  separate, instant, local-only action that reads `sell_system`/
-  `buy_system` filter state at click time — same filter logic already
-  proven correct in `_apply_filters`, just applied across every cached
-  commodity instead of one. This also enables the countdown/force-update
-  UX below, since "when was the data retrieved" is now a separate concept
-  from "what did we do with it."
-
-- **2026-09-03 — Countdown + "FORCE UPDATE?" confirm on Retrieve Data.**
-  User-specified UX: after retrieving, the button counts down (MM:SS) to
-  the next recommended refresh (reuses the existing 30-min cache window).
-  Clicking mid-countdown doesn't immediately re-fetch — it swaps to
-  "FORCE UPDATE?" as a confirm step (auto-reverts after 4s if ignored,
-  via a singleShot `QTimer`), and only a second click while that's showing
-  triggers an actual forced retrieve. One implementation detail worth
-  recording: verifying the two-click force-confirm sequence requires both
-  clicks to land within that 4-second window, which is impossible across
-  two separate tool-call round-trips (each has real latency exceeding 4s)
-  — had to combine "click, verify prompt, click again" into one atomic
-  script to test it at all. Same underlying lesson as the earlier
-  UI-Automation-popup-timing issue, one level up: it's not just popups
-  that need atomic scripts, anything with its own auto-reverting timeout
-  does too.
-
-- **2026-09-03 — Settings > Relaunch button; found and fixed a real
-  process-leak bug while verifying it.** Spawns a fresh instance via the
-  new `host/paths.py` `relaunch_command()` (mirrors `app_root()`'s
-  frozen-vs-source detection) and closes the current one. First
-  implementation only called `self.close()`, which turned out to be
-  insufficient: the Settings panel itself is where the Relaunch button
-  lives, and it's a separate top-level `Qt.Popup` widget still open at
-  the moment it's clicked — `self.close()` only closes `MainWindow`, not
-  that popup, so Qt's `quitOnLastWindowClosed` never fires and the old
-  process lingers forever (confirmed live: old PID stayed `Responding:
-  True` indefinitely, spawned the new instance as its own child process).
-  Fixed with an explicit `QApplication.instance().quit()` after
-  `self.close()`, not relying on last-window-closed detection at all.
-  Re-verified clean afterward: old PID fully exits, exactly one new PID
-  ends up running, its window is the real visible one.
-
-- **2026-09-03 — Trade Route Optimizer: "Admin -" terminal names fixed;
-  terminal picker made searchable.** User asked why so many terminals
-  showed as "Admin" — checked the raw API response directly rather than
-  guessing: `name` really is `"Admin - Baijini Point"` (that's genuinely
-  the in-game kiosk's name, not a UEX data error), but `nickname` gives
-  the clean location name (`"Baijini Point"`, `"ARC-L1"`). Switched the
-  terminal picker to `nickname`. `commodities_routes` (used for the route
-  list itself) has no equivalent nickname field for destinations, so
-  those fall back to stripping the `"Admin - "` prefix by hand.
-  Also made the terminal combo editable with a filtering `QCompleter`
-  (`Qt.MatchContains`) per explicit request — type to narrow a 100+ item
-  list, or still scroll the full dropdown. Had to switch its signal
-  connection from `currentTextChanged` to `textActivated`: an editable
-  combo's `currentTextChanged` fires on every keystroke, which would
-  trigger a refresh (and an "unknown terminal" error) per character
-  typed rather than only on a real, committed selection.
-  Verification note: confirmed both the display-name fix (screenshot) and
-  that the field genuinely accepts keyboard input (real keystrokes did
-  change its content), but couldn't cleanly demonstrate the completer's
-  filtered dropdown popup itself through UI Automation in this session —
-  `SendKeys` timing produced garbled input (`"arcbbbbb..."`) rather than
-  clean text, and `ValuePattern.SetValue` doesn't reliably trigger Qt's
-  real keystroke-driven signals (same class of issue as the earlier
-  combo-selection problem). The underlying pattern
-  (`QCompleter` + `MatchContains` on an editable `QComboBox`) is
-  standard, well-tested Qt behavior — left for the user to confirm
-  directly rather than over-investing further in fighting the test
-  tooling.
-
-- **2026-09-04 — Trade Route Optimizer: added a "Sell In" destination
-  filter and clearer buy/sell labeling.** User had to ask what a route
-  row actually meant (origin terminal = buy, each row's destination =
-  sell) — real signal the layout wasn't self-explanatory. Added "▲ BUY
-  HERE" above the origin picker and changed each row's destination text
-  from a bare "→ ..." arrow to "SELL AT ...". Also added the destination
-  filter itself: `commodities_routes` rows already carry
-  `destination_star_system_name` per row, so this is pure client-side
-  filtering (populate the dropdown from systems seen in the fetched
-  routes, filter+resort before slicing to the top 5) — identical pattern
-  to Commodity Prices' sell/buy filters, no new API call.
-  Verification note: confirmed the UI renders correctly (labels, filter
-  dropdown present) and confirmed the filter *logic* is exactly correct
-  by extracting it into a standalone script with sample data (no Qt
-  involved) — Pyro-only and Stanton-only both returned exactly the right
-  rows. Could NOT get UI Automation to actually change the destination
-  combo's selection to prove the live interaction end-to-end: tried
-  `SelectionItemPattern.Select()` on the popup item, `ValuePattern
-  .SetValue()`, and real keyboard nav (`{F4}{DOWN}{DOWN}{ENTER}` after
-  `SetForegroundWindow`) — all three reported success but the combo's
-  value never actually changed on readback, even within one atomic
-  script. That's a strong signature of a genuine Qt-accessibility-bridge
-  limitation for `QComboBox` popup *selection* specifically (buttons via
-  `InvokePattern` have been reliable all session) rather than an app bug
-  — logged as a general lesson, not just for this feature.
-
-- **2026-09-04 — Whole-app minimize-to-pill, Collapse All, and a
-  system-wide Stow/Deploy hotkey.** All user-requested, implemented
-  together since the hotkey's whole purpose is toggling the same
-  stow/deploy behavior the minimize button drives directly.
-  - **Minimize-to-pill** reuses `MainWindow` itself rather than spawning
-    a second window — hides `card_container`/size grip, hides
-    Tray/Settings/minimize in the title bar (keeps wordmark + close),
-    resizes down to the wordmark's `sizeHint()` (padded for
-    `MainWindow`'s own content margins, which `sizeHint()` alone
-    ignores), and remembers the pre-stow geometry to restore exactly.
-    Avoided a second top-level window on purpose — it would've resurrected
-    the "which window is actually on top" z-order/focus fights this
-    session already hit repeatedly with popups.
-  - **Global hotkey required real Win32 API access** (`ctypes`,
-    `RegisterHotKey`/`WM_HOTKEY`), not a Qt `QShortcut` — shortcuts only
-    fire while the app itself has focus, useless for "toggle while I'm
-    alt-tabbed into the game," which is the actual use case per the
-    request ("utilized more as part of the player's UI"). New
-    `host/hotkey.py`, a `QAbstractNativeEventFilter` installed on
-    `QApplication` to catch `WM_HOTKEY` regardless of focus.
-  - **Hard requirement: at least one modifier.** A hotkey capture field
-    that accepted a bare key would let someone accidentally register,
-    say, plain `M` as a system-wide hotkey — hijacking that key
-    everywhere, including normal typing in the game. Rejected before
-    `RegisterHotKey` is ever called, with an inline message telling the
-    user why.
-  - Verification is split, and the gap matters: the click-to-arm
-    "listening" state change is confirmed live (real mouse click,
-    visible text change). The key/modifier→VK-code parsing logic is
-    confirmed correct in isolation (`Ctrl+Shift+M` → exactly
-    `MOD_CONTROL|MOD_SHIFT` + `VK_M`, using real `Qt` constants, no GUI
-    involved). But actual keystroke capture — pressing the combo while
-    the field is armed — could not be verified at all: `SendKeys`,
-    even after `SetForegroundWindow` on the main window, never visibly
-    reached the field, and `config.json` confirmed nothing was actually
-    saved. Root cause suspected rather than confirmed: the Settings
-    panel is its own `Qt.Popup` HWND, and focusing the *owner* window
-    doesn't necessarily focus the popup's own HWND — `NativeWindowHandle`
-    came back empty for the field too, so there wasn't even a handle to
-    route input to directly as a workaround. This is a real, flagged gap
-    in PROGRESS.md, not a "probably fine" — a human needs to actually
-    click the field and press a real combo before trusting it works.
-
-- **2026-09-03 — The hotkey field's real bug was a PySide6/Qt6 API
-  mismatch, not focus routing.** The previous entry's "SendKeys never
-  reaches it" theory turned out to be a red herring for the underlying
-  functional bug (though the focus-routing problem is real and separately
-  documented in memory). `_HotkeyField.keyPressEvent` built its display
-  string with `QKeySequence(int(event.modifiers()) | key)` — but in
-  PySide6/Qt6's new-style enums, `event.modifiers()` returns a
-  `Qt.KeyboardModifier` flag object that `int()` cannot coerce, raising
-  `TypeError` on every single keypress, for every key, with or without a
-  modifier. The exception was thrown and silently swallowed by Qt's event
-  loop before `set_stow_hotkey()` was ever reached — so the field had
-  *never* worked, for anyone, the entire time it existed. Fixed with
-  `QKeySequence(QKeyCombination(event.modifiers(), key))`. Confirmed by
-  reproducing the exact `TypeError` in an isolated script, then confirming
-  the fix produces correct strings for both a bare `F3` and a modified
-  combo (`Ctrl+Shift+M`).
-
-- **2026-09-03 — Window background transparency decoupled from card
-  opacity; `WINDOW OPACITY` now controls only the empty space.**
-  `setWindowOpacity()` scales the whole rendered window's alpha uniformly
-  at the compositor level, so cards could never look more opaque than the
-  window they sit in — the two opacity sliders were coupled despite
-  looking independent in the UI. Switched to `Qt.WA_TranslucentBackground`
-  with a per-pixel rgba background on `MainWindow` (same
-  `theme.hex_to_rgba()` pattern `Card.set_card_opacity()` already used),
-  so the void area's alpha is now genuinely independent of each card's own
-  background alpha. Title bar and panels keep their own solid/gradient
-  backgrounds, unaffected by this slider — that's a visible behavior
-  change from before (previously lowering window opacity dimmed the
-  title bar too), but it's the correct trade for making the setting mean
-  what its label says.
-
-- **2026-09-03 — Pill and deployed-window positions are tracked and
-  persisted independently.** Previously the pill always reopened wherever
-  the full-size window last was, forgetting any position it had been
-  dragged to; `pre_stow_geometry` lived only in memory and was lost on
-  restart if the app closed while stowed. Added a `pill_geometry` config
-  key alongside `pre_stow_geometry` (already in the config schema but
-  unused until now), both updated via debounced `moveEvent`/`resizeEvent`
-  handlers on `MainWindow` (400ms after the last move, so a drag doesn't
-  hammer disk I/O) rather than only at the moment of stow/deploy.
-
-- **2026-09-03 — Both hotkey and transparency fixes above shipped broken;
-  root causes were different from what they looked like.** Caught by the
-  user re-testing the live app rather than by this session's own
-  verification, which is the actual failure worth learning from:
-  - The hotkey "fix" (`QKeyCombination(event.modifiers(), key)`) still
-    threw `TypeError` on every keystroke — `QKeyCombination` needs an
-    actual `Qt.Key` enum for its key argument, and `event.key()` returns
-    a plain `int` in PySide6. The isolated test written to confirm the
-    first fix used `Qt.Key_F3` directly, which is already the right
-    type, so the test couldn't have caught this even in principle — it
-    wasn't testing the real code path. Fixed with `Qt.Key(key)`, and this
-    time verified by importing the actual `_HotkeyField` class and firing
-    real `QKeyEvent`s at its real `keyPressEvent` end-to-end, which is
-    the only version of this check that could have caught either bug.
-  - The transparency fix (`WA_TranslucentBackground` + rgba background)
-    was missing `Qt.WA_StyledBackground`, without which a plain `QWidget`
-    doesn't paint a QSS `background` property at all — so the window was
-    permanently fully transparent no matter the slider, not "decoupled
-    from card opacity" as intended. This one had no isolated test at all
-    the first time; a synthetic-widget check written afterward to
-    understand it turned out to be unreliable too (`QWidget.grab()`
-    reports alpha=0 for `WA_TranslucentBackground` widgets even when they
-    render correctly on real screen via DWM), so the real signal was
-    reading `PrintWindow` screenshots of the actual running app, not a
-    synthetic reproduction.
-  - Lesson: for anything routing through PySide6/Qt6's new-style enums,
-    "isolated test passes" only means something if the test uses the
-    exact runtime types the real code path produces (e.g. `event.key()`
-    is `int`, not `Qt.Key`) — reproducing the shape of the call, not just
-    its intent, is what makes a regression test meaningful here.
-
-- **2026-09-03 — Window opacity fix #3: QSS `background:` on a
-  `WA_TranslucentBackground` top-level widget doesn't reliably work at
-  all; switched to painting the void directly in `paintEvent()`.**
-  `WA_StyledBackground` (the previous fix) was a real, necessary
-  requirement but not sufficient — the user reported no visible change
-  from the slider at any position. Live debug output proved the Python
-  side was unambiguously correct (right rgba string recomputed and
-  reapplied on every slider move, both attributes `True`, right class
-  name for the QSS selector), and `GetWindowLong`/`GWL_EXSTYLE` confirmed
-  Windows genuinely created the native window with `WS_EX_LAYERED`. So
-  the bug was in Qt's own QSS-background-to-layered-window compositing
-  path specifically — a real, if obscure, rough edge, not a code mistake
-  this time. Fix: paint the void directly with `QPainter` in
-  `CompositionMode_Source` inside `MainWindow.paintEvent()`, which writes
-  ARGB pixels straight into the translucent surface instead of going
-  through the QSS pipeline. Proof this actually changed something (not
-  just another unverified guess): sampling the same screen pixel at
-  100% vs. 40% opacity went from `(6, 9, 11)` — exactly `theme.BG_VOID`,
-  correctly rendered — down to `(2, 4, 4)`, matching premultiplied-alpha
-  scaling by ~0.4 almost exactly. The *previous* (QSS) attempt sampled as
-  flat `(0, 0, 0)` at both settings — not even the right color, let alone
-  reactive to the slider — which is hard confirmation the QSS path was
-  never really working, not just hard to verify.
-  Still can't fully confirm the on-screen result against real desktop
-  content behind the window (PrintWindow only proves Qt is producing
-  correct, opacity-reactive premultiplied pixel data, not what DWM does
-  with it against the desktop) — needs the user's own eyes as the final
-  check, same as before, but now with much stronger evidence the
-  mechanism itself is doing the right thing.
-
-- **2026-09-03 — Replaced RegisterHotKey with a low-level keyboard hook
-  (the `keyboard` library), because RegisterHotKey doesn't fire while
-  Star Citizen has focus.** The hotkey field's capture bug (int vs
-  Qt.Key) was fixed and confirmed working — but the user then reported
-  the hotkey still didn't actually toggle stow/deploy while the game was
-  focused, even with a correctly-captured combo. `RegisterHotKey` posts
-  `WM_HOTKEY` through the normal window message queue; a fullscreen or
-  exclusive-input game can block that queue from ever reaching a
-  background process's hotkey registration. Told to look at how
-  ThrottleWatch (a separate, already-shipping Star Citizen overlay by
-  the same author, at `D:\Documents\Mitch\Star Citizen\ThrottleWatch\
-  throttle_watch.py`) handles this — its hotkey reliably works with the
-  game focused. It uses the `keyboard` Python library, which installs a
-  low-level global keyboard hook (`WH_KEYBOARD_LL` via
-  `SetWindowsHookEx`) that intercepts the actual keyboard input stream
-  below the window message queue entirely, so which window currently has
-  focus is irrelevant to whether the hook sees the keystroke.
-  Ported ThrottleWatch's `HotkeyState` design directly rather than
-  reinventing it: raw key down/up events (not `keyboard.add_hotkey`,
-  whose shared cross-hotkey pressed-keys dict can get a modifier stuck
-  "held" forever if a single key-up event is ever lost — e.g. a UAC
-  prompt stealing focus mid-combo, which happens easily alt-tabbing out
-  of a fullscreen game) plus a `GetAsyncKeyState`-based `reconcile()`
-  watchdog that self-heals exactly that stuck-state case. Also ported the
-  capture mechanism — `keyboard.read_hotkey()` in a background thread —
-  replacing the Qt-keyPressEvent-based capture entirely, which
-  incidentally also resolves the Qt.Popup-keyboard-focus unreliability
-  documented earlier for that field, since this capture path doesn't
-  depend on Qt focus routing at all.
-  `keyboard.hook()`'s callback runs on the `keyboard` library's own
-  dispatch thread, not the Qt/GUI thread — `GlobalHotkey` is a `QObject`
-  with a `Signal`, and emitting a Qt signal from a non-GUI thread is the
-  standard, correct way to marshal a callback that touches Qt widgets
-  back onto the GUI thread (Qt auto-queues cross-thread signal delivery).
-  This plays the same role ThrottleWatch's `self.root.after(0, ...)`
-  plays for marshaling onto the Tk thread.
-  Verified `HotkeyState`'s combo-matching logic directly with synthetic
-  key events (not the live hook, which needs a human's real keyboard):
-  bare `f3` fires on down and correctly re-fires on a fresh press after
-  release, a multi-key combo (`ctrl+alt+p`) correctly waits for every
-  modifier to be down before firing, and `clear()` correctly stops
-  dispatch. New dependency: `keyboard>=0.13` (already vendored/used by
-  ThrottleWatch, confirmed installed in this environment).
-  Config schema changed: `hotkey_mod`/`hotkey_vk` (Win32 concepts)
-  replaced by a single `hotkey_combo` string (the `keyboard` library's
-  own canonical form, e.g. `"f3"` or `"ctrl+alt+p"`) — simpler, and
-  matches what `keyboard.read_hotkey()` already returns with no
-  translation needed. Old keys left as harmless orphans in existing
-  users' `config.json` rather than actively migrated/deleted.
-
-- **2026-09-03 — Fixed a real race in pill-position persistence: a
-  shared debounce timer read stow-state at fire time, not per-event.**
-  The pill-position-memory feature (shipped earlier this session) used
-  one `QTimer` restarted on every `moveEvent`, which after a 400ms quiet
-  period would save either `pill_geometry` or `pre_stow_geometry`
-  depending on `self._app_stowed` *at that moment*. This breaks the
-  instant two different-state moves happen within the same 400ms window:
-  drag the pill, then deploy shortly after (an entirely natural thing to
-  do — most people don't pause half a second after dragging something
-  before clicking it) restarts the same timer from the deploy's own
-  `move()`/`resize()` calls, so when it finally fires it reads
-  `self._app_stowed == False` and saves `pre_stow_geometry` — the pill's
-  just-dragged position is never written to disk at all, silently.
-  Fixed by removing the debounce for moves entirely and instead saving
-  position immediately, synchronously, at the exact moments a move
-  actually finishes: `_TitleBar.mouseReleaseEvent` (covers both pill and
-  deployed-window dragging — the same handler drives both, distinguished
-  by `is_app_stowed()`) and the end of `stow_app()`/`deploy_app()`'s own
-  programmatic repositioning. `resizeEvent` keeps a debounce (resizing is
-  naturally bursty — dozens of events for one drag of the corner grip)
-  but no longer branches on stow state at all, since the grip is hidden
-  whenever the app is stowed and so can never race against a pill move.
-
-- **2026-09-03 — Deploying via the hotkey now takes real OS foreground
-  focus, via AttachThreadInput, not the "tap Alt" heuristic.** User
-  asked that toggling into full mode via the hotkey actually take input
-  focus, not just visually appear on top while the game keeps keyboard
-  input. First attempt: `keybd_event`-simulate an Alt press/release
-  before `SetForegroundWindow`, the commonly-cited trick for background
-  processes to bypass Windows' foreground-switch lock. Live-tested with
-  Star Citizen genuinely holding foreground focus (confirmed via
-  `GetForegroundWindow` before the test) — `SetForegroundWindow` reported
-  success and, checked immediately from inside the same process, the
-  window *was* foreground — but a separate follow-up check (a new
-  PowerShell process, one tool-call round-trip later) found focus back
-  on Star Citizen. Root cause: that gap was pure measurement latency
-  (~300-500ms from spawning a new process to run the check), not the fix
-  failing — an atomic single-script test (press F3, then sample
-  `GetForegroundWindow` at 20/200/800ms, all in one script with no
-  cross-process delay) confirmed mobiOverlay held foreground at every
-  sample. Switched anyway to `AttachThreadInput` (temporarily joining
-  this process's input queue with the current foreground window's
-  thread, called around `SetForegroundWindow`/`BringWindowToTop`) since
-  it's the actual documented mechanism Windows' foreground-switch
-  restriction checks against, rather than relying on a lock-timeout
-  heuristic — more robust than the Alt-tap trick even though that one
-  turned out to work too once measured correctly. Also caught and fixed
-  a separate real bug along the way: the first draft called
-  `SetForegroundWindow`/`GetForegroundWindow` without declaring
-  `ctypes` `argtypes`/`restype`, which defaults to 32-bit `c_int` — on
-  64-bit Windows an `HWND` is a 64-bit pointer, so window handles could
-  have been silently truncated. Fixed by declaring proper
-  `ctypes.wintypes.HWND`/`DWORD`/`BOOL` signatures throughout.
-
-- **2026-09-03 — Commodity Prices had the same raw-kiosk-label bug Trade
-  Route Optimizer already had fixed; fixed the same way.** User spotted
-  `"Admin - MIC-L2"` in the Best Buy row. Checked the live
-  `commodities_prices` API response directly rather than guessing: it
-  has `terminal_name` (always the raw label) and `id_terminal`, but no
-  nickname field of its own — unlike `terminals`, which has both `name`
-  (raw) and `nickname` (clean, e.g. `"MIC-L2"`) for the same terminal.
-  Fetch `terminals?type=commodity` once at card creation
-  (`_populate_terminal_nicknames()`) and look the clean name up by
-  `id_terminal` in `_format_location()`, falling back to the raw
-  `terminal_name` if a terminal isn't in that map. Same `nickname` field
-  the trade route picker already uses — not a new pattern, just applied
-  to the one place it was missed.
-
-- **2026-09-03 — UEX's `commodity_name` query param is a substring match,
-  not exact — filter results client-side or the wrong commodity can win
-  "best price."** User flagged Diamond's reported sell price (80,000
-  aUEC/SCU) as suspiciously high. Cross-checked against UEX's own website
-  (~7,800) and the raw API directly: `commodity_name=Diamond` returns
-  rows for both `"Diamond"` (id 25) and `"Diamond Laminate"` (id 119) —
-  a different commodity that happens to contain "Diamond" as a substring.
-  `_apply_filters`/`find_most_profitable` took `max()`/`min()` over
-  `price_sell`/`price_buy` across every row returned with no check that
-  the row's `commodity_name` actually matched the selected commodity, so
-  Diamond Laminate's much higher price silently won. Fixed by filtering
-  to `r["commodity_name"] == name` right after fetching, in both
-  `refresh()` and the Retrieve Data loop. Worth remembering for any
-  future UEX endpoint call using a `*_name` filter param — this API
-  doesn't appear to support exact-match filtering, so assume substring
-  matching unless proven otherwise.
-
-- **2026-09-04 — Small border-radius added everywhere, `theme.RADIUS = 4`.**
-  User wanted the 90° corners softened globally, not just on one widget.
-  Added a single shared constant and applied `border-radius:
-  {theme.RADIUS}px` next to every `border:` declaration across
-  `host/main_window.py`, `host/card.py`, `host/card_container.py`, and
-  all three module files — cards, buttons, combos, line edits, the tray/
-  settings popups, the title bar. Skipped `border: none` rules with no
-  background fill (nothing to round) and `:checked`/`:disabled`
-  pseudo-state rules that only override color (Qt keeps the base rule's
-  radius across states on the same widget). Confirmed visually after
-  relaunch.
-
-- **2026-09-04 — The radius pass above missed the window's own true outer
-  shape, including the pill.** User asked directly whether the pill got a
-  radius. It hadn't: `MainWindow.paintEvent()` painted the void background
-  with a plain `fillRect` (sharp corners), and that rect *is* the window's
-  actual outer edge in both deployed and stowed-to-pill mode — the
-  previous pass's `border-radius` only rounded the title bar's own QSS
-  border, an inset element sitting inside that sharp-cornered void, not
-  the window boundary itself. Fixed by painting a `QPainterPath` rounded
-  rect instead of a plain rect, using the same `theme.RADIUS` constant —
-  since `paintEvent` is shared by both deployed and pill states, this
-  rounds both identically for free, nothing to keep in sync separately.
-  Had to clear the whole rect to transparent first before filling the
-  rounded path — `fillPath` alone only touches pixels inside the shape,
-  so without the clear the four corners cut off by the rounding would
-  keep whatever stale/garbage pixels were already in the translucent
-  backing store instead of being genuinely see-through. Also bumped
-  `theme.RADIUS` from 4 to 8 per the user's "increase it" ask. Confirmed
-  visually on both the pill and the deployed window after relaunch.
-
-- **2026-09-04 — Checked mobiOverlay's styling directly against a live
-  MobiGlas (in-game device menu) screenshot, not memory/guesswork.**
-  User asked for this explicitly. Captured the actual Star Citizen window
-  via `PrintWindow` (found by window title, not by trusting a stale PID —
-  the game had restarted since it was last checked this session) while
-  MobiGlas was open. Observations: dark navy-black panel fills and thin
-  cyan borders already matched our palette closely, no color changes
-  needed — but MobiGlas's panels use a visibly larger, softer corner
-  radius than ours, and each panel is clearly two-tier: a separate,
-  slightly lighter, more-rounded header strip sitting above a flatter
-  body, not one uniform box. Bumped `theme.RADIUS` 8 -> 10. Gave
-  `_DragHeader` (card.py) its own background fill with only the top
-  corners rounded and a bottom border separating it from the body —
-  `theme.BG_PANEL_HEADER` already existed for exactly this in `theme.py`
-  (from the original approved design mockup) but had never actually been
-  wired up anywhere until now. Confirmed visually after relaunch.
-
-- **2026-09-04 — Shifted the whole color palette from teal-black to
-  MobiGlas's actual blue-gray, sampled from the live screenshot pixel by
-  pixel, not eyeballed.** User asked for the app to look like it's part
-  of the game's own UI. Used PIL to sample real pixel colors from
-  specific regions of the MobiGlas screenshot (panel body, panel border,
-  body text, deep-space background) rather than guessing from the
-  earlier visual inspection. Findings: `BG_VOID` (deep space background)
-  already matched almost exactly (sampled `#03080d` vs. our `#06090b`) —
-  no change needed there. Everything else was off: MobiGlas panel bodies
-  sample as a lighter blue-gray (`#202832`) than our near-black teal
-  (`#0d1417`); its border/chrome glow is a pale ice-blue (`#87bee6`
-  family), not the teal-cyan (`#2de1d0`) this app used everywhere; body
-  text carries a blue-white tint (`#e4e7f3`), not teal-white. Note:
-  MobiGlas *does* also use a bright mint-teal (`#57f3d0`, close to this
-  app's old accent) but only for a secondary "tracked/active" status
-  indicator, not as the dominant chrome color — keeping our primary
-  accent teal would have kept the app looking like a HUD sitting next to
-  MobiGlas rather than part of it. Updated `BG_PANEL`, `BG_PANEL_HEADER`,
-  `BORDER_FLAT`, `ACCENT_CYAN`/`ACCENT_CYAN_DIM`/`BORDER_CYAN`,
-  `TEXT_PRIMARY`/`TEXT_MUTED`/`TEXT_DIM` in `theme.py`, plus the title
-  bar's hardcoded gradient in `main_window.py` (the only color anywhere
-  in the codebase not already routed through `theme.py`). Left
-  `SNAP_BORDER`/`SNAP_FILL` (purple grid-snap) and `ACCENT_AMBER` (error/
-  retry) alone — unrelated to this pass. Confirmed visually after
-  relaunch.
-
-- **2026-09-04 — Named the `host/` package "mobiOverlay Core."** Docs/naming
-  only — no folder rename, no import changes. `host/` remains the actual
-  package path; "mobiOverlay Core" is the name used in docs and
-  conversation for what it contains (window, card container, config,
-  module loader, hotkey, HTTP client). Updated CLAUDE.md and
-  ARCHITECTURE.md's forward-facing descriptions; left historical
-  entries in this file and PROGRESS.md referring to "the host" as-is
-  since this log is append-only.
-
-- **2026-09-04 — v1.0-readiness review fixes, Critical items (C1-C4).**
-  A senior-dev-style review of mobiOverlay Core flagged 4 critical gaps
-  in module fault isolation before a public v1.0. Fixed:
-  - **C1** (no fault isolation for hung/blocking modules) — modules run
-    synchronously on the GUI thread by design (see "Module contract"
-    above); a true preemptive timeout would require a threading/process
-    redesign, out of scope here. Added a soft diagnostic watchdog instead
-    (`main.py`'s `_timed_call`): logs a warning naming the module and
-    call if `create_card()`/`refresh()` takes >2s, so a slow module is
-    visible in the log instead of just "the app feels laggy."
-  - **C2** (no contract validation) — `module_loader.py`'s new
-    `_validate_module_contract()` checks `module_id`/`display_name` are
-    non-empty strings and `create_card`/`refresh` are callable, at load
-    time, before the module is used anywhere else. `main.py`'s new
-    `safe_create_card()` also now guards `create_card()` (previously
-    unguarded — an exception there crashed the whole app before other
-    modules loaded) and validates it returns an actual `Card`.
-  - **C3** (duplicate module_id) — `discover_modules()` now tracks
-    claimed `module_id`s and skips (with a logged error naming both
-    folders) any module trying to reuse one already claimed.
-  - **C4** (`settings_schema` documented but never implemented) —
-    removed from the documented contract in ARCHITECTURE.md and
-    `module_base.py` rather than building it now; it wasn't used by
-    Core or any of the 3 existing modules, and a fictional required
-    field is worse than no field for a public module-authoring guide.
-
-- **2026-09-04 — Logistics Hub (OCR module) ships as an optional,
-  manual-install module; its deps are not bundled into the exe.**
-  `modules/logistics_hub/` (OCR-driven hauling mission board reader +
-  route optimizer) depends on `easyocr`, which pulls in PyTorch +
-  torchvision (~500MB+). Per the Packaging decision, `modules/` is
-  deliberately kept external/unfrozen so it's editable without a
-  rebuild — but that also means PyInstaller never bundles a module's
-  dependencies, only `host/`'s. A user who drops this module folder
-  next to the packaged exe without also running
-  `pip install -r modules/logistics_hub/requirements.txt` in a Python
-  environment will see the module's own clear "not installed" error
-  rather than a crash (see `OCR_AVAILABLE` guard in `module.py`).
-  Considered instead bundling this module's deps into the exe as an
-  exception to the external-modules rule — rejected for now: it would
-  bloat every user's download by hundreds of MB even if they never use
-  this module, just to save an optional module's users one pip command.
-  Documented as an opt-in, power-user module in release notes/README
-  instead. Revisit bundling (or a companion installer script) if this
-  module proves popular enough to justify the packaging investment.
-
-- **2026-09-04 — Superseded same-day: distribution is all-inclusive,
-  every module always bundled together.** The "optional, manual-install
-  module" framing above (same day, Logistics Hub's own deps) no longer
-  reflects how the project ships — user decided to keep the modular
-  *architecture* (folder-per-module stays valuable for adding/changing
-  features without touching Core) but not modular *distribution*.
-  Practical effect: `modules/logistics_hub/requirements.txt` (easyocr/
-  Pillow) should be treated as part of the app's real dependency set
-  going forward, not an opt-in extra — packaging work should fold it
-  into whatever the standard install path becomes, not keep it
-  separately documented as power-user-only.
-
-- **2026-09-04 — Logistics Hub built: OCR mission-board reader + UEX-
-  backed route planner.** `modules/logistics_hub/` — originally scaffolded
-  by Aider (DeepSeek V4 Flash, see below) then substantially hardened by
-  Claude across several real-contract test/fix rounds. Final design,
-  each piece earned from a real OCR failure, not designed upfront:
-  - **Contracts, not a flat stop list.** A contract holds `pickups: []`
-    and `dropoffs: []` (symmetric, either can have more than one — real
-    contracts use both "DROP OFF LOCATIONS (ANY ORDER)" and "PICK UP
-    LOCATIONS (ANY ORDER)" panel styles). Scanning accumulates contracts
-    (CLEAR to reset) rather than overwriting on every scan.
-  - **Location text is resolved against real UEX data**, not guessed
-    from strings: every capitalized 2-4-word phrase (plus a separate
-    pass for single hyphenated station codes like "HDMS-Edmond", which
-    the multi-word pattern can't see at all) is a *candidate*; only
-    phrases that match a real `terminals`/`space_stations`/`outposts`/
-    `cities` record survive. Letting the API be the filter turned out
-    far more robust than trying to regex-parse contract narrative text
-    correctly, since OCR corrupts any single mention but a real contract
-    repeats each place name several times across different sentences.
-  - **Cross-endpoint id collision was a real, silent-data-loss bug**:
-    `terminals`, `space_stations`, `outposts`, `cities` each have their
-    own independent id sequence (UEX `terminals` id 17 = "Bud's
-    Growery"; `space_stations` id 17 = a completely different real
-    place, "MIC-L1 Shallow Frontier Station"). Deduping by raw `id`
-    silently dropped one of every colliding pair — fixed by tagging
-    each row with its source endpoint at index-build time and keying
-    every dedup (`_build_contract`'s merge, the location picker, route
-    cost's "same terminal" check) on `(endpoint, id)` instead.
-  - **Pickup-vs-dropoff role** comes from nearby keywords ("Collect X
-    from Y" -> pickup; "Deliver...to Y" or a "DROP OFF LOCATIONS"/"PICK
-    UP LOCATIONS" section -> dropoff/pickup) with the section header
-    scoped to only apply to lines that actually look like a location row
-    (contain "at") — otherwise it kept bleeding into trailing footer/
-    signature text and misclassifying the contractor's own name as a
-    stop.
-  - **Commodities** ("Waste", "Silicon", ...) are extracted the same
-    way — "Collect X from Y"/"Deliver...of X to Y" — and attached per
-    pickup/drop-off, matched by substring against every name the
-    location is known by (resolved candidate text, nickname, full name).
-  - **Route planning**: nearest-neighbour, starting from a CURRENT
-    LOCATION picker (searchable combo over the same UEX location data,
-    labeled with both name and short code — e.g. "Shallow Frontier
-    Station (MIC-L1)" — since search-by-code silently found nothing
-    before this). Falls back to "start at the first stop" only if no
-    location has been picked. **Hard constraint, not a cost tiebreaker:**
-    a drop-off is ineligible until every pickup on its own contract has
-    been visited — cargo can't be delivered before it's collected.
-    Travel cost is currently a coarse same-terminal/same-body/same-
-    system/different-system tier, not real distance — see the Next
-    section, this is a known near-term follow-up (`terminals_distances`
-    / `orbits_distances` exist and were verified live against real
-    location pairs; the module just isn't using them yet).
-  - Bare-hyphenated-code candidates ("MIC-L1" alone) can resolve to an
-    unrelated shop that happens to share the exact same short-code
-    nickname as the station itself, producing a spurious duplicate stop
-    — fixed by suppressing the bare-code candidate specifically when a
-    fuller phrase immediately follows it on the same line (the common
-    case), rather than trying to merge look-alike results after the
-    fact (tried a signature-based merge first; it wrongly collapsed two
-    genuinely different stations that happened to share a planet, and
-    was reverted).
-
-- **2026-09-04 — Aider (DeepSeek V4 Flash) added as a secondary dev
-  tool for new-module work, with a hard boundary.** Configured via
-  `.aider.conf.yml` (`openai/deepseek-v4-flash`, DeepSeek's OpenAI-
-  compatible endpoint — LiteLLM's built-in `deepseek/` provider doesn't
-  know this model id) + a gitignored `.env` for the key. Used to
-  scaffold Logistics Hub's first pass. Explicit rule given to it and
-  worth keeping for any future use: **only create files under one new
-  module's folder — never edit `host/` or another module.** Observed
-  behavior worth remembering: it iterates against its own mistakes more
-  than a stronger model would (multiple fix-commits in a row on the same
-  file — pytesseract, then easyocr, then several follow-up fixes, all
-  same session) — review its diffs rather than trusting a single pass.
-
-- **2026-09-04 — Decided: a shared Location service belongs in Core
-  (`host/`), not as a module other modules depend on.** All three real
-  modules (`commodity_prices`, `trade_route_optimizer`, `logistics_hub`)
-  independently fetch `star_systems`/`terminals` and build their own
-  system/terminal pickers — duplicate API calls and, in Logistics Hub's
-  case, a lot of endpoint-safe-dedup logic that the other two modules
-  don't have and would benefit from. Considered making it a "location
-  module" other modules pull from — rejected: `module_loader.py` has no
-  mechanism for one module to depend on another (each is loaded
-  independently, no registry), so that would mean inventing inter-
-  module dependency wiring in Core anyway. If Core has to change either
-  way, do it directly as a shared service (same tier as `UexApiClient`)
-  instead of building a fake "module" that's actually Core-shaped.
-  Not implemented yet — planned as a phased rollout (Core service ->
-  migrate Logistics Hub -> migrate the other two -> swap Logistics
-  Hub's route cost onto real `terminals_distances`/`orbits_distances`
-  -> optionally share a "current location" across modules), each phase
-  its own tested checkpoint before starting the next. See PROGRESS.md
-  Next section.
-
-- **2026-09-04 — Location-service phases 1-3 complete; reordered the
-  remaining plan.** Built `host/locations.py` (Phase 1), migrated
-  Logistics Hub onto it (Phase 2), then moved the real-distance route-
-  cost swap ahead of migrating the other two modules — new order:
-  Phase 3 = real distance data (done), Phase 4 = migrate Trade Route
-  Optimizer/Commodity Prices, Phase 5 = shared current-location
-  concept. Phase 3 turned into a much longer live-test-driven
-  hardening pass than expected — every fix was verified against real
-  captured Star Citizen contracts, several rounds catching genuine
-  regressions from earlier fixes (see PROGRESS.md's Done section for
-  the itemized list: hint-priority bugs resurfacing at a second merge
-  point, short-nickname false positives, ambiguity disambiguation,
-  duplicate-contract detection). Phases 4-5 not started.
-
-- **2026-09-04 — Location-service Phase 4 complete: Trade Route
-  Optimizer and Commodity Prices migrated onto `host/locations.py`.**
-  Both modules' system/terminal fetching now goes through
-  `LocationService` instead of their own `star_systems`/`terminals`
-  calls:
-  - Trade Route Optimizer: `_populate_systems` uses
-    `available_systems()`; `_populate_terminals` filters
-    `all_locations()` to `_endpoint == "terminals"`, the chosen
-    `id_star_system`, `type == "commodity"`, `is_available_live`, and
-    displays via `LocationService.display_name()` (same nickname/short-
-    code disambiguation Logistics Hub already benefits from).
-  - Commodity Prices: `_populate_terminal_nicknames` builds its
-    `id_terminal -> display name` map the same way, from
-    `all_locations()` filtered to commodity terminals, instead of its
-    own unscoped `terminals?type=commodity` call.
-  - `commodities_routes`' destination-terminal naming (Trade Route
-    Optimizer) intentionally stays a hand-rolled `Admin -` prefix strip
-    — that endpoint returns no `id_terminal` for the destination, so
-    there's no id to resolve through the shared service; not a gap in
-    the migration, a real endpoint limitation already documented in
-    the module's own doc.
-  - Verified against the real UEX API via a backend smoke script
-    (available systems, Stanton commodity-terminal filtering/counts,
-    a live `commodities_prices` and `commodities_routes` call cross-
-    checked against the new nickname map) — not through the Qt UI.
-  Phase 5 (shared current-location concept) is next and last.
-
-- **2026-09-04 — Logistics Hub UI/UX polish batch: auto-rescan removed,
-  route popout added, ROUTE renamed from "SUGGESTED VISITING ORDER".**
-  User-requested batch, independent of the location-service phased plan
-  (Phase 5 explicitly not being done). Notable pattern: the ROUTE popout
-  is a separate top-level QWidget (Qt.Window | Qt.WindowStaysOnTopHint,
-  no minimize button) that's just an alternate render target for the same
-  underlying `_route_order`/`route_done` state the card already owns —
-  closing it doesn't lose anything, it just switches `_render_results()`
-  back to rendering into the card's own layout. It's independent of the
-  main window's stow-to-pill mechanism (a resize of the same top-level
-  window, not a separate widget), so popping out and stowing don't
-  interact. Per-route-stop done/skip state is keyed by
-  `"{contract_id}:{role}:{index}"` (not list index) so it survives
-  contract removal/reordering.
-
-- **2026-09-04 — Logistics Hub CONTRACTS list moved out of the card into
-  its own detached window.** Follow-up to the polish batch above: the
-  inline contracts list shared one QScrollArea with the ROUTE section
-  below it, and in live testing a freshly-scanned contract reliably
-  landed the user's view in the ROUTE section instead of showing the new
-  contract — a shared-scroll-position problem, not a data bug (contracts
-  were always saved and correct; a restart showed them fine). Rather than
-  fight scroll-position/auto-scroll-to-top timing in a shared QScrollArea,
-  gave CONTRACTS the same detached-always-on-top-window treatment already
-  built for the ROUTE popout, and factored the shared shell into
-  `_make_always_on_top_window()` so both use the same window flags/scroll
-  setup. Per-contract remove still lives on the same row widget, now
-  inside that window instead of the card.
-
-- **2026-09-04 — Reverted the CONTRACTS detached-window popup; found and
-  fixed a real app-quit bug in the host along the way.** Two problems
-  surfaced in live testing of the previous entry's popup:
-  1. The CONTRACTS list still "disappeared" after a scan — because the
-     button opening it lived inside the same shared QScrollArea as the
-     ROUTE section, so it was just as vulnerable to being scrolled out of
-     view as the original inline list was. Fixed by giving CONTRACTS its
-     own independent `QScrollArea` on the card (separate from ROUTE's),
-     not a popup at all — the user explicitly didn't want the popup
-     approach either.
-  2. Closing the popup via its title-bar X closed the *entire app*. Root
-     cause: `host/main.py`'s `QApplication` never set
-     `quitOnLastWindowClosed`, so Qt's default (`True`) applied — and
-     `MainWindow` (`host/main_window.py`) uses `Qt.Tool`, which Qt
-     excludes from its "last window" tracking. So any ordinary
-     `Qt.Window` a module opens (the popup, and the still-present ROUTE
-     popout) looks like the *only* real window from Qt's point of view;
-     closing it quits the app out from under the still-open, still-
-     Qt.Tool main window. Fixed generally in `host/main.py` with
-     `app.setQuitOnLastWindowClosed(False)` — this was latent and would
-     have hit the ROUTE popout (or any future module window) too, not
-     just this one popup.
-
-- **2026-09-04 — Standardized "mobi<Name>" branding across all 4 module
-  card titles; found and fixed a case bug this exposed.** User request:
-  every card title reads "mobi" in white (`theme.TEXT_PRIMARY`) + the
-  rest in the current blue accent (`theme.ACCENT_CYAN`) — mobiOverlay
-  (main window wordmark), mobiTrade (was "Trade Routes"), mobiAim (was
-  "Crosshair"), mobiCommodities (was "Commodity Prices"), mobiLogistics
-  (Logistics Hub, name unchanged, only the rendering bug below fixed).
-  Found a real bug while doing this: `host/card.py`'s `_DragHeader` was
-  calling `title_label.setText(title.upper())` on every card title.
-  Logistics Hub's title was already rich HTML and already all-uppercase,
-  so `.upper()` was a harmless no-op there — but the target branding is
-  **mixed case** (lowercase "mobi"), so `.upper()` would have silently
-  forced every new mobi-branded title back to all caps. Proof this
-  already mattered before any of this work started: the Logistics Hub
-  route-popout window builds its own title separately
-  (`_open_route_popout`) as mixed-case "mobi"+"Logistics", so the popout
-  already rendered correctly while the card header right next to it
-  showed "MOBILOGISTICS" in full caps — a real, pre-existing mismatch.
-  Fixed by removing the `.upper()` call entirely; every module's
-  `display_name` is now the rich-text HTML directly. The stow Tray needed
-  no separate change — `CardContainer.stowed_cards()` reads back
-  `card.header.title_label.text()` (whatever HTML the header ended up
-  with) and `_TrayRow` renders it as-is, so it picked up the corrected
-  casing for free.
-
-- **2026-09-04 — Renamed Logistics Hub's "SELECT REGION" button to "SET
-  SCAN AREA".** User flagged real ambiguity: "region" reads as an
-  in-game/UEX star-system region, not the screen rectangle being
-  configured for OCR capture. Renamed the button, its status message
-  ("No capture region set — use SET SCAN AREA..."), and the matching
-  code comments/docstring in `modules/logistics_hub/module.py`. No
-  behavior change.
-
-- **2026-09-04 — Fixed dropdown text clipping on the right edge in
-  Logistics Hub's location combo and Trade Route Optimizer's terminal/
-  system combos.** User-reported. Root cause: none of the project's
-  `QComboBox` QSS blocks styled the `QComboBox::drop-down` subcontrol —
-  once a stylesheet sets custom padding/border on `QComboBox`, Qt no
-  longer automatically reserves room for the drop-down arrow the way it
-  does with an unstyled native combo, so the arrow button was painted
-  directly over the last few pixels of text/completer content. Fixed by
-  adding an explicit `QComboBox::drop-down { width: ...px; border: none; }`
-  rule plus a larger right-padding on `QComboBox` itself (enough to clear
-  the arrow) to every combo style block in `modules/logistics_hub/module.py`
-  and `modules/trade_route_optimizer/module.py` — the user only reported
-  Logistics Hub's combo, but Trade Route Optimizer's terminal/system/
-  destination-filter combos share the exact same stylesheet pattern and
-  would have had the identical bug.
-
-- **2026-09-04 — Added a startup splash screen instead of speeding up the
-  slow import.** User reported a "significant delay" on launch; added
-  diagnostic timing first rather than guessing (see the log in this
-  conversation) and confirmed it's NOT the UEX API — `discover_modules()`
-  took 2.80s of a 3.64s total startup, and 2.79s of that was Logistics
-  Hub's unconditional top-level `import easyocr` (pulls in PyTorch),
-  which runs before any window exists. Locations loaded instantly from
-  the on-disk cache; no module's `create_card()`/`refresh()` tripped the
-  existing >2s watchdog. Offered to make the `easyocr` import genuinely
-  lazy (deferred to first SCAN CONTRACT click) instead — user chose a
-  splash screen over that fix. New `host/splash.py`: a themed
-  (`QSplashScreen`, void background, cyan border, rounded corners via
-  `WA_TranslucentBackground`) splash with the two-tone mobiOverlay
-  wordmark baked into the pixmap and a status line via `showMessage()`
-  updated at each startup stage — including per-module ("Loading
-  Logistics Hub...") via a new `on_module_loading` callback param on
-  `discover_modules()`, so the 2.8s pause is now visibly explained
-  rather than looking like a frozen launch. `showMessage()` only takes
-  plain text, so `main.py`'s new `_plain_text()` strips the HTML tags
-  out of a module's rich-text `display_name` before showing it on the
-  splash. `splash.repaint()` is called after every status update since
-  the caller is about to block the event loop with the next slow
-  synchronous step, with no natural repaint opportunity otherwise. The
-  diagnostic timing log lines added for this investigation
-  (`main.py`/`module_loader.py`) were left in place — cheap, and useful
-  if startup regresses again later.
-
-- **2026-09-04 — Added a "Debug Console" toggle to Settings** (`ui.show_console`,
-  default off, applies on next relaunch — same pattern as Text Size).
-  Mainly matters for the packaged exe: `mobioverlay.spec` builds
-  `console=False`, so stdout/stderr normally go nowhere and every
-  `logging`/print call (including the startup-timing diagnostics added
-  earlier this session) is silently dropped with no way to see it without
-  rebuilding. `host/main.py`'s new `_maybe_allocate_console()` uses
-  `ctypes`' `AllocConsole()`/`GetConsoleWindow()` to open a real console
-  window and rebind `sys.stdout`/`stderr`/`stdin` to it when the setting
-  is on — must run before `logging.basicConfig()` (which grabs
-  `sys.stderr` at call time) and before any other import that might log,
-  so `Config` is now imported and read before the PySide6 imports rather
-  than alongside them. Running from an actual terminal already has a
-  console (`GetConsoleWindow()` catches that) so the toggle is a no-op
-  there — it only changes anything for a windowed/no-console launch.
-
-- **2026-09-04 — Added a "by Kestryl" byline to the splash screen,
-  centered below the wordmark.** User request: same two-tone split as
-  everywhere else ("by " white/TEXT_PRIMARY, "Kestryl" in the blue
-  accent), but as its own centered line rather than trailing inline like
-  the main window's title-bar byline. Factored the wordmark's two-tone
-  draw logic out into a shared `_draw_two_tone()` helper in
-  `host/splash.py` since the byline needed the identical
-  white-then-blue/horizontally-centered treatment at a smaller size.
-  Pixmap height bumped 140 -> 150 to fit the extra line above the
-  status-message area at the bottom.
-
-- **2026-09-04 — Bug fix: Logistics Hub was auto-scanning on its own,
-  appending garbage contracts.** User-reported symptom: new contracts
-  appeared with "messed up" data with no SCAN CONTRACT click. Root cause:
-  `host/main.py`'s generic per-module periodic-refresh `QTimer` (every
-  `DEFAULT_REFRESH_SECONDS` = 300s, applies to every module uniformly)
-  calls `module.refresh()` regardless of module type. Logistics Hub's
-  `refresh()` only no-ops on the very first call (`self._started` guard,
-  meant for main.py's one-time initial-fetch call) — every subsequent
-  timer tick ran a real OCR capture of whatever was on screen at that
-  moment (desktop, chat, game menus, anything), built a "contract" out of
-  garbled text, and appended it. This directly contradicts the module's
-  documented on-demand-only design (docs/modules/logistics-hub.md: "No
-  auto-rescan — on-demand SCAN CONTRACT only"), which had only ever
-  disabled the module's own now-removed opt-in auto-rescan toggle, not
-  Core's separate generic refresh timer. Fixed two places: `host/main.py`
-  now skips starting the periodic timer entirely when a module's
-  `refresh_interval_seconds` is falsy, and `LogisticsHubModule.__init__`
-  defaults its own `refresh_interval_seconds` to `0` (via `setdefault`, so
-  an explicit user config value would still win). Syntax-checked both
-  files; not yet live-tested by the user.
-
-- **2026-09-04 — Bug fix: Logistics Hub reversed pickup/dropoff for a
-  real contract** (user pasted a real COPY ROUTE export: "Everus Harbor"
-  showed as the pickup with cargo unknown, "Seraphim" as the dropoff,
-  backwards from the actual contract text). Root cause in
-  `_candidate_phrases()`: OCR's two-column layout wrapped the real
-  dropoff name across a line break ("...SCU of Agricultural Supplies to
-  Everus" / "Harbor above Hurston:"), so the phrase regex (single-line
-  only) never saw "Everus Harbor" intact on the keyworded line. It only
-  resolved later via an unrelated, unhinted repeat mention two lines
-  later — and the existing lookback heuristic (nearest keyword within 2
-  lines back) grabbed a coincidentally-adjacent "Collect...from Seraphim"
-  pickup line and mis-attributed its hint to that mention instead,
-  flipping the roles. Fixed by also re-scanning a line joined with the
-  next one for phrase matches, but *only* when the current line's hint
-  came directly from its own text (`own_line`, not `lookback`/`section`)
-  — trying this unconditionally first backfired: it let a lookback-hinted
-  line's contamination reach one line further and wrongly hinted
-  "Seraphim Station" too. Verified against the user's real pasted OCR
-  text for both the broken contract (Everus Harbor -> dropoff, Seraphim
-  Station -> neutral -> correctly falls back to pickup) and an
-  already-correct multi-dropoff contract from the same export (no
-  regression). Does not retroactively fix contracts already saved in
-  `contracts` config — needs a rescan.
-
-- **2026-09-04 — Two Logistics Hub route/display fixes, user-requested
-  after reviewing a real (now-correct) route export.**
-  1. **SCU quantity now shown alongside every commodity** ("13 SCU
-     Agricultural Supplies" instead of a bare name) — the module extracted
-     commodity names but silently dropped the SCU count that was sitting
-     right there in the same "Deliver N/TOTAL SCU of X to..." line. New
-     `_commodity_quantities()` builds a commodity-name -> total-SCU map
-     once per contract (the "Collect X from Y" pickup line never carries a
-     quantity itself — it's the same cargo moving through both ends, so
-     the map is looked up for both roles). `_extract_commodities()` now
-     returns `(name, qty)` pairs; `_cargo_label()` formats accordingly and
-     still accepts bare strings for contracts saved before this change
-     (old `commodities` lists in `config.json` aren't migrated). Verified
-     against real pasted OCR text for a single-commodity contract and a
-     genuine two-commodity contract (Waste 6 SCU + Scrap 7 SCU, same
-     pickup/dropoff pair) — both quantities correct on both ends.
-  2. **Drop-off now wins ties over pickup in route ordering.** When a
-     station has both a due pickup and a due drop-off at equal travel
-     cost (most commonly "same stop, cost 0" — already standing there),
-     `_plan_route`'s nearest-neighbour `min()` previously picked whichever
-     came first in `nodes`, which happened to always be pickups (built
-     before drop-offs per contract in `_stop_nodes`) — an accident of
-     internal ordering, not a deliberate choice. Per user direction
-     (clear cargo you're already carrying before loading more), the
-     nearest-neighbour cost key now breaks ties by role
-     (`dropoff` before `pickup`) before falling back to list order.
-
-- **2026-09-04 — Settings > Relaunch review, user-reported "the old
-  process isn't always fully dead before the new one starts."** Found
-  two real gaps on inspection (not yet reproduced live):
-  1. `GlobalHotkey` (`host/hotkey.py`) stored the return value of
-     `keyboard.hook()` in `self._hook` but never actually called
-     `keyboard.unhook()` on it anywhere — `clear()` (used both by
-     Settings' own Clear button and, previously, by shutdown) only reset
-     the combo/callback, deliberately leaving the OS-level `WH_KEYBOARD_LL`
-     hook installed since a user might set a new combo later without
-     restarting. That's correct for the Settings Clear case but wrong for
-     process exit — added a separate `GlobalHotkey.shutdown()` that stops
-     the reconcile `QTimer` and actually `keyboard.unhook()`s the hook,
-     called from `closeEvent` and `relaunch()` instead of `clear()`. The
-     OS does remove a dead process's hook automatically, but the old
-     instance was reachable for a bit *before* fully dying (see next
-     item) and would have kept a genuinely live global hook until then.
-  2. `relaunch()` started the new process (`subprocess.Popen`) *before*
-     tearing this instance down (`self.close()` / `quit()`) — meaning
-     both instances could be briefly alive together: two global keyboard
-     hooks racing for the same Stow/Deploy combo, and the new instance
-     reading `config.json` before this one's `closeEvent`-driven
-     `window_geometry` save had landed. Reordered: save geometry + hotkey
-     shutdown now happen first, then the new process is spawned, then
-     this one closes.
-  3. Added `os._exit(0)` as a hard stop at the very end of `relaunch()`,
-     after everything that needs saving is already done. `keyboard`'s own
-     listener thread is daemon (verified in the installed package,
-     `_generic.py`), so it isn't the risk — but easyocr/torch's native
-     (non-Python) thread pools are a known source of slow/stuck CPython
-     interpreter shutdown on Windows once a Logistics Hub scan has
-     actually loaded them, which lines up with the reported symptom.
-     `os._exit()` skips that risk entirely instead of trusting
-     `sys.exit(app.exec())` to return promptly.
-  Code-reviewed and syntax-checked; not yet live-tested (needs a
-  relaunch after running at least one Logistics Hub scan, to actually
-  exercise the torch-loaded case the fix targets).
-
-- 2026-09-04: **Logistics Hub debug log added** (`logistics_hub_debug.jsonl`,
-  always-on, append-only JSON Lines). Purpose: accumulate real usage data
-  the user can hand to an AI later to evaluate whether parsing/routing is
-  holding up. Scoped with the user before building rather than assumed:
-  - Always-on, no Settings toggle — simplest, and avoids forgetting to
-    enable it before a session worth capturing.
-  - Lives at `paths.app_root() / "logistics_hub_debug.jsonl"`, same helper
-    `config.json` uses, for the same reason (must persist outside a frozen
-    build's wiped temp extraction dir).
-  - No size cap/rotation — user manages the file manually; scan-triggered
-    logging won't grow large quickly.
-  One JSON object appended per scan (`LogisticsHubModule._log_scan_debug`,
-  called from `refresh()`), with `note` = `"added"` or `"duplicate_pending"`:
-  timestamp, raw OCR text, every candidate phrase with its role hint and
-  priority (`_candidate_phrases()`'s own output, not re-derived), the
-  built contract dict (pickups/dropoffs/commodities/reward/ambiguous
-  notes), and a route snapshot reusing the existing `_format_route_text()`
-  (the same text COPY ROUTE already produces) rather than a second
-  route-formatting implementation. Write is wrapped in try/except OSError
-  so a log-write failure can never break a scan. Code-reviewed and
-  syntax-checked only — not yet live-tested (needs a real scan to confirm
-  the file actually gets written and is valid JSONL).
-
-- 2026-09-04: **Bug fix: Logistics Hub relaunch showed persisted contracts
-  but an empty ROUTE section.** `self._route_order` is in-memory only
-  (never persisted) and was only ever recomputed by `_plan_route()` inside
-  a scan, a location change, or CLEAR — `create_card()` rendered whatever
-  contracts config.json restored without ever recomputing the route for
-  them. Fixed by calling `_plan_route(contracts)` in `create_card()` right
-  after loading, before the first `_render_results()`, when there are any
-  persisted contracts. Code-reviewed and syntax-checked only — not yet
-  live-tested (needs a relaunch with existing contracts to confirm ROUTE
-  now shows immediately). **User confirmed 2026-09-04: fixed** — relaunch
-  with existing contracts now shows ROUTE immediately.
-
-- 2026-09-05: **Fuzzy location fallback added for OCR-garbled names that
-  miss substring matching entirely.** Auditing `logistics_hub_debug.jsonl`
-  against live UEX data surfaced two already-tagged `KNOWN BUG`s in
-  PROGRESS.md (a pickup/dropoff role tie-break, a same-terminal duplicate
-  stop) plus a third, distinct gap: a candidate with a real pickup/dropoff
-  hint but zero exact/substring matches in `LocationService.resolve_all()`
-  was silently dropped — no stop, no warning — whenever OCR garbled a name
-  enough to miss substring matching too (a dropped/altered letter, e.g.
-  "Seraphim Staton"), as opposed to being unreadable.
-  Added `LocationService.resolve_fuzzy()` (`host/locations.py`,
-  `difflib.SequenceMatcher` ratio against the same in-memory name index
-  `resolve_all` already uses) as a deliberately separate, opt-in method —
-  never folded into `resolve()`/`resolve_all()` themselves, since every
-  other caller (Trade Route Optimizer's terminal picker, Commodity Prices'
-  nickname lookup, this module's own CURRENT LOCATION combo) has no way to
-  show an uncertainty warning, and a fuzzy guess there would look exactly
-  as confident as a real match. `_build_contract`'s Pass 1 now tries it
-  only when `resolve_all` found nothing **and** the candidate's hint isn't
-  `neutral` (same gating already used for the ambiguous-match note path) —
-  on a hit, the stop resolves normally (`merge_resolved`, so it still
-  counts as the same real place if another mention already confirmed it
-  unambiguously) and an amber-warning note is appended, reusing the exact
-  same `ambiguous_notes` mechanism/UI already built for multi-match
-  ambiguity, e.g. `"'Baijni Point' (pickup) fuzzy-matched to Baijini Point
-  (96% confidence) — please verify"`.
-  **Cutoff tuned from an initial 0.75 to 0.85 after live verification
-  caught a real false positive**: replaying all 7 real captured contracts
-  from `logistics_hub_debug.jsonl` through the updated `_build_contract`
-  found OCR debris "Tech's Ll" (mangled from "microTech's Ll Lagrange
-  point" — not a location mention at all) scoring 0.77 against an
-  unrelated real shop named "Teach's", which would have added a spurious
-  dropoff stop at the original cutoff. Every genuine OCR-garbled name in
-  the same replay (dropped/altered letters, not debris) scored 0.87+, so
-  0.85 cleanly separates the two without losing any real catch — confirmed
-  by re-running the same 7 contracts: identical pickups/dropoffs list for
-  all 7 (no regression), with two of them now carrying an accurate fuzzy-
-  match warning for a candidate that previously vanished silently, in both
-  cases merging into an *already*-resolved terminal (widening its `_aka`
-  alias set) rather than adding a new stop. Locations-only for this pass,
-  per the phased plan — commodity extraction and an editable
-  correction-combo UI (so a user can override a wrong or low-confidence
-  resolution) are deliberately deferred to later passes.
-
-- 2026-09-05: **Debug log gets a per-candidate resolution trace, closing two
-  remaining blind spots the fuzzy-match feature above didn't cover.** Asked
-  "is there additional debugging that could be added" right after that
-  feature shipped. Two gaps identified: (1) a candidate that misses *both*
-  exact/substring match *and* the fuzzy cutoff still vanishes with zero
-  trace — no record it was ever considered, or how close it came; (2) which
-  of `_build_contract`'s five resolution paths (exact/substring match,
-  suffix disambiguation, "already confirmed elsewhere," fuzzy match) won for
-  a resolved candidate wasn't recorded — only the final outcome was visible.
-  `LocationService.best_fuzzy_match()` (`host/locations.py`) was split out
-  of `resolve_fuzzy()` — same scoring loop, no cutoff applied — so a caller
-  can see the *near-miss* score for a dropped candidate; `resolve_fuzzy()`
-  is now a thin cutoff-enforcing wrapper around it, unchanged for existing
-  callers. `_build_contract()` gained an optional `debug_trace: list[dict] |
-  None = None` out-parameter (only one call site, `refresh()`, so a safe
-  additive signature change) — a trace entry gets appended at each of the
-  six places a candidate's fate is decided across Pass 1/Pass 2, recording
-  `outcome` (`resolved`/`ambiguous_unresolved`/`dropped_no_match`) and,
-  for `resolved`, which `method` won. Deliberately an out-parameter rather
-  than changing `_build_contract`'s return type — keeps the change purely
-  additive/observational with zero risk to the actual resolution logic,
-  `merge_resolved`, or the persisted `config.json` contract schema (the
-  trace is never attached to the contract dict itself, only threaded
-  separately into `_log_scan_debug`). The existing `fuzzy_matches` log field
-  (2026-09-05, earlier the same day) now derives from this trace
-  (`outcome == "resolved" and method == "fuzzy"`) instead of string-matching
-  "fuzzy-matched" in the ambiguous-notes text — same field, sturdier source.
-  **Verified via backend replay of all 7 real contracts in
-  `logistics_hub_debug.jsonl`**: `_build_contract`'s output is byte-for-byte
-  identical whether or not `debug_trace` is passed (confirmed by diffing the
-  returned contract dict, ids/timestamps excluded); trace-entry count
-  exactly equals candidate count for every scan; a genuinely irrelevant
-  candidate ("Chase Hewitt", `neutral` hint) correctly shows
-  `dropped_no_match` with no near-miss lookup attempted, matching the
-  existing neutral-hint gating. Locations-only, same phased scope as the
-  fuzzy-match feature — a runner-up score on a *successful* fuzzy match and
-  a schema/build-version stamp per log entry were both considered and
-  deferred as lower-value follow-ups.
-
-- 2026-09-05: **Debug log gets a route-planning trace too, not just
-  location-parsing.** User's stated goal: get to ~90% confidence the app
-  isn't "doing anything stupid" on routing before switching to spot-checking
-  logs occasionally instead of live-testing every change. The parsing trace
-  above answers "did it resolve locations correctly" but not "did it route
-  them well" — the debug log only ever showed the *final* route, giving no
-  way to tell from the log alone whether `_two_opt` actually improved on the
-  greedy pass or left something on the table. `_plan_route()` gained an
-  optional `route_debug: dict | None = None` out-parameter (same
-  observational-only pattern as `_build_contract`'s `debug_trace`) capturing
-  the greedy route and its cost (via the existing `_route_cost()` helper)
-  *before* handing off to `_two_opt`, alongside the final route/cost after —
-  threaded through `_add_contract` (also gains the same optional param) and
-  into `_log_scan_debug` as a new `route_debug` field. New `_node_label()`
-  helper renders a stop as `"[PICKUP] Baijini Point (contract 0)"` for both
-  the greedy and final order lists, so a reordering is readable directly
-  without cross-referencing node indices. **Verified via the same 7-contract
-  backend replay**: 2-opt genuinely improved 6 of the 7 scans (savings of
-  5-19 cost units), one had nothing to improve (0.0) — confirms the
-  optimization pass is doing real work, not a no-op, on real captured data.
-  `duplicate_pending` log entries get an empty `route_debug` (`{}`), since
-  the route isn't replanned until a contract actually gets added.
-
-- 2026-09-05: **Or-opt added alongside 2-opt — a real routing gap found on
-  live data, planned and fixed the same session.** Reviewing the
-  `route_debug` trace added earlier the same day across several real scans
-  showed the same real terminal (Everus Harbor) visited twice in one
-  route — once as a pickup for one contract, once as a dropoff for
-  another — instead of merging into a single stop, even though merging was
-  legal (precedence-respecting) and cheaper. Root cause: `_plan_route`
-  only ran 2-opt after the greedy pass, and 2-opt's move set (reversing a
-  contiguous sub-segment) structurally cannot express "relocate one node
-  past several others without reversing anything between them" — that's a
-  different move type (Or-opt), not a bug in 2-opt itself. Measured impact
-  on the live case was modest (~5 of ~153 cost units, ≈3%) but structural,
-  not incidental — confirmed it'll recur any time a hub location plays
-  both roles across contracts. New `_or_opt()` (mirrors `_two_opt`'s exact
-  style: repeatedly try one move, keep it if `_route_cost` drops and
-  `_respects_precedence` still holds, run until a full pass finds nothing —
-  both existing helpers reused unchanged). `_plan_route` now alternates
-  2-opt and Or-opt (2-opt first each round, since either pass's moves can
-  open new opportunities for the other) until neither improves, capped at
-  5 rounds as a termination safety net. `route_debug`'s `two_opt_improved_by`
-  field (same-day, not yet relied on anywhere) renamed
-  `optimized_improved_by` to reflect the combined effect, plus a new
-  `rounds_run` count. **Verified**: replayed the exact live 4-contract
-  scenario that exposed the gap — final cost dropped 153 → 148 (matching
-  the manual live-distance calculation done during the original review),
-  Everus Harbor's two visits landed adjacent in the output (merged), 2
-  rounds to converge. Also confirmed the Or-opt inner loop restarts its
-  scan from the top of the current pass immediately after any accepted
-  move (`break` out of both loops) rather than continuing against a stale
-  pre-move sequence — an early draft didn't do this and could have
-  silently discarded an improvement it had just found.
-
-- 2026-09-05: **Three at-a-glance additions to the card, reviewed from a
-  Star Citizen player's perspective mid-session** (user's framing: what's
-  useful to see in a few seconds without reading the whole scrollable
-  list). All three reuse data already computed — no new state, no new API
-  calls: (1) a summary line ("4 contracts · 268,750 aUEC · 143 SCU peak
-  cargo") below the CONTRACTS title, always visible without scrolling
-  either list; (2) peak cargo is deliberately the running max along the
-  *planned route* (`+SCU` on pickup, `-SCU` on dropoff, tracked via a new
-  `_peak_cargo_scu()`), not a flat sum of every pickup — a flat sum
-  overstates the hold size needed whenever some cargo gets delivered
-  before more is picked up, confirmed by hand-tracing the same live
-  4-contract scenario (peak 143, vs. a flat-sum figure that would have
-  been higher); (3) a cyan-accented NEXT STOP banner above the ROUTE list
-  (new `_next_stop_banner()`, distinct from the existing amber
-  `_ambiguous_row`) — the first not-yet-done stop, verified to correctly
-  advance once that stop is marked done. `_describe_stop()`/`_stop_entry()`
-  extracted from what was inline logic in `_populate_route_rows` so the
-  route list, the peak-cargo walk, and the next-stop lookup all share one
-  implementation instead of three. **Verified** via a backend script
-  (`_total_reward`/`_peak_cargo_scu` cross-checked against a hand-computed
-  trace of the same live scenario, both matched exactly) — the actual
-  widgets (`_summary_label`, `_next_stop_banner`) construct real `QLabel`s
-  and can't be exercised without a live `QApplication`, consistent with
-  this project's existing "can't launch the actual Qt UI in this
-  environment" limitation; needs a human glance in the real running app.
-
-- 2026-09-05: **Bug reported: NEXT STOP/ROUTE invisible on the card until
-  the Tracker popout was opened at least once** (same box also made the
-  route stop done/skip toggle look broken — nothing to click, since the
-  rows themselves weren't visible). First attempt: theorized a stale
-  `_results_scroll` scroll position (matching a real, documented
-  2026-09-04 bug in the old shared CONTRACTS/ROUTE scroll area) and reset
-  it to 0 at the end of every `_render_results()` call. **User confirmed
-  live: did not fix it.** Root cause was never actually pinned down — no
-  way to run the real Qt UI in this environment to inspect it further —
-  and continuing to guess blind wasn't converging.
-- 2026-09-05: **Reverted inline ROUTE rendering entirely instead of
-  continuing to chase the bug above.** Per user direction: NEXT STOP isn't
-  a feature that'll get used, and the Tracker popout (confirmed working
-  throughout) is the actual tool for working a route — so the card's
-  ROUTE area now shows only a stop count + "click TRACKER" prompt, no
-  per-row list, no done/skip toggling inline. This removes the whole
-  broken code path (the full stop-by-stop list, the NEXT STOP banner, and
-  the scroll-reset attempt above) rather than fixing it blind. Simpler
-  surface area: the card owns "how many stops, how much reward, how much
-  cargo" (all confirmed working live), the Tracker popout owns "walk the
-  route." `_next_stop_banner()` removed entirely (unused);
-  `_describe_stop()`/`_stop_entry()` kept — still shared between
-  `_populate_route_rows` (popout only, now) and `_peak_cargo_scu()`.
-  Also fielded in the same review: no way to confirm/edit a fuzzy-matched
-  or ambiguous location from the card — this is the already-scoped-out
-  correction-combo UI (see the 2026-09-05 fuzzy-match entry above, "later
-  passes"), not a new finding, reconfirmed still wanted.
-
-- 2026-09-05: **Bug fix: a pickup feeding two drop-offs of the same
-  commodity only counted one of them.** User-reported live: the Tracker
-  showed "PICKUP 50 SCU Titanium" from Ambitious Dream Station, missing
-  that the same contract also delivers 52 SCU of Titanium to a second
-  station (Seraphim) — the pickup actually needs 102 SCU total, not 50.
-  Root cause: `_commodity_quantities()` mapped commodity name -> quantity
-  from every "Deliver N/TOTAL SCU of X to Y" line, but a plain dict
-  assignment (`qty[commodity] = ...`) meant the *second* delivery line for
-  the same commodity name silently overwrote the first instead of adding
-  to it — and `_extract_commodities`'s dedup-by-commodity-name then
-  dropped the second occurrence entirely once resolving the pickup entry.
-  Fixed two ways at once: `_commodity_quantities()` now sums instead of
-  overwrites (correct for the pickup side, which needs the contract-wide
-  total); `_DROPOFF_COMMODITY_RE` extended to capture the SCU quantity
-  directly from its own line (`\bdeliver\s+(?:\d+/)?(\d+)\s*scu\s+of...`),
-  so each drop-off's `_extract_commodities` call uses *that* line's own
-  exact amount instead of looking it up in the (now summed, and therefore
-  wrong for a single delivery) shared dict — otherwise summing would have
-  fixed the pickup but broken every drop-off into showing the combined
-  total instead of its own share. `_all_commodity_names()` updated for the
-  shifted capture group (drop-off commodity is now group 2, group 1 is the
-  quantity). **Verified** against the exact live contract that exposed the
-  bug: pickup now correctly shows `('Titanium', '102')`, the two drop-offs
-  still correctly show `52` and `50` independently — and the peak-cargo
-  summary (2026-09-05, earlier the same day) was silently under-reporting
-  too as a direct consequence (143 instead of the correct 193 SCU for the
-  live 4-contract scenario), now fixed as the same side effect.
-
-- 2026-09-05: **New REPROCESS button — re-parse saved contracts without
-  rescanning.** Direct follow-up to the commodity-quantity fix above: fixing
-  the *code* doesn't fix the 4 contracts already sitting in `config.json`
-  with the old, wrong quantities baked in (`_build_contract` computes
-  commodities once at scan time and persists the result; nothing re-derives
-  it later), and the only existing option was CLEAR + rescan everything
-  from the game — wasteful when every contract's own `raw_text` is already
-  persisted (same text the debug log/COPY ROUTE export already use).
-  New `_reprocess_contracts()` (`modules/logistics_hub/module.py`, right
-  next to `_clear_contracts()`) re-runs `_build_contract()` against each
-  saved contract's own `raw_text` and swaps in the freshly-parsed result,
-  then replans the route — no OCR, no rescan, no additional UEX API calls
-  beyond what `_build_contract` already does (location index is already
-  loaded in-memory). Deliberately preserves each contract's original `id`/
-  `scanned_at` rather than the freshly-rebuilt ones: `route_done` entries
-  are keyed `f"{contract_id}:{role}:{index}"` (`_toggle_route_done`), so
-  keeping the same id is what lets an already-marked-done stop stay
-  correctly matched after reprocessing — this only holds as long as the
-  fix being picked up doesn't change how many pickups/dropoffs a contract
-  has (true for the quantity fix); a future parsing change that adds/
-  removes a stop would leave a stale `route_done` entry pointing at
-  nothing, same outcome CLEAR-and-rescan already has today, not a new
-  failure mode. Wrapped in `_safe_reprocess()`, matching `_safe_scan()`'s
-  try/except-and-status pattern — no busy-button treatment needed since
-  this is pure in-memory regex/lookup work, not OCR or a network call.
-  **Verified**: simulated the exact stale pre-fix state (the real Titanium
-  contract with its pickup quantity hand-corrupted back to the old buggy
-  `50`, plus a `route_done` entry for that same stop) and confirmed
-  reprocessing corrects it to `102`, preserves `id`/`scanned_at` exactly,
-  and the `route_done` entry still matches the reprocessed stop. Button
-  wiring itself (not the underlying logic) can't be click-tested without a
-  live `QApplication` — needs a human check in the real running app, same
-  as this session's other UI-only changes.
-
-- 2026-09-05: **REPROCESS now writes a debug log entry too.** User changed
-  CURRENT LOCATION and ran REPROCESS, then asked to verify it worked —
-  found nothing in `logistics_hub_debug.jsonl` to check, since only
-  `refresh()` (a live scan) ever called `_log_scan_debug`. New
-  `_log_reprocess_debug()` (`modules/logistics_hub/module.py`) writes one
-  entry per REPROCESS run — same shape as a scan's entry, but `contracts`/
-  `resolution_traces` cover every reprocessed contract at once (a list per
-  field) instead of one fresh scan's single `raw_text`/`candidates`/
-  `contract`, since REPROCESS re-parses everything already saved in one
-  pass. Shared the actual file-write/error-handling code with
-  `_log_scan_debug` via a new small `_append_debug_log()` helper rather
-  than duplicating the `try/open/write/except OSError` block a second
-  time. `_reprocess_contracts()` now collects a `debug_trace` list per
-  contract (via `_build_contract`'s existing optional out-param, added
-  2026-09-05 earlier the same day) instead of discarding it. **Verified**:
-  reprocessing 2 contracts (one with a fuzzy-matched pickup) produces
-  exactly one log entry with `note: "reprocessed"`, both contracts'
-  resolution traces present, the fuzzy match correctly surfaced in
-  `fuzzy_matches`, and a populated `route_debug`.
-
-- 2026-09-05: **Trade Route Optimizer's origin picker replaced: system →
-  terminal cascading combo → single searchable combo**, matching Logistics
-  Hub's CURRENT LOCATION picker UX (editable `QComboBox` + `QCompleter` in
-  `PopupCompletion` mode, `Qt.MatchContains`, case-insensitive, labeled via
-  `LocationService.search_label()` so search works by name or short code).
-  User asked for the two pickers to behave the same way. Deliberately kept
-  **terminals-only**, not `LocationService.all_locations()` (which
-  Logistics Hub's combo does use) — `commodities_routes` (the endpoint
-  `refresh()` calls) requires a real `id_terminal_origin`; space stations/
-  outposts/cities aren't valid origins for it, so including them would be
-  a dead-end pick with no way to actually use the selection. Kept the same
-  `type == "commodity"` + `is_available_live` filter the old per-system
-  `_populate_terminals` already applied, just no longer scoped to one
-  system at a time. Settings key renamed `origin_system`/`origin_terminal`
-  → single `origin_terminal_name` (stores the combo's search-label text).
-  See docs/modules/trade-route-optimizer.md for the updated card
-  description.
-
-- 2026-09-05: **`LocationService.friendly_label()` added** — user reported
-  typing "Glen" found mobiLogistics' CURRENT LOCATION (CRU-L5 Beautiful
-  Glen Station) but found nothing in mobiTrade's new origin combo. Root
-  cause: the two combos read the exact same shared cache (confirmed, not a
-  data-divergence bug), but mobiTrade's combo is terminals-only (see the
-  entry above) and the `terminals` record for that same physical place
-  (`id` 22, "Admin - CRU-L5") has no descriptive name of its own — its
-  `name`/`nickname` are both just the bare "CRU-L5" code. The friendly name
-  ("CRU-L5 Beautiful Glen Station") only exists on the sibling
-  `space_stations` record for the same place, which mobiTrade's picker
-  deliberately excludes. `friendly_label(terminal)` in `host/locations.py`
-  looks up a matching non-terminal record by shared (normalized) nickname
-  and borrows its fuller name when the terminal's own name isn't as
-  descriptive — built as a shared `LocationService` helper (not a local
-  mobiTrade-only fix) per user direction, so any current/future
-  terminals-only picker gets the same resolution. Deliberately excludes
-  other `terminals` records from the candidate pool (a same-station
-  facility like "Landing Services - CRU-L5" is textually longer than the
-  real place name but isn't the place's name — an earlier version of this
-  fix picked exactly that facility name by mistake before restricting the
-  lookup to non-terminal endpoints). Verified against the real
-  `locations_cache.json`: 19 of 114 live commodity terminals gained a
-  fuller name (all Lagrange-point stations plus GrimHEX), CRU-L5
-  specifically now labels as "Beautiful Glen Station (CRU-L5)" and matches
-  "glen"; terminals that already had a real name of their own (e.g. "Bud's
-  Growery") are unchanged.
-
-- 2026-09-05: **mobiCommodities' "Find Most Profitable" (and Best Sell/Best
-  Buy) made stock-aware — user caught a real mobiTrade/mobiCommodities
-  disagreement.** mobiCommodities said Compboard was most profitable to buy
-  at Rayari Kaltag and sell at Shubin SM0-22; mobiTrade said Distilled
-  Spirits (sell at MIC-L5) was the best route from the same origin.
-  Investigated live against the real UEX API: `commodities_routes` really
-  does return Distilled Spirits → MIC-L5 as the top route by total profit
-  (3,156,000 aUEC) from Rayari Kaltag — mobiTrade was correct. Compboard is
-  in that same route list, worth only 15,080 aUEC total, because Rayari
-  Kaltag has just 2 SCU (`scu_buy: 2`) of it in stock — huge per-unit
-  margin, negligible achievable total. Root cause:
-  `find_most_profitable()` (`modules/commodity_prices/module.py`) computed
-  a pure `max(price_sell) - min(price_buy)` price gap with no regard for
-  `scu_buy`/`scu_sell` at all. Fixed to rank by
-  `(price_sell - price_buy) * scu_buy` (best buy/sell pairing per
-  commodity), capped by source stock only. **First pass of this fix also
-  gated the SELL side on `scu_sell > 0` and was wrong** — caught before
-  shipping by live-checking the fix against the real data that started
-  this investigation: `scu_sell` reads 0 for Distilled Spirits at MIC-L5
-  (mobiTrade's own correct answer) despite a real `price_sell`, and
-  checked broadly across 5 commodities, `scu_sell` is 0 despite a real
-  sell price 75-95% of the time — UEX just doesn't reliably track
-  sell-side demand capacity the way it tracks source stock (confirmed via
-  `commodities_routes`' own `scu_destination`, which mirrors `scu_origin`
-  rather than reflecting an independently-tracked number). Corrected to
-  gate only on `scu_buy` (BUY side, confirmed live to be 0 only when
-  `price_buy` is also 0 — reliable) and leave the SELL side as a pure
-  price comparison, both in `find_most_profitable()` and the regular Best
-  Sell/Best Buy rows (`_apply_filters()`). Verified against live data
-  before shipping: Distilled Spirits' stock-aware total (3,156,000, best
-  pairing Rayari Kaltag → Admin - MIC-L5) now correctly and exactly
-  matches mobiTrade's `commodities_routes` answer for the same origin;
-  Compboard drops to 52,700.
-
-- 2026-09-05: **mobiTrade's origin picker made optional — "Any Location"
-  search, with a per-system BUY IN filter.** User's ask: a real trader
-  often doesn't have a fixed starting terminal and wants the best trade
-  *anywhere* (or anywhere in a system), then decides where to fly — not
-  the other way around. Requested semantics: no filter + no location =
-  whole game; filter only = that system; location picked = that terminal
-  only (unchanged from before). Confirmed live against the real UEX API
-  before designing anything: `commodities_routes` has **no bulk-origin
-  query** — `id_star_system_origin` alone returns
-  `missing_one_required_inputs`; it strictly requires one of
-  `id_terminal_origin`/`id_planet_origin`/`id_orbit_origin`/`id_commodity`
-  per call. So "Any Location"/BUY IN genuinely means one API call per
-  candidate terminal (up to 114 for the whole game) and merging results —
-  no server-side shortcut exists. Implemented as a manual **SCAN** button
-  (`modules/trade_route_optimizer/module.py`, `_start_scan`/`_scan_step`/
-  `_finish_scan`), ported directly from Commodity Prices' Retrieve Data
-  `QTimer`-throttled scan pattern (same 120ms/~8req/sec pacing, live
-  progress text, skip-on-individual-failure, rate-limit-aware abort, same
-  30-min cache-countdown + "FORCE UPDATE?" confirm) rather than inventing
-  a new mechanism — confirmed with user this should be an explicit manual
-  action, not automatic, since `refresh()` runs synchronously on the
-  host's auto-refresh timer and at startup
-  (`host/main.py`'s `wrap_refresh`/`safe_refresh`, no threading) and a
-  15-30+s scan must never block that path; `refresh()` is simply a no-op
-  while origin is Any Location. Each `commodities_routes` row already
-  carries its own `origin_terminal_name`/`origin_star_system_name`/
-  `origin_planet_name` (confirmed live) — no extra tagging needed to merge
-  rows from many different scanned terminals into one sorted pool.
-  Route rows now show "BUY AT ..." alongside the existing "SELL AT ..."
-  (confirmed with user) since origin is no longer implied by a single
-  picker selection in scan mode — kept in single-terminal mode too, for
-  consistency. Verified the merge/sort logic against real live data: 3
-  real terminals scanned and merged, top result correctly pulled from
-  whichever of the three actually had the best profit (not just the first
-  terminal queried), matching what a real multi-terminal scan will
-  produce.
-
-- 2026-09-05: **Two real bugs in the above, caught by the user immediately
-  after using it for real.**
-  1. **Origin combo's dropdown arrow was clipped/invisible** — the BUY IN
-     filter was placed in the same row as the origin combo, squeezing it
-     enough that the arrow region (reserved via `_COMBO_STYLE`'s
-     `padding`/`drop-down width`) had no room left; the box looked like a
-     plain text field. Fixed by moving BUY IN to its own row below the
-     origin combo, restoring its full width — same root-cause class as the
-     right-edge combo clipping already fixed once before (PROGRESS.md,
-     "Fixed right-edge text clipping..."), just reintroduced by this
-     session's own layout change.
-  2. **A changed MAX INVESTMENT didn't invalidate a prior SCAN's
-     results.** User set a $1M cap and still saw a 54,500,000 profit
-     figure on screen. Confirmed live this profit is real API-level
-     impossible at that cap — scanned 15 real terminals with
-     `investment=1000000`, best genuine result was 447,600; confirmed the
-     `investment` param does correctly cap `commodities_routes`' returned
-     `profit` server-side (Kaltag alone: 3,156,000 uncapped vs 342,849 at
-     $1M). Root cause: unlike SELL IN, which re-slices already-fetched
-     data client-side, `investment` changes what the API itself returns —
-     but nothing invalidated a prior SCAN's rows when investment (or BUY
-     IN) changed afterward, since `refresh()` no-ops in Any Location mode
-     and only the explicit SCAN button actually re-queries. The screen
-     kept showing pre-investment-cap numbers next to a filled-in budget
-     field, which reads as "this is what $1M gets you" when it isn't.
-     Fixed with `_invalidate_scan_results()` — clears displayed rows and
-     sets "RESCAN NEEDED" whenever investment changes (Any Location mode),
-     BUY IN changes, or origin switches back to Any Location from a
-     specific terminal — a fresh SCAN click is required rather than
-     silently trusting stale numbers.
-
-- 2026-09-06: **Fixed the logistics-hub role-assignment KNOWN BUG (logged
-  2026-09-04) — two distinct mechanisms in `_candidate_phrases()`
-  (`modules/logistics_hub/module.py`), found together auditing a fresh
-  debug log against a real live contract (Seraphim Station multi-pickup/
-  multi-dropoff: "Collect Pressurized Ice/Processed Food from Seraphim
-  Station" → deliveries split across Beautiful Glen, Shallow Fields, and
-  Ambitious Dream Station).** App output showed "Ambitious Dream Station"
-  as a *pickup* — it's actually a drop-off, printed under the contract's
-  own "DROP OFF LOCATIONS (ANY ORDER)" section header.
-  1. **The `own_line` joined-lookahead pass (added 2026-09-04 for the
-     "Everus Harbor" line-wrap case) re-scanned the *entire* next line,
-     not just the wrapped portion of the current line's own phrase.**
-     Line "Collect Processed Food from Seraphim Station." (a real
-     own_line pickup keyword) sat directly before the unrelated "Freight
-     elevator at Ambitious Dream Station at Crusader's Ll" line purely by
-     two-column OCR reordering coincidence — the joined re-scan picked up
-     "Ambitious Dream Station" from that second line whole and tagged it
-     `pickup` at the highest priority (`own_line`, 3), permanently
-     locking out any correct later hint for the same phrase. This is
-     exactly the mechanism the original KNOWN BUG entry described for
-     "Everus Harbor"/contract `21c7811e`. Fixed by requiring the regex
-     match to actually straddle the line join (real characters on both
-     sides of the inserted space) before accepting it — a genuinely
-     wrapped name always does; an unrelated phrase sitting entirely
-     inside the next line never does. Purely restricts false positives;
-     the original wrap-catching purpose is untouched (a straddling match
-     still qualifies exactly as before).
-  2. **A second, previously-undocumented mechanism produced the same
-     wrong result even after fix #1**: with the bogus `own_line` hint
-     gone, "Freight elevator at Ambitious Dream Station..." (no keyword
-     of its own) fell to the 2-line backward-lookback check, which still
-     found the same nearby "Collect Processed Food from Seraphim
-     Station." pickup line and wrongly inherited its hint — even though
-     the line is clearly under the active "DROP OFF LOCATIONS (ANY
-     ORDER)" section header opened several lines earlier. The per-line
-     hint logic checked lookback *before* the section fallback, so an
-     incidental nearby keyword (belonging to a different item's flavor
-     text) always won over the much stronger, on-screen structural
-     section signal. Fixed by checking section first whenever one is
-     active and the line looks like a real section row (contains "at" —
-     the same qualifier the section fallback already used); lookback now
-     only runs when no section applies. `HINT_PRIORITY` itself (which
-     hint wins when the *same* phrase is seen twice) is unchanged — this
-     only reorders which check computes a fresh line's *first* hint.
-  **Verified** via a standalone backend script (no QApplication, no
-  network — `LocationService.ensure_loaded()` read the on-disk
-  `locations_cache.json`) against the exact real OCR text of the
-  contract that exposed this: Ambitious Dream Station now resolves as a
-  drop-off, not a pickup. Regression-checked the same way against the
-  session's other two real contracts (Everus Harbor → Baijini Point, and
-  the MIC-L2 Long Forest Station 4-drop-off contract) — both produced
-  identical pickups/dropoffs to their pre-fix output, no change.
-  **Separately noted, not fixed at the time:** the Ambitious Dream Station
-  stop's own commodity came back empty (should be 5 SCU Pressurized Ice)
-  — its source line is split across *three* OCR lines ("Deliver 0/5 SCU
-  of Pressurized" / "to Ambitious Dream" / "Station...") with the word
-  "Ice" itself orphaned elsewhere in the raw text entirely, and both
-  `_PICKUP_COMMODITY_RE`/`_DROPOFF_COMMODITY_RE` were single-line
-  regexes. Confirmed already wrong before this session's role-assignment
-  fix too (same value, unrelated bug). **Fixed later the same session —
-  see the next entry below.**
-
-- 2026-09-06: **Fixed the commodity-extraction gap logged just above,
-  same session.** Two independent problems, both in
-  `modules/logistics_hub/module.py`:
-  1. **A delivery line split by OCR well before its destination even
-     starts is invisible to `_commodity_quantities`/`_extract_commodities`
-     entirely, not just truncated.** Both regexes require "to"/the
-     destination on the *same* line as "SCU of X"; "Deliver 0/5 SCU of
-     Pressurized" has no "to" on its own line at all (it's on the next
-     line, "to Ambitious Dream"), so `pattern.search(line)` simply never
-     matched — the whole delivery vanished, not just its tail. Fixed with
-     a new shared helper, `_find_delivery_match()`: starting from a line,
-     progressively fold in up to 2 following lines and retry the pattern
-     each time, stopping at the first match. Both commodity functions
-     (and the destination-window-widening logic already in
-     `_extract_commodities`, which now widens from the match's actual
-     last consumed line instead of always `i+1`) were switched onto this
-     helper. `_all_commodity_names()` (the "don't treat a commodity name
-     as a location" guard, and now also the completion vocabulary below)
-     deliberately keeps its own single-line-only matching — see #2.
-  2. **Even once the delivery line resolves, its commodity name itself
-     can still be truncated with no reachable fix** — "Pressurized" ends
-     up alone (missing "Ice"), because "Ice" isn't on the very next line
-     either; it's scrambled several lines further down, orphaned among
-     unrelated trailing footer/button text ("ABANDON\nSHARE\nTRACK\nIce\n
-     point\nbring\nalong:"). No amount of nearby-line joining reaches an
-     orphan that far away without a real risk of grabbing the wrong
-     word. Instead of chasing it, complete the truncated name against a
-     *fuller mention of the same commodity already confirmed elsewhere in
-     the same contract* — "Pressurized Ice" is spelled out intact
-     earlier in this very contract, on lines that never got split
-     ("Deliver 0/6 SCU of Pressurized Ice to Beautiful Glen"). New
-     `_complete_commodity_name()`: given a candidate name and the
-     contract's own `_all_commodity_names()` vocabulary, only replaces it
-     when the candidate is a whole-word prefix of *exactly one* longer
-     known name — anything else (already complete, no match, more than
-     one candidate) is left untouched rather than guessed.
-     `_all_commodity_names()` changed its return type from a bare
-     lowercase set to a `{lowercase: original-cased}` dict specifically
-     so the completion has real, correctly-cased text to substitute in —
-     its one existing call site (`_build_contract`'s fallback-dropoff
-     guard) needed no change, since membership testing against a dict
-     already checks its keys. Deliberately kept `_all_commodity_names`
-     single-line-only rather than also switching it onto
-     `_find_delivery_match`: the completion vocabulary needs to only ever
-     contain names *already known complete*, or a truncated fragment
-     found via joining could end up "completing" a different truncated
-     fragment instead of a genuine full name.
-  **Verified** via the same standalone backend script (real OCR text, on-
-  disk `locations_cache.json`, no QApplication/network): the Ambitious
-  Dream Station drop-off now shows `[('Pressurized Ice', '5')]` instead
-  of `[]`, and Seraphim's pickup-side Pressurized Ice total correctly
-  updated from 6 to 11 (6 to Beautiful Glen + 5 to Ambitious Dream) as a
-  direct consequence — both were wired through the same
-  `_commodity_quantities()`/`_extract_commodities()` pipeline, so fixing
-  the extraction fixed the summed total for free. Regression-checked
-  contracts 1 and 3 from the same session (Everus Harbor/Baijini Point;
-  the MIC-L2 Long Forest Station 4-commodity contract) — identical
-  commodity output to pre-fix, no change.
-
-- 2026-09-06: **Fixed a route-cost bug found live: the CURRENT LOCATION
-  picker had resolved to a `terminals`-endpoint kiosk record ("Admin -
-  Seraphim") instead of the `space_stations` record ("Seraphim Station")
-  that every actual pickup/dropoff at that place resolves to — same real
-  place, two different UEX records. `terminal_key()` equality (used for
-  "am I already here?") only compares `(endpoint, id)`, so it didn't
-  recognize them as the same stop; the real-distance lookup between them
-  came back empty (UEX doesn't track a kiosk-to-its-own-station
-  distance), falling back to the coarse "+5 estimate" instead of 0 — that
-  fake cost made a genuinely farther stop (Ambitious Dream Station, real
-  distance 2) look cheaper, sending the route on an avoidable detour.
-  **Fixed at the shared root, not just this one case**: new
-  `LocationService.same_physical_place()` (`host/locations.py`) also
-  recognizes a `terminals` kiosk as the same stop as the
-  `space_stations`/`outposts`/`cities` record it structurally belongs to
-  (via `id_space_station`/`id_outpost`/`id_city`) — a real FK link
-  already present in the data, not a name guess. Wired into
-  `LocationService.distance()` itself (the single shared choke point
-  every module already calls for travel cost), not just Logistics Hub's
-  `_terminal_cost`, so any current or future caller benefits. Confirmed
-  this pattern is dataset-wide, not a one-off: 822 terminal kiosks in the
-  cached location data carry this same structural-parent link, all with
-  their parent record present in the index. Verified it doesn't
-  false-merge two *different* shops sharing the same city (only fires
-  when one side literally *is* the structural parent record). Verified
-  live: cost to the Seraphim pickup dropped from the fake 5 to a correct
-  0, and the route no longer detours to Ambitious Dream Station first.
-
-- 2026-09-06: **Fixed a second commodity-misattribution bug, found the
-  same way (reviewing a fresh live scan against the raw OCR text) as the
-  Ambitious Dream Station one earlier this session.** A contract's Port
-  Tressler drop-off showed 13 SCU Corundum; the raw text clearly says 11
-  ("Deliver 0/11 SCU of Corundum to Port Tressler above microTech:") —
-  13 is actually Everus Harbor's own Corundum amount from a different
-  line. Root cause: `_extract_commodities`'s destination-window-widening
-  (added earlier to recover a destination name split across a line
-  break) appended the *entire* next line and accepted a location match
-  found *anywhere* in it. Here, "Deliver 0/13 SCU of Corundum to Everus
-  Harbor above" is immediately followed, by pure two-column OCR
-  interleaving, by an unrelated "Freight elevator at Port Tressler..."
-  listing line — so Port Tressler's own extraction pass wrongly claimed
-  this Everus-Harbor-bound delivery (stealing its 13 SCU), which also
-  blocked the real 11 SCU Port Tressler line later in the contract via
-  the dedup-by-commodity-name check. The pickup-side total (which sums
-  across every delivery line regardless of destination) was unaffected —
-  only the per-stop breakdown was wrong. Fixed the same way as the
-  earlier `_candidate_phrases` line-wrap bug: a match found only in the
-  widened (next-line) portion is now trusted only if it genuinely
-  straddles the line boundary (part of it already in this line's own
-  destination text) — a match sitting entirely inside the next,
-  unrelated line no longer counts. A same-line match (the common case)
-  is unaffected. Verified against all 3 real contracts in this session's
-  debug log: Port Tressler now correctly shows 11 Corundum, and the
-  other two, already-correct contracts (Baijini Point/Seraphim single-
-  stop; the earlier Seraphim/Shallow Fields/Beautiful Glen/Ambitious
-  Dream 4-stop contract) are unchanged.
-
-- 2026-09-06: **Added `tests/test_logistics_hub_parsing.py`, a permanent
-  regression suite of real captured contracts** — direct response to
-  this session's pattern of fixing one bug, then finding a second,
-  unrelated bug in the same area on the next scan (role-assignment,
-  then a same-place distance bug, then a commodity-misattribution bug,
-  all in `modules/logistics_hub/module.py`/`host/locations.py`). Every
-  fixture is the exact raw OCR text of a contract already hand-verified
-  against its own text during this session, asserting exact pickups/
-  dropoffs/commodities — so a future change can't silently reintroduce
-  an earlier fix's bug without a visible test failure. No framework
-  dependency (plain asserts); run with `python tests/test_logistics_hub_parsing.py`
-  after touching any of `_candidate_phrases`, `_build_contract`,
-  `_extract_commodities`, `_commodity_quantities`, or `host/locations.py`'s
-  resolution/distance logic. 6 fixtures currently, including both bugs
-  found this session (`seraphim_4stop_v1_role_tiebreak_bug`,
-  `mic_l2_long_forest_v2_port_tressler_theft_bug`) — deliberately named
-  so a future failure names which historical bug came back. One
-  additional verified-correct contract (Baijini Point -> Seraphim, 103
-  Stims) was NOT added — its raw OCR text was never captured before the
-  source debug log entry was wiped, and reconstructing it from memory
-  would have meant a "regression fixture" that isn't actually a real
-  capture; add it for real next time that shape recurs. Grow this file
-  every time a new bug is found and fixed, not just at the end of a
-  session — that's what keeps it actually protective.
-
-- 2026-09-06: **Fixed a cross-endpoint id-collision bug in
-  `LocationService.same_physical_place()`, caught by a `/code-review`
-  pass immediately after committing it.** The FK check
-  (`kiosk.get("id_space_station") == structural.get("id")`, etc.) never
-  verified `structural` actually came from the endpoint that FK names —
-  so a `terminals` kiosk with `id_space_station=27` would wrongly match
-  ANY other record with bare `id == 27`, regardless of whether it was
-  really a `space_stations` row. Confirmed real with live cache data:
-  terminal 259 ("Admin - Seraphim", `id_space_station=27`) wrongly
-  matched `outposts` id 27 ("HDMS-Woodruff") — a completely unrelated
-  real place. This is exactly the cross-endpoint id-collision class of
-  bug `host/locations.py`'s own module docstring exists to warn about
-  (see 2026-09-04) — introduced by the same-place fix earlier today
-  despite that. Fixed by also requiring `structural.get("_endpoint") ==
-  endpoint` (the FK's own named endpoint) before accepting the match.
-  Added `kiosk_fk_vs_wrong_endpoint_same_id_not_same_place` to
-  `tests/test_logistics_hub_parsing.py`'s `DISTANCE_FIXTURES` using this
-  exact real pair — confirmed it fails on the pre-fix code and passes
-  after. Four other findings from the same review pass were triaged and
-  deliberately not acted on: a `_reprocess_contracts` `route_done`-
-  staleness edge case (real, but already a documented accepted
-  limitation, just slightly worse than described); a
-  `_find_delivery_match` line-fold edge case (real but narrow, needs a
-  more careful redesign than a quick patch); and two pure-performance
-  redundant-recomputation findings (correct but negligible at this
-  project's actual data scale — single-contract text, 4-8 stops per
-  route).
-
-- 2026-09-06: **New module: Refinery Finder — picked up BACKLOG.md's Tier
-  1.3 "Refinery Yield Calculator," but narrowed scope after live API
-  investigation showed a literal calculator isn't buildable from real
-  data.** Investigated the actual endpoints before designing anything
-  (same discipline as Commodity Prices' `commodities_ranking` dead-end):
-  `refineries_yields` gives a per-terminal/per-commodity yield
-  **modifier** (confirmed live range -9 to +13), not an absolute yield
-  percentage; `refineries_capacities` gives per-terminal max job size;
-  `refineries_methods` gives 9 real methods with 1-3 star yield/cost/
-  speed ratings; `refineries_audits` (real reported jobs, quantity in ->
-  quantity_yield + quantity_inert out) has only **3 rows total** across
-  the whole live dataset — checked directly, not assumed. Also checked
-  `commodities` itself for any base yield%/purity field on a raw
-  commodity record — none exists; raw/refined pairs link only via
-  `id_parent`. Building "enter N SCU, get exact output" would require
-  inventing the missing composition/base-yield constants ourselves,
-  which this project has consistently refused to do. Landed on: rank
-  real terminals by their actual reported yield modifier for a chosen
-  raw commodity (`commodities` filtered to `is_raw == 1`, 45 real
-  entries), show each terminal's capacity, and a static methods
-  comparison table — all real UEX data, nothing invented. Confirmed live
-  that `refineries_yields`' `id_commodity` query param does **not**
-  filter server-side despite looking like a real filter (same "verify,
-  don't assume" lesson as Commodity Prices' `commodity_name` substring
-  surprise) — filtered client-side instead. Also confirmed terminal
-  names from these endpoints ("Refinement Center - Nyx Gateway (Pyro)")
-  are already clean, unlike the "Admin -" kiosk-name issue Commodity
-  Prices/Trade Route Optimizer both hit, so no nickname-lookup pass was
-  needed here. A terminal can report more than one yield value for the
-  same commodity over time (confirmed live) — kept only each terminal's
-  best reported value before ranking, so the top-5 list isn't dominated
-  by one terminal's repeat submissions. Verified end-to-end against live
-  data via an offscreen-Qt backend script (no visible UI in this
-  environment, same limitation as every other module): 45 raw
-  commodities loaded, correct top-5 ranking for Laranite (Raw) across
-  Nyx/Pyro/Stanton, correct explicit "no yield data reported yet" state
-  for a commodity with zero reports (21 of 45 currently have none),
-  system filter narrowing results correctly, settings persisting to a
-  real `config.json` on disk, and clean discovery through the real
-  `discover_modules()` alongside all 4 existing modules (no duplicate
-  `module_id`, contract validation passed). See
-  docs/modules/refinery-finder.md for the full writeup.
-
-- 2026-09-06: **Fixed the logistics-hub duplicate-stop KNOWN BUG (logged
-  2026-09-05), reusing the same-place infrastructure built earlier this
-  session for the CURRENT LOCATION distance bug.** Root cause was
-  identical in shape: `_build_contract`'s `merge_resolved` deduped
-  candidates by `terminal_key()` alone, so two differently-worded
-  mentions of one real place that resolved to *different* UEX records
-  (a `terminals` kiosk vs. the `space_stations`/`outposts`/`cities`
-  record it belongs to) never merged, producing a duplicate route stop.
-  Fixed by checking already-resolved entries for a
-  `LocationService.same_physical_place()` match before creating a new
-  entry, so both mentions land in the same stop regardless of which
-  specific record either one resolved to.
-  **Found and fixed a second-order regression from this same fix before
-  shipping it**: two existing regression fixtures broke immediately —
-  not because the merge was wrong, but because it now *also* correctly
-  merges a real, previously-separate pair in those fixtures' own test
-  data (`Admin - MIC-L2` kiosk + `MIC-L2 Long Forest Station`, one of
-  the 822 real kiosk/station pairs confirmed earlier this session), and
-  picked the uglier kiosk name as the display representative purely
-  because of merge order. Fixed by preferring a structural record's name
-  over a `terminals` kiosk's raw label whenever the two merge, regardless
-  of which one resolved first. Verified: all 6 existing parsing fixtures
-  plus a new 7th (`duplicate_stop_same_place_two_records_synthetic`)
-  pass. That 7th fixture is explicitly labeled **synthetic** in the test
-  file, not a real capture — the original real contract that exposed
-  this bug (2026-09-05, "Seraphim The"/"Seraphim Station") predates this
-  session's regression suite and its raw OCR text was never saved.
-  Reproduces the exact same confirmed-live mechanism instead (`Seraphim
-  Station` -> `space_stations` id 27, `Seraphim Trade` -> `terminals` id
-  259 "Admin - Seraphim", both verified via a live `resolve_all()` call
-  before writing the fixture, not guessed) — add the real capture for
-  real if this shape ever recurs in a live scan.
-  Also noted per user request: the OCR pipeline itself (capture/
-  preprocessing/easyocr settings) hasn't been reviewed against the
-  user's actual real-world screenshots — logged in PROGRESS.md's Next
-  section as a future pass, not started.
-
-- 2026-09-06: **Fixed the logistics-hub single-word-city KNOWN BUG
-  (logged 2026-09-05), using Plan Mode to design around a risk found
-  during investigation before writing any code.** `_candidate_phrases`'s
-  main location regex requires 2+ capitalized words in a row, so a
-  location named with one word (real example: "...Teasa Spaceport in
-  Lorville." — "Lorville" is a real city) never became a candidate at
-  all; only the 2-word "Teasa Spaceport" was tried, which is genuinely
-  ambiguous between two different real shops there (New Deal vs.
-  Kel-To, confirmed live) rather than resolving to the city itself.
-  **A naive fix (any single capitalized word) was investigated and
-  rejected before implementation**: confirmed live that bare planet
-  names — which appear constantly via "above PLANET" in every real
-  template ("above Hurston:", "above Crusader.") — collide with
-  unrelated real shops (`resolve_all("Hurston")` wrongly substring-
-  matches "Hurston Dynamics Showcase - Lorville"; `resolve_all("Crusader")`
-  is ambiguous across 3 unrelated shops). Planets aren't part of
-  `LocationService`'s indexed endpoints at all, so nothing already
-  filters them out — a broad single-word pass would have flooded
-  contracts with false planet-name candidates, a worse regression than
-  the bug being fixed. Fixed narrowly instead: the new candidate pass
-  only fires after "in " specifically (never "at "/"above "), since
-  every real template seen introduces a planet via "above", never "in" —
-  this targets the reported bug shape while structurally avoiding the
-  planet-collision risk, not just avoiding it by luck.
-  Verified live before writing the fix (not after): `resolve_all
-  ("Lorville")` returns exactly one real match ("Landing Services -
-  Lorville"), confirming the fix target genuinely resolves cleanly once
-  offered. Verified after: the exact reported bug shape now correctly
-  resolves "Lorville" as a real dropoff while "Teasa Spaceport" stays
-  honestly flagged ambiguous (a real ambiguity this fix was never meant
-  to resolve, not a lingering bug) — confirmed via `_build_contract`
-  directly, and via a live re-check that "Hurston"/"Crusader"/"ArcCorp"
-  still correctly do NOT become candidates from an "above PLANET" line
-  after the fix. Added `single_word_city_lorville_synthetic` to
-  `tests/test_logistics_hub_parsing.py` (labeled synthetic — the
-  original 2026-09-05 real capture was never saved, same as the
-  duplicate-stop fixture above) and confirmed it fails on the pre-fix
-  code and passes after. All 13 regression checks pass, no existing
-  fixture regressed.
-
-- 2026-09-06: **OCR pipeline optimization #1: column-aware reading order,
-  first of a ranked list the user asked to implement incrementally (one
-  change, confirm, then proceed to the next).** Investigated the full
-  `_grab_region`/`_ocr` pipeline (`modules/logistics_hub/module.py`) — it
-  was minimal: grayscale + autocontrast, then
-  `self._reader.readtext(np.array(gray), detail=0)`, joined directly into
-  `raw_text`. `detail=0` discards each result's bounding box, so text
-  comes back in whatever order EasyOCR's own internal sort produces —
-  this doesn't know about or respect the in-game contract panel's real
-  two-column layout (mission narrative text next to a separate PICK UP/
-  DROP OFF list). Recognized this as the root cause behind the large
-  majority of this session's parsing bug fixes (role-assignment,
-  commodity-misattribution, orphaned words) — every one of them was
-  really a downstream symptom of reading both columns interleaved by
-  vertical position, not a genuine parsing-logic flaw on its own.
-  Fixed at the source instead of continuing to patch downstream text
-  heuristics: switched to `readtext(..., detail=1)` (keeps bounding
-  boxes) and added `_order_ocr_boxes()` — sorts all detected text boxes
-  by horizontal position, finds the single largest gap, and splits into
-  two columns only if that gap is wide enough (relative to the capture's
-  own width, not a fixed pixel count, since capture regions vary a lot
-  in size) to plausibly be a real column boundary rather than normal
-  text spacing; each column is then sorted top-to-bottom and the left
-  column is read in full before the right one. A capture with no real
-  column split (common for a single-pickup/single-dropoff contract, or
-  any non-two-column capture) finds no wide-enough gap and degrades to
-  one column sorted top-to-bottom — never worse than the previous
-  behavior.
-  **Verified the ordering algorithm directly** with synthetic bounding-
-  box data mimicking a real two-column layout (narrative text
-  interleaved by vertical position with a PICK UP LOCATIONS list) —
-  confirmed it correctly reads the left column in full before the right
-  one instead of interleaving them, and confirmed a single-column
-  capture (no wide gap) stays in plain top-to-bottom order, unchanged.
-  Ran the full existing regression suite (13/13) — unaffected, since
-  those fixtures feed hand-written `raw_text` directly to
-  `_build_contract` and never exercise `_ocr()` itself.
-  **Known limitation, stated plainly**: this only verifies the
-  reordering *algorithm* in isolation — there is no way to verify the
-  full real end-to-end improvement (actual game screenshot -> actual
-  EasyOCR bounding boxes -> actual reordering) without a live capture
-  and a running EasyOCR pass, which needs the user's own screen and
-  game session. A real scan is the next real test of this change.
-  Per user direction, stopping here for confirmation before moving to
-  the next ranked optimization (upscaling small in-game text before
-  OCR).
-
-- 2026-09-06: **OCR pipeline optimization #2: 2x upscale before OCR.**
-  User confirmed proceeding through the rest of the ranked list without
-  a checkpoint after each (will test the whole batch together once
-  done). In-game UI text captured at native resolution is often small —
-  a single contract line can be well under 20px tall — and OCR engines
-  read text substantially more reliably above a certain pixel-height
-  floor. Added a 2x LANCZOS resize of the grayscale capture before
-  `readtext()` runs (`modules/logistics_hub/module.py`'s `_ocr()`) —
-  this happens *before* EasyOCR's own detection pass, not the same
-  thing as its internal `mag_ratio` parameter. LANCZOS specifically
-  (not the default nearest-neighbor) to keep character edges reasonably
-  clean at 2x instead of introducing new blockiness. Also fixed a
-  correctness detail this surfaced: `_order_ocr_boxes()`'s column-gap
-  threshold is relative to image width, so it now receives the
-  *upscaled* width (`gray.width`), not the original pre-upscale capture
-  width (`pil_rgb.width`) — bounding boxes from EasyOCR are in the
-  upscaled image's coordinate space.
-  **Verified with a genuinely small synthetic test case** (9pt text,
-  16px-tall image, PIL-rendered to sidestep an unrelated headless-Qt
-  font-rendering issue found while testing — offscreen `QPainter` text
-  rendered as empty glyph boxes in this environment, not a real bug,
-  just not usable for this test): without upscaling, EasyOCR fragmented
-  "Deliver 0/37 SCU of Quartz to Port Tressler" into 3 disjoint,
-  unusable pieces ("Delver 037 SCU _", "Ontr", "Pontesh"); with 2x
-  upscaling, it stayed as one coherent line (still character-garbled —
-  "Delver 037 SCU 01 Cuarz *0 Pon Tresskr" — but the structure/word-
-  boundaries survived, which is what the downstream line-based parsing
-  in `_candidate_phrases` actually depends on). This is real evidence
-  of the intended benefit, not just "didn't break anything" — a larger,
-  easier test case had shown no visible difference either way, which
-  would have been a false reassurance if used as the only test. Full
-  regression suite (13/13) unaffected.
-
-- 2026-09-06: **OCR pipeline optimization #3: investigated, NOT
-  implemented — thresholding/sharpening didn't hold up under real
-  testing.** The original ranked idea was "preprocessing tuned to this
-  UI specifically (inverted threshold for light-text-on-dark)." Tested
-  it properly before implementing, per the user's own explicit push
-  mid-investigation ("rather than guessing or over testing, how are the
-  results compared to the old model?") — a direct comparison against
-  the true pre-session baseline (no upscale, plain grayscale +
-  autocontrast), not just candidate-vs-candidate.
-  **Otsu binarization** (auto-thresholding to pure black/white, computed
-  per-image from its own histogram — implemented as a small pure-Python
-  helper, no new dependency): tested against 4 synthetic cases. Result:
-  a wash. On the hardest case it fixed two details ("0/37" keeping its
-  slash, "of" instead of "01") but introduced two new errors elsewhere
-  in the same line ("Cvarz"/"Quitz" both wrong differently). No
-  consistent win. This matches a known general pattern: EasyOCR (a
-  modern neural OCR engine trained on natural anti-aliased text) doesn't
-  reliably benefit from hard thresholding the way a classic engine like
-  Tesseract does — unlike Tesseract, forcing pure black/white can
-  introduce jagged edges unlike anything in its training distribution.
-  **Mild UnsharpMask** (radius=2, percent=150) tested next as a lower-
-  risk alternative: meaningfully helped the hardest case (correctly
-  recovered "0/37", "of", and "Tressler" in full — the single best
-  result across every technique tried), had zero effect on a second
-  case, and introduced new errors on a third ("Calec"/"Corrcum"/"Lorg").
-  **Direct comparison against the true original pipeline** (the
-  question that actually mattered) showed the already-shipped 2x
-  upscale (#2) is the real, consistent win: on the hardest case, the
-  original pipeline fragmented "Deliver 0/37 SCU of Quartz to Port
-  Tressler" into 3 disjoint, unusable pieces ("Dewver 037 SCU", "Ontz",
-  "PotTes" — half the real content gone); 2x upscale alone kept it as
-  one coherent line. Same pattern on a second case (original split
-  "Freight elevator at..." into two lines, losing "at" entirely; 2x
-  upscale kept it as one line). Neither Otsu nor sharpening improved on
-  that already-shipped baseline consistently enough to justify adding
-  more preprocessing complexity/risk for an unproven, case-by-case
-  benefit. Decision: skip this item as originally scoped rather than
-  ship something the data doesn't actually support — consistent with
-  this project's standing rule to verify before implementing, not just
-  before calling something done.
-
-- 2026-09-06: **OCR pipeline optimization #4 (last of the ranked list):
-  EasyOCR character allowlist.** New `OCR_ALLOWLIST` constant
-  (`modules/logistics_hub/module.py`) — letters, digits, and every
-  punctuation mark observed across this session's real captures
-  (periods, commas, colons, semicolons, apostrophes/quotes, hyphens,
-  slashes for "0/37", parens, brackets for "[BP]*", asterisks,
-  underscores — a documented real OCR artifact standing in for a period
-  — plus basic sentence punctuation), passed as `readtext(...,
-  allowlist=OCR_ALLOWLIST)`.
-  A/B tested against 4 synthetic cases (including one with brackets,
-  since `[BP]*` is a real recurring pattern in captures): **identical
-  output with and without the allowlist in every case** — a genuinely
-  inconclusive result, not a validated win, and said so plainly rather
-  than overselling it. The reason is structural, not a flaw in the
-  change: synthetic PIL-rendered text can't reproduce the actual failure
-  mode an allowlist targets — genuine OCR hallucination into an
-  impossible character (a reward-icon glyph misread as a stray currency
-  symbol, a UI decoration read as a letter) — because there's no real
-  icon/compression/anti-aliasing noise in a clean synthetic render for
-  the model to hallucinate from. Kept the change anyway on theoretical
-  grounds specific to this exact mechanism: restricting a classifier's
-  candidate output set can only remove options that were already wrong,
-  never introduce a new error, *provided the list is genuinely complete*
-  — the only real risk is an incomplete list suppressing a legitimate
-  character, which is why the list was built generously (every
-  punctuation mark actually observed this session) rather than narrowly.
-  Full regression suite (13/13) unaffected; confirmed `_ocr()` still
-  runs end-to-end without error with the new parameter wired in.
-  **This is the last of the 4 ranked OCR optimizations — the user will
-  test the full batch together against real scans next**, which is the
-  only way to actually confirm #1 (column ordering) and #4 (allowlist)
-  specifically, since neither could be fully validated against synthetic
-  test data in this environment.
-
-- 2026-09-07: **First live scans after the OCR pipeline optimization
-  batch — both parsed correctly overall, but one exposed a real
-  commodity-extraction gap, fixed same day.** Two real contracts
-  scanned: a 3-commodity Everus Harbor -> Faithful Dream Station haul
-  (Quantum Fuel/Hydrogen Fuel/Ship Ammunition, all correct — added as
-  `real_faithful_dream_station_three_commodities`, the first fixture in
-  this suite built from a genuinely clean real scan rather than a bug
-  report) and an Everus Harbor -> Lorville haul that reproduced the
-  single-word-city fix live for real: "Lorville" correctly resolved as
-  a real dropoff while "Teasa Spaceport" correctly stayed flagged as a
-  genuine ambiguity (New Deal vs. Kel-To) — exactly as predicted when
-  that fix shipped, first real confirmation outside synthetic testing.
-  **But its commodities came back empty**, a gap the synthetic fixture
-  for that same bug never caught. Root cause: the real contract phrases
-  the destination as "Deliver...to Teasa Spaceport" / "in Lorville:" —
-  split across the line break — and the straddle check added for the
-  Port Tressler theft bug (2026-09-06) can *never* pass for a single-
-  word-city candidate by construction: a destination introduced via
-  "in CITY" always puts the entire city name on the *next* line, none
-  of it on the current one, so it structurally can't straddle the
-  boundary the way a genuinely truncated name (the case that check was
-  built for) does. This is a real, mechanical incompatibility between
-  the single-word-city fix and the Port-Tressler-theft fix, not a
-  coincidental edge case — it would have failed for every single-word-
-  city dropoff's commodities, every time. Fixed by adding a narrow
-  carve-out: if the next line itself opens with "in " immediately
-  followed by the same word as the candidate's own loc_key, trust the
-  widened match even without straddling — that pattern is a direct
-  grammatical continuation of the same destination ("X in CITY"), never
-  the coincidentally-adjacent unrelated mention (a different terminal's
-  own freight-elevator listing) the straddle check exists to reject.
-  **Verified against the real captured text**: Lorville's commodities
-  now correctly show 27 SCU Pressurized Ice + 278 SCU Processed Food,
-  matching the pickup total exactly. Confirmed the fix is actually
-  necessary (reverted it, watched the real capture fail again, restored
-  it). Confirmed the Port Tressler fixture still passes — this carve-out
-  doesn't reopen that bug, since it only fires for the specific "in "-
-  opening-a-line pattern, never a "Freight elevator at..." one. Added
-  both real captures as regression fixtures
-  (`real_lorville_in_continuation_commodity_gap`,
-  `real_faithful_dream_station_three_commodities`) — the first fixtures
-  in this suite sourced from live post-fix scans rather than reconstructed
-  from memory. All 15 regression checks pass.
-
-- 2026-09-07: **Card ROUTE section restored to a full inline per-stop
-  list** (was a single "N stops planned, click TRACKER" placeholder since
-  2026-09-05 — see that entry above). User reported the card "doesn't
-  seem to be displaying correctly" — everything past the CONTRACTS list
-  needed the Tracker popout to see any detail, when the card is supposed
-  to hold the majority of the information. Root cause of the original
-  2026-09-05 revert was genuinely never found (no way to run the real Qt
-  UI in that pass, per its own writeup) — this time it was: launched the
-  app from source with two real fixture-derived contracts seeded into
-  `config.json`, screenshotted the running card via `PrintWindow`, and
-  the full 4-stop route list rendered correctly the very first try. The
-  2026-09-05 "invisible rows" symptom did not reproduce — most likely
-  cause, never fully isolated since it wasn't reproduced either: the
-  scroll-position-reset attempt from that same day, still present in the
-  code, may have been enough on its own even though it was judged
-  ineffective at the time on a different symptom. `_render_results()`
-  now calls `_populate_route_rows(self._results_layout, contracts)`
-  directly instead of the placeholder branch; the Tracker popout is kept
-  as an optional always-on-top detached window alongside it (both stay in
-  sync via the same call), not removed.
-- 2026-09-07: **Manual cargo capacity added.** User hit a real case: two
-  queued contracts needed 612 SCU combined but their ship only holds 512
-  — nothing in the app would have caught that before undocking. Considered
-  a UEX-vehicle-data ship picker vs. manual entry; user explicitly
-  preferred manual ("I trust it more than the ship picker") since a
-  picker can't reflect a customized cargo-grid loadout. New `CARGO
-  CAPACITY` field on the card (`cargo_capacity_scu` in settings,
-  `QIntValidator`, saved on `editingFinished`). The existing summary line
-  (`_peak_cargo_scu()`, already computed) now compares against it and
-  turns amber with `EXCEEDS N SCU CAPACITY BY <over-amount>` when the
-  planned route's peak cargo would overflow the hold. Verified live: set
-  to 512 via a real UI Automation click + Tab (not just
-  `ValuePattern.SetValue`, which set the field's text but never fired
-  `editingFinished` since Qt's own focus-loss signal never ran — the
-  first attempt silently didn't trigger the warning for exactly that
-  reason), summary correctly read "612 SCU peak cargo ⚠ EXCEEDS 512 SCU
-  CAPACITY BY 100".
-- 2026-09-07: **Freight Manifest added** — a running list of every
-  commodity being hauled across all active contracts, new card section
-  between CONTRACTS and ROUTE. Per user direction: the game makes it very
-  hard to tell two pickups of the same commodity apart once they're both
-  in the hold, so accidentally taking two contracts hauling the same
-  freight is a real trap worth flagging on sight, not discovered mid-run.
-  `_freight_manifest()` sums each contract's *pickup*-side commodity
-  totals only (a pickup entry already holds that contract's contract-wide
-  total per the 2026-09-05 quantity-summing fix; drop-offs would double-
-  count the same freight split across destinations) and tracks how many
-  distinct contracts each commodity name appears in. Any commodity in 2+
-  contracts renders as an amber warning row (reusing the existing
-  ambiguous-location row style) instead of a plain one. Verified offline
-  with a synthetic 3-contract case (Titanium split 50/30 across two
-  contracts correctly summed to 80 SCU and flagged; Gold in one contract
-  correctly left unflagged) and confirmed rendering live in the running
-  app alongside the two real seeded fixture contracts (no overlap in that
-  particular pair, so no flag fired there — the flagging logic itself was
-  checked separately, above). New regression check
-  `freight_manifest_flags_same_commodity_across_contracts` added
-  (16 total checks now).
-- 2026-09-07: The debug log (`logistics_hub_debug.jsonl`) was deleted at
-  user request after a game crash lost their in-progress contracts —
-  it's always-on and regenerates fresh on the next scan, nothing lost
-  from deleting it (it's untracked, not a source file).
-
-- 2026-09-07: **Scan → review popup (Part 1 of the confirm-gate/grading
-  plan).** SCAN CONTRACT used to add straight to the queue/route, pausing
-  only for a duplicate. Per user direction, every scan now pauses for
-  review first. `_DuplicatePopup` generalized into `_ReviewPopup`
-  (pickups→dropoffs summary, reward, SCU, an inline duplicate warning when
-  relevant, ACCEPT/REJECT) — one popup path instead of two.
-  `_pending_duplicate` renamed `_pending_scan`; `refresh()` always shows
-  the popup after a successful `_build_contract()` instead of ever calling
-  `_add_contract()` directly. Grading (letter grade + reason) is a
-  separate, later part of the same plan — this popup already has a slot
-  for it once the Hauler Profile + compatibility DB land.
-
-  **Caught two real bugs building this, both fixed before shipping:**
-  1. `_show_review_popup()` formatted `reward` with `f"{reward:,}"` —
-     `reward` is the raw OCR-extracted *string* (e.g. `"87,250"`, already
-     comma-formatted), not an int, so this raised `ValueError` on every
-     real popup. The first version of the regression checks didn't catch
-     it because they called `_on_review_accept`/`_on_review_reject`
-     directly, never actually building the popup widget — only a live
-     launch surfaced it. Fixed (drop the `:,` format spec, same pattern
-     `_contract_row` already uses) and a new regression check
-     (`review_popup_renders_without_crashing`) added that actually calls
-     `_show_review_popup()`, specifically so a future change can't
-     reintroduce a popup-construction crash behind a passing test suite.
-  2. The new regression checks (`review_popup_reject_does_not_add`/
-     `review_popup_accept_adds_pending_contract`) used the default
-     `Config()`, which points at the real `config.json` — since
-     `_on_review_accept()` saves to disk, running the test suite silently
-     overwrote the user's actual saved contracts with fixture data. Caught
-     immediately by re-checking `config.json` after a test run. Fixed by
-     giving `run_ui_state_checks()` its own isolated temp-file `Config`
-     instead (deleted at the end of the function) — the real config.json
-     is never touched by this test file again. User's real contracts
-     (there weren't any at the time — already empty from earlier cleanup)
-     and `cargo_capacity_scu: 512` were verified intact by hash-comparing
-     `config.json` before/after a full test run.
-
-  Verified live end-to-end: launched the app from source, clicked SCAN
-  CONTRACT via real UI Automation `InvokePattern.Invoke()` (not synthetic
-  state), confirmed the `_ReviewPopup` window actually exists as its own
-  top-level widget (not visible in a `PrintWindow` capture of the main
-  window — it's a separate `Qt.Popup` top-level, captured separately),
-  screenshotted it directly showing real theme/fonts with the ACCEPT/
-  REJECT buttons, clicked REJECT via `InvokePattern`, and confirmed
-  `config.json`'s contract count stayed at 0 afterward.
-
-- 2026-09-07: **Hauler Profile added (Part 2 of the confirm-gate/grading
-  plan).** New `PROFILE` button next to `SET SCAN AREA`, opens
-  `_HaulerProfilePopup` (same `Qt.Popup` shell as `_ReviewPopup`): five
-  fields — Ship (free text, no reliable static ship-data source exists to
-  validate against, and this doubles as the compatibility-DB key in Part
-  3), Goal, Risk Tolerance, Session Time, Region — the last four are fixed
-  `QComboBox` choices (`PROFILE_GOAL_CHOICES` etc.) rather than free text,
-  so the later grading logic has a closed set of values to branch on.
-  Saved to `self.settings["hauler_profile"]` on SAVE, set once and edited
-  whenever, never re-asked per scan. New regression check
-  `profile_popup_saves_all_five_fields` — actually constructs and saves
-  the real popup (not just the save handler), same lesson as the Part 1
-  crash: a check that skips widget construction can't catch a
-  construction bug.
-
-  Verified live: launched the app, clicked PROFILE via UI Automation,
-  screenshotted the popup directly (all 5 fields render with real
-  theme/fonts), set the ship field via `ValuePattern.SetValue` (worked,
-  persisted "Hull C" to `config.json` correctly) and clicked SAVE.
-  The four `QComboBox` selections did **not** visibly change via UI
-  Automation's `ExpandCollapsePattern`/`SelectionItemPattern` — this
-  matches a pre-existing, already-documented tooling limitation in this
-  environment (Trade Route Optimizer's terminal/system combos hit the
-  identical issue in an earlier session: "3 different automation methods
-  all failed identically"), not a new bug. The actual save mechanism
-  (`currentText()` on each combo → `self.settings["hauler_profile"]`) is
-  proven correct by the regression check above, which drives the combos
-  directly via `setCurrentText()` (the real underlying Qt API, not a
-  simulated click) and confirms all 5 fields round-trip correctly.
-
-- 2026-09-07: **Compatibility feedback DB + contract grading shipped
-  (Part 3, final part of the confirm-gate/grading plan).** No reliable
-  static source exists for which real locations physically support which
-  ships (established earlier this session — an AI-generated compatibility
-  table was checked against real sources and found partly fabricated), so
-  per user direction this doesn't guess: `self.settings["ship_location_
-  ratings"]` is a plain `{"<ship>::<endpoint>:<id>": "good"|"bad"}` dict,
-  starts empty, and grows only from the user's own GOOD/BAD answers shown
-  inline on `_ReviewPopup` for any pickup/dropoff it hasn't seen yet for
-  the profile's current ship — never re-asked once answered.
-
-  `_grade_contract()` (new): reward/SCU, marginal route cost (two
-  `_plan_route()` calls — with and without the candidate — reusing the
-  existing 2-opt planner rather than new distance math), and profile-
-  driven nudges (cross-system vs. Region preference, Pyro vs. Risk
-  Tolerance) feed a 0–100 point score mapped to a letter grade
-  (`GRADE_THRESHOLDS`). Two things cap the grade at `GRADE_CAP_ON_WARNING`
-  regardless of how well everything else scores: a known-BAD ship/
-  location match, or the candidate's commodity already being hauled in
-  another queued contract (via the existing `_freight_manifest()`,
-  reused). Per explicit user direction, a cap **never blocks ACCEPT** —
-  it only warns, visibly. No Hauler Profile set yet → `(None, "Set your
-  PROFILE for a grade.", False)`, never a guessed grade.
-
-  **Caught two real bugs building this, both found only by actually
-  looking at a live screenshot with real fonts loaded — logic-only
-  regression checks couldn't have caught either:**
-  1. `_show_profile_popup()` used `self.settings.get("hauler_profile",
-     {})` — that default only applies when the key is *absent*, not when
-     it's present with value `None` (which config.json legitimately had,
-     from an earlier cleanup step this same session). Crashed on first
-     live click. Fixed with the same `or {}` pattern `_grade_contract()`
-     already used for the same field; new regression case
-     `profile_popup_handles_none_profile` covers exactly this.
-  2. The capped grade rendered in the *same cyan color as an uncapped
-     one* whenever the cap still landed in a normal-looking letter band
-     (e.g. B, since `GRADE_CAP_ON_WARNING` sits inside the B range) —
-     defeating the entire point of the feature: a hard-no needs to be
-     visually unmissable, not just mentioned in small print. Fixed by
-     having `_grade_contract()` return `capped` as its own boolean
-     (`(grade, reason, capped)`, not inferred from the letter), and
-     `_ReviewPopup` colors the grade line amber whenever `capped` is
-     true, regardless of letter. Also found in the same pass: the `⚠`
-     glyph embedded in the BAD-location reason string rendered as a tofu
-     box — it's on a label styled with the Orbitron display font, which
-     doesn't cover that character (the mono font used elsewhere in the
-     app does). Dropped the glyph from the text; the amber color (fixed
-     above) now carries the warning instead.
-
-  Verified live end-to-end, offscreen with the app's real bundled fonts
-  loaded (`host/main.py`'s `load_fonts()` pattern, replicated in an
-  isolated-temp-config script — a full windowed launch can't produce a
-  real parseable contract without an actual game screen behind the
-  capture region, confirmed by trying it first and getting "No usable
-  text could be OCR'd"): set a Hull C profile, scanned a real fixture
-  contract, confirmed the S-grade + two unrated-location prompts render
-  correctly with real fonts; rated one location BAD for Hull C, rescanned
-  the same contract, confirmed the grade dropped from S to B, rendered
-  amber, named the specific bad location in the reason text, and only
-  asked about the *other*, still-unrated location — not the one already
-  answered. This is the literal Hull C-at-an-incompatible-station scenario
-  from the start of this session's conversation, working end-to-end.
-  25/25 regression checks pass; real `config.json` confirmed untouched
-  by any of this (hash-verified, same discipline as Parts 1–2).
-
-- 2026-09-07: **Debug log extended to cover the confirm-gate/grading
-  feature** — per user request, so a live-testing report is actually
-  diagnosable from the log instead of relying on a description after the
-  fact. The `pending_review` entry `_log_scan_debug()` writes at scan time
-  now also carries `grade`/`grade_reason`/`grade_capped`. A new
-  `_log_review_outcome()` appends a second entry (`review_accepted` or
-  `review_rejected`, keyed by `contract_id`) when ACCEPT/REJECT is
-  actually clicked — the scan-time entry can't know the outcome yet, since
-  that happens later, asynchronously, once the user has actually looked at
-  the popup. That second entry also carries which locations were shown
-  for a compatibility rating (`compatibility_prompts_shown`) and which
-  ones actually got rated during that popup (`compatibility_ratings_given`,
-  `[{"location": ..., "rating": "good"|"bad"}, ...]`) — so "why did it ask
-  me about X again" or "did my BAD rating actually save" are answerable
-  from the log alone.
-
-  Grade is computed once in `refresh()` (not recomputed separately for
-  the popup vs. the log) and threaded through as a `(grade, reason,
-  capped)` tuple, so the popup and the log entry can never disagree about
-  what was actually shown — `_show_review_popup()`'s signature changed to
-  take this precomputed tuple instead of calling `_grade_contract()`
-  itself.
-
-  **Found a real test-hygiene bug while wiring this up, same category as
-  the config.json one from Parts 1–2 but for the debug log instead**:
-  `_append_debug_log()` writes to `paths.app_root() / DEBUG_LOG_FILENAME`
-  unconditionally — it doesn't go through `Config` at all, so the
-  isolated temp-`Config` pattern `run_ui_state_checks()` already used
-  didn't isolate it. Running the test suite was silently appending fake
-  `review_accepted`/`review_rejected` entries into the real
-  `logistics_hub_debug.jsonl` on every run. Lower stakes than the
-  config.json case (this file is explicitly disposable — the user has
-  already asked to delete it once this session with no concern raised),
-  but still not clean. Fixed by monkeypatching
-  `mod._append_debug_log = debug_log_entries.append` in
-  `run_ui_state_checks()` — an in-memory list instead of the real file —
-  and adding `review_outcome_logs_grade_and_ratings`, a new regression
-  check that reads back from that in-memory list to confirm the logged
-  fields are actually correct, not just that nothing crashed.
-
-  Verified live: ran the real production code path end-to-end offscreen
-  (real fonts, real fixture contract, a real prior BAD rating for Hull C
-  at one location) with the actual debug log enabled, inspected the two
-  resulting real JSONL entries by hand, confirmed both carry the correct
-  grade/reason/capped and the second correctly lists the still-unrated
-  location with an empty ratings-given list (nothing was rated during
-  that particular run) — then deleted the disposable log file. 26/26
-  regression checks pass; `config.json` confirmed untouched throughout
-  (hash-verified before/after).
-
-- 2026-09-07: **Two real bugs found from the user's first live testing
-  session, both fixed.** Debug log review (see the two entries above,
-  timestamped 15:13–15:17) confirmed compatibility ratings *were* saving
-  correctly, but the user reported: (1) clicking ✅/❌ didn't visibly
-  confirm anything happened, and (2) leaving the review popup open and
-  clicking elsewhere (e.g. this chat) made it silently vanish — explaining
-  the 4 scans before one was actually accepted, since each earlier popup
-  had closed unseen.
-  1. **Root cause of (2): `_ReviewPopup`/`_HaulerProfilePopup` used the
-     `Qt.Popup` window flag**, which auto-closes on any outside click or
-     focus loss — fine for the old duplicate-confirm popup (answered
-     immediately) but wrong for a decision that might need the user to
-     look elsewhere first. Switched both to a real `Qt.Window |
-     FramelessWindowHint | WindowStaysOnTopHint` window — only ACCEPT/
-     REJECT (or SAVE) closes it now.
-  2. **That fix introduced a new bug, caught by the regression suite
-     before it shipped**: a plain `Qt.Window` with no parent has no
-     implicit reference keeping it alive (`Qt.Popup` apparently did, via
-     Qt's internal active-popup tracking) — the popup was garbage-
-     collected by Python immediately after the showing method returned,
-     before a user could ever see it.
-     `profile_popup_handles_none_profile`/`profile_popup_saves_all_five_
-     fields` failed immediately after the window-flag change, exactly as
-     designed to catch this. Fixed by holding an explicit
-     `self._review_popup`/`self._profile_popup` reference, cleared in
-     each outcome handler (ACCEPT/REJECT/SAVE).
-  3. **Fix for (1): the chosen ✅/❌ button now gets a colored 2px border
-     (cyan for good, amber for bad) instead of just greying out
-     identically to the other one**, which gave no visual indication
-     either button had registered.
-
-  Verified: 26/26 regression checks still pass after both fixes; live-
-  verified offscreen (real fonts) that the popup survives a simulated
-  Python GC pass (the exact failure mode of bug 2) and that the clicked
-  button renders visibly distinct from its sibling (screenshot-confirmed).
-  Real `config.json`/debug log both confirmed unaffected by any of this
-  testing.
-
-- 2026-09-07: **Grading switched from a 5-letter scale to a raw 0-100%
-  score, and cargo-capacity overflow now actually affects it.** User
-  caught a real gap from live testing: a contract needing ~4x their real
-  cargo capacity (612 SCU combined vs. a 512 SCU ship) still scored a
-  "B" — `_grade_contract()` had never once checked `cargo_capacity_scu`/
-  `_peak_cargo_scu()` at all. Root cause: capacity checking already
-  existed as its own feature (the card's summary-line warning, built in
-  an earlier part of this session) and was never wired into grading when
-  grading was added later — an oversight, not a scoring judgment call.
-
-  Two changes:
-  1. **Percentage instead of letter** — per user preference, stated
-     directly: "I would prefer a % based grade scale from 0-100%." The
-     internal 0-100 point score already existed under the hood
-     (`GRADE_THRESHOLDS` just bucketed it into 5 bands); now shown
-     directly as `N%` instead. `GRADE_THRESHOLDS` removed — nothing
-     buckets the score into letters anymore.
-  2. **Combined peak cargo vs. capacity now checked**, and treated as its
-     own, *stricter* hard-cap than the existing duplicate-freight/bad-
-     location cap (`GRADE_CAP_ON_WARNING`, 55): new `CAPACITY_OVERFLOW_CAP`
-     (20). Rationale, per discussion with the user: duplicate freight and
-     an unconfirmed location are both things you *can* still physically
-     complete (annoying or risky, not impossible); exceeding your actual
-     cargo hold means you cannot complete the run as queued at all — a
-     harder constraint deserves a harder ceiling, not the same one.
-     Checks `existing_contracts + [candidate]` together (the realistic
-     "can I run this given what's already queued" question, not the
-     candidate in isolation — confirmed this framing with the user first),
-     reusing the same candidate route already being planned for the
-     detour-cost check rather than planning it twice. `_peak_cargo_scu()`
-     gained an optional `route_order` param (defaults to `self._route_order`,
-     the existing card-summary behavior) so it can walk a hypothetical
-     not-yet-accepted route too. Multiple simultaneous triggers now take
-     the *strictest* applicable cap (`cap_ceiling = min(...)` across all
-     of them), not just the first one found.
-
-  Verified: new regression check `grade_capped_harder_on_cargo_capacity_
-  overflow` (27 total checks now, all pass). Live-verified against the
-  literal scenario that surfaced this — two real fixture contracts
-  combining to 612 SCU against a 512 SCU capacity — scored 20% (capped,
-  amber), reason correctly leads with "612 SCU peak exceeds 512 SCU
-  capacity by 100," screenshot-confirmed in the real popup. `config.json`
-  confirmed untouched (hash-verified) throughout.
-
-- 2026-09-07: **CARGO CAPACITY moved from its own row on the card into the
-  Hauler Profile popup, directly beneath SHIP** — per user request. A hold
-  size only means anything in the context of a specific ship, so it reads
-  better living next to the field it actually describes than as an
-  unrelated standalone row on the card face. Same settings key
-  (`cargo_capacity_scu`, top-level, not nested under `hauler_profile`) —
-  only the UI location changed, not the data model, so grading and the
-  card's existing summary-line warning both keep working unmodified.
-  `_HaulerProfilePopup` now takes `capacity` as its own constructor arg
-  (alongside `profile`) and `_save()`/`on_save` pass it through as a
-  second value; `_on_profile_saved()` writes both settings keys and
-  re-renders so a changed capacity shows up in the card summary
-  immediately. Card's old standalone `CARGO CAPACITY` row and
-  `_on_capacity_changed()` removed entirely. Regression check
-  `profile_popup_saves_all_five_fields` extended to also set/verify the
-  capacity field through the real popup widget. 27/27 checks pass;
-  verified live (offscreen, real fonts) that the field renders correctly
-  positioned and `config.json` stayed untouched (hash-verified).
-
-- 2026-09-07: **aUEC/SCU grading thresholds made user-editable — the
-  hardcoded 500/200/80 numbers were checked against this project's own 10
-  real captured contract fixtures and found miscalibrated low** (real
-  range observed: ~520-4,300 aUEC/SCU; every real fixture scored "good"
-  or better under the old scale, the "ok"/"low" bands never fired in
-  practice). Rather than guess a second, equally unverified replacement
-  scale, per user direction this is now the user's own call: a new
-  **GRADING SCALE** table in the Hauler Profile popup (three fields —
-  GREAT ≥ / GOOD ≥ / OK ≥, defaulting to the original 500/200/80 via
-  `DEFAULT_GRADING_THRESHOLDS`), saved to
-  `self.settings["grading_thresholds"]` through the same SAVE button as
-  the rest of the profile.
-
-  **Applies without a restart, by construction, not by any special
-  wiring**: `_grade_contract()` already reads every setting fresh on each
-  call (same as `hauler_profile`/`cargo_capacity_scu`) rather than caching
-  anything — saving a new threshold just changes what the *next* scan's
-  `self.settings.get("grading_thresholds")` read returns. New regression
-  check `grading_thresholds_apply_without_restart` calls `_grade_contract()`
-  twice on the same contract in the same module instance, before and
-  after mutating the setting, and confirms the aUEC/SCU label actually
-  changes ("great" → "low" once the thresholds are pushed far past the
-  contract's real number) with no reload of any kind in between.
-
-  Verified live: opened the real popup, confirmed the table renders with
-  the correct defaults; edited the three fields and clicked the real SAVE
-  button, then called `_grade_contract()` again on the same real fixture
-  contract in the same running module instance — 522 aUEC/SCU scored 90%
-  ("great") before, 65% ("ok") immediately after, no restart. 28/28
-  regression checks pass; `config.json` confirmed untouched (hash-verified).
-
-- 2026-09-07: **New COMPLETE button, distinct from CLEAR.** User had been
-  using CLEAR to finish a batch of contracts, which left no record at
-  all. New `_complete_contracts()` logs every contract currently queued
-  to a new `logistics_hub_completed.jsonl` (reward, cargo, resolved
-  pickup/dropoff locations, and the grade it scored when accepted), then
-  clears the queue the same way CLEAR does. CLEAR itself is unchanged and
-  still the discard-without-a-trace action (wrong scan, duplicate,
-  mistake) — kept deliberately separate so the completed log only ever
-  contains contracts the user is explicitly saying they delivered, never
-  polluted by scans that were never actually finished. Whole-queue
-  (not per-contract) per user's explicit choice when asked.
-
-  To make the grade available at completion time (not just transiently
-  during the review popup), `_on_review_accept()` now stashes
-  `grade_at_accept`/`grade_reason_at_accept` directly onto the contract
-  dict before it's added to the queue — persists with the contract itself
-  through `config.json`, so it survives even a relaunch, not just the
-  current session.
-
-  `_append_debug_log()` refactored into a generic `_append_jsonl(filename,
-  entry)` (both logs are the same append-only JSON-lines pattern, just
-  different files/purposes) — `_append_debug_log` is now a one-line
-  wrapper over it.
-
-  New regression check `complete_contracts_logs_then_clears`; the existing
-  test-isolation collector in `run_ui_state_checks()` was widened from
-  patching only `_append_debug_log` to patching the lower-level
-  `_append_jsonl` (so `_complete_contracts()`'s direct call is covered
-  too, not just debug-log calls) — same "never let a test touch a real
-  log file" discipline as the config.json fix earlier this session.
-  29/29 checks pass. Verified live end-to-end (real fixture contract,
-  real accept path, real file write, not a collector): the resulting
-  `logistics_hub_completed.jsonl` entry had the correct reward, resolved
-  location names, full commodity breakdown, and the grade/reason exactly
-  as shown at accept time — then deleted (disposable verification file,
-  same as other live checks this session). `config.json` confirmed
-  untouched throughout.
-
-- **2026-09-08 — Game.log verification added on top of OCR (not instead
-  of it) — new branch `logistics-hub-gamelog-verify`.** User found
-  github.com/SubliminalsTV-Projects/sc-overlay, which reads hauling
-  contract data (accept, tonnage, commodity, destination, payout) straight
-  out of Star Citizen's own `Game.log`. Investigated: their
-  `missions-parser.ts`/`hauling.ts` are real, well-documented (479+ real
-  logs' worth of observed line shapes) and the exact same signals were
-  confirmed live in this project's own current Game.log (a real Covalex
-  hauling contract, `CreateMarker`/`Contract Accepted`/`Deliver` lines all
-  present and matching their documented shapes).
-
-  Considered a full pivot away from OCR. Rejected: the log only has data
-  *after* in-game ACCEPT — no pre-accept board browse, unlike OCR — and
-  per-box manifests for SCU commodity hauls (Covalex/RedWind/GoblinG)
-  aren't logged at all, only total tonnage. OCR stays required for both.
-
-  Scope landed on, per user direction: **OCR remains the only trigger and
-  primary data source; Game.log is a one-shot verification pass run when
-  ACCEPT is clicked** (not at scan time — the log has nothing to check
-  against before the in-game accept happens), correcting whatever it can
-  confirm. Log wins when it reports something (destination name,
-  commodity, tonnage via the `Deliver <have>/<need> <unit> of <commodity>
-  to <destination>` line); OCR's own extraction is left untouched for
-  everything else (reward — never in the log until the later, unrelated
-  `MissionEnded`/payout lines this pass doesn't touch — and per-box
-  detail). No live tracking, no payout confirmation — that's the much
-  larger surface sc-overlay covers and is explicitly out of scope here.
-
-  Implementation: new `modules/logistics_hub/gamelog_verify.py` — pure
-  functions, no Qt/host dependency, so testable with synthetic log text.
-  `find_recent_haul_events()` tails the last 500KB of Game.log (never the
-  whole file — sessions run to hundreds of MB), regex-parses
-  `Contract Accepted`/`Deliver` lines within a 180s window of "now",
-  groups by `MissionId`. `verify_contract()` matches one event to the
-  OCR-built contract by normalized name-overlap scoring on
-  origin/destination text (never an exact string match — OCR's resolved
-  UEX display name and the log's raw in-game text are not guaranteed to
-  read identically), then corrects a matched drop-off's `commodities` to
-  the log's own commodity/tonnage. Imported into `module.py` via the same
-  `importlib.util.spec_from_file_location` file-path mechanism
-  `host/module_loader.py` uses for `module.py` itself — a plain `from
-  modules.logistics_hub import gamelog_verify` would break once packaged,
-  since `modules/` is deliberately not an importable package in the
-  frozen build (see module_loader.py's own docstring).
-
-  Wired into `_on_review_accept()` (verification runs, result logged to
-  the debug log alongside the existing grade/rating outcome entry, then
-  `_add_contract()` proceeds exactly as before) — REJECT is untouched, no
-  point verifying a contract that's about to be discarded. Never raises
-  or blocks ACCEPT: a missing/unreadable log, no match, or an internal
-  exception all resolve to `{"matched": False, ...}` and the OCR contract
-  goes through unmodified.
-
-  New settings key `game_log_path` (falls back to the common install path
-  via `default_game_log_path()` when unset) with a GAME.LOG PATH field +
-  BROWSE button added to the Hauler Profile popup — the natural home for
-  a "set once" field, same as CARGO CAPACITY and the GRADING SCALE.
-
-  New regression check group `run_gamelog_verify_checks()` (4 checks) —
-  synthetic Game.log text modeled on the real captured line shapes,
-  covering: window filtering (a stale line outside the 180s window is
-  correctly excluded), a real match-and-correct case (OCR typo'd/missing
-  commodity+quantity corrected from the log), a genuine no-match case
-  (unrelated contract), and a missing-file case (clean empty result, no
-  exception). Existing UI-state checks (`run_ui_state_checks()`) updated
-  to point `game_log_path` at a deliberately nonexistent file — otherwise
-  `_on_review_accept()`'s new verification step would fall through to
-  `default_game_log_path()` and read the *real* Game.log during a
-  regression run, which exists and is live on this dev machine. Read-only
-  (not the config/debug-log write hazard from earlier test-hygiene fixes
-  this session), but still real-machine state a test must never depend
-  on. 33/33 total checks pass.
-
-  Not yet done: live end-to-end verification (accept a real in-game
-  contract, scan it, confirm the debug log's `gamelog_verify` entry and
-  any correction against what actually happened) — code-reviewed and
-  unit-tested against synthetic data only so far.
-
-- **2026-09-08 — Game.log verify diagnostics, after the first live test
-  raised a real expectation gap.** User ran the first real scan on this
-  branch and got an "amber not-auto-resolved" location message, expecting
-  Game.log to have prevented it. Root cause: that message
-  (`f"{text!r} ({hint}) could be: {options} — not auto-resolved"`,
-  `_build_contract()`) fires on an OCR candidate matching *multiple*
-  distinct UEX locations — it happens at **scan time**, before the review
-  popup, well before Game.log verification (which only runs later, at
-  ACCEPT). `verify_contract()` was never going to touch this: it only
-  corrects a dropoff's commodity/tonnage, and only for a dropoff OCR
-  *already* resolved to one real location. Multi-candidate disambiguation
-  is a different, unimplemented capability — worth a future look (the
-  log's origin/destination text could plausibly pick the right candidate
-  among several UEX matches), not done here.
-
-  Fixed the actual ask — no way to tell *why* Game.log did or didn't help
-  from the debug log before this. `verify_contract()` now always returns
-  `reason` (`matched_with_corrections` / `matched_no_corrections_needed`
-  / `no_log_events_in_window` / `no_name_overlap_with_any_candidate`) and
-  `candidates_considered` (every log event scored, its title/mission_id/
-  score, highest first — not just the winner), plus the exact normalized
-  names it tried to match against (`dropoff_names_tried`/
-  `pickup_names_tried`), even on a match. `_verify_against_gamelog()` in
-  module.py adds its own always-present layer on top:
-  `log_path`/`log_path_source` (settings vs. default lookup)/
-  `log_file_exists`/`events_in_window`. The full dict lands in the debug
-  log's `gamelog_verify` field on every ACCEPT, matched or not.
-
-  Card status line after ACCEPT now also says outright when Game.log
-  wasn't found or found nothing to match ("Game.log not found, not
-  verified." / "Game.log: no matching contract found, not verified.")
-  instead of only ever mentioning it on a hit — a silent skip is exactly
-  what produced this confusion.
-
-  5 new/tightened regression checks (candidates_considered/reason
-  asserted on both the match and no-match gamelog_verify cases, a new
-  no-events case, a new `_verify_against_gamelog` module-level check for
-  the missing-log-file diagnostic fields, and the existing
-  `review_outcome_logs_grade_and_ratings` check now also asserts the
-  debug log entry carries `gamelog_verify.reason`). 35/35 total checks
-  pass.
-
-  Also: real `logistics_hub_debug.jsonl` from the user's one live test
-  session inspected directly — both real ACCEPTs logged
-  `gamelog_verify: {"matched": false, ...}` (pre-diagnostics format, no
-  `reason` yet), so Game.log verification hasn't actually helped even
-  once yet in practice; why is still unknown pending a fresh test with
-  these diagnostics in place. Also visible in that same log, unrelated to
-  Game.log: the "Teasa Spaceport" ambiguous-candidate case (New Deal
-  Lorville vs. Kel-To Lorville, still unresolved) and the same contract
-  scanned twice assigning pickup/dropoff roles inconsistently between the
-  two scans — both real, unfixed issues worth their own look.
-
-- **2026-09-08 — CLEAR LOG button added to the card.** Wiping
-  `logistics_hub_debug.jsonl` between test scans meant closing the app
-  and deleting the file by hand. New `_clear_debug_log()` (module.py),
-  wired to a CLEAR LOG button next to PROFILE — truncates only
-  `DEBUG_LOG_FILENAME`, never `COMPLETED_LOG_FILENAME` or the contract
-  queue. New regression check `clear_debug_log_wipes_only_the_debug_log`,
-  monkeypatching `host.paths.app_root` for the one call (this method
-  writes via `paths.app_root()` directly, not through the already-patched
-  `_append_jsonl`, so it needed its own test-isolation seam). 36/36 total
-  checks pass. Also manually cleared the real `logistics_hub_debug.jsonl`
-  once by hand before this button existed, per user request, so their
-  next test starts clean.
-
-- **2026-09-08 — Verify window widened 180s → 1800s, plus a permanent
-  tracking signal for tuning it further.** First real live test (see
-  above) came back `events_in_window: 0` — the real in-game accept was
-  ~70 minutes before the app's ACCEPT click (board framed, reviewed,
-  decided — ordinary play, not an edge case), and 180s never had a
-  chance. Raised `DEFAULT_WINDOW_SECONDS` to 1800 (30 min). This doesn't
-  trade accuracy for coverage the way it might elsewhere: matching still
-  requires real origin/destination name overlap
-  (`verify_contract`'s scoring), not just recency, so a wider window only
-  grows the candidate pool scored, not the odds of a false match.
-
-  Per user direction, this needs to keep being data, not another one-off
-  guess: new `gamelog_verify.nearest_haul_event_gap_seconds()` — finds
-  the closest Contract Accepted/Deliver line to "now" ignoring any window
-  at all — logged into every `gamelog_verify` debug entry alongside the
-  window size actually used (`window_seconds`), win or lose. Over time
-  `logistics_hub_debug.jsonl` builds a real distribution of actual
-  accept-to-app-accept gaps, which is what the *next* window decision
-  should be sized from instead of guessing again. 38/38 total checks
-  pass (2 new: window-boundary fixture moved from -600s to -2500s to stay
-  a genuine out-of-window case at the new 1800s size; new
-  `gamelog_nearest_event_gap_ignores_window` check).
-
-- **2026-09-08 — Verify window made config-editable, and the miss on the
-  second test explained.** Two things from the user after the window
-  widening above: (1) they realized the second test's real miss was
-  likely their own workflow, not the window — they scanned+accepted in
-  the app but forgot to accept in-game at all, so there was nothing in
-  Game.log to find regardless of window size; (2) a fixed window will
-  eventually collide with overlapping contracts (two hauls accepted
-  close together), so it needs to be tunable without a code
-  change/rebuild every time.
-
-  `_verify_against_gamelog()` now reads `window_seconds` from
-  `self.settings.get("game_log_verify_window_seconds",
-  gamelog_verify.DEFAULT_WINDOW_SECONDS)` — i.e. straight from
-  `config.json`'s `modules.logistics_hub.game_log_verify_window_seconds`
-  key (that block *is* `self.settings`, confirmed against the real
-  config.json). Editing that key and relaunching changes the window with
-  no code change. `DEFAULT_WINDOW_SECONDS` (1800) stays the fallback when
-  the key isn't present. New regression check
-  `verify_against_gamelog_respects_config_window_override` — a real temp
-  Game.log with one event at -1000s, proving the default window includes
-  it and a config override of 500s excludes it, through the actual
-  `_verify_against_gamelog()` call path (not just `gamelog_verify.py`'s
-  own functions in isolation). 39/39 total checks pass.
-
-  No UI added for this — it's a tuning knob for iterating on the
-  window size, not a normal per-user setting, and adding a UI field
-  would suggest otherwise. Edit `config.json` directly if it needs
-  changing.
-
-- **2026-09-08 — Accept reminder added: a click-to-dismiss blinking
-  banner, no game-input automation.** Discussed and rejected an auto-
-  click "ACCEPT OFFER" idea first (see this same date's conversation
-  history) — real account/ban risk (synthetic input is flagged by
-  Windows itself via LLMHF_INJECTED, and any anti-cheat/monitoring
-  checking for it is checking for exactly that), not worth it for a
-  quality-of-life feature. Landed on the much safer alternative the user
-  proposed instead: a reminder, not an action.
-
-  New `accept_reminder_seconds` setting (Hauler Profile popup, 0 = off,
-  default `DEFAULT_ACCEPT_REMINDER_SECONDS = 30` — a placeholder, same
-  as the verify window, expected to need tuning against real
-  `nearest_haul_event_gap_seconds` data). On ACCEPT, if Game.log didn't
-  verify immediately, `_schedule_accept_reminder()` queues a one-shot
-  `QTimer.singleShot` for that many seconds. When it fires,
-  `_recheck_accept_reminder()` re-runs `_verify_against_gamelog()` against
-  the *current* state of Game.log (a second, later chance — most real
-  accepts won't verify instantly since the log line can lag or the
-  in-game accept genuinely hasn't happened yet): a late match silently
-  applies any correction (exactly like the original check) with no
-  banner; still unmatched shows `_reminder_banner`, a blinking (500ms via
-  `_reminder_blink_timer`, amber/void swap) `QPushButton` — a button, not
-  a label, so any click dismisses it, not just a precise one. Expands
-  and raises the card if collapsed (`card.set_collapsed(False)` +
-  `raise_()`) so it can't hide behind a collapsed card. Every recheck
-  (not just misses) logs its own `accept_reminder_recheck` debug entry,
-  same tracking-first spirit as the verify-window diagnostics.
-
-  Deliberately does NOT duplicate into the Tracker popout — the card
-  itself is always present regardless of whether the popout is open, so
-  one banner location is enough without doubling the maintenance surface.
-
-  New regression checks: `schedule_accept_reminder_skips_when_not_needed`
-  (already-matched/no-id/disabled all correctly skip scheduling, verified
-  by monkeypatching `QTimer.singleShot` to a capturing stub rather than
-  waiting on a real delay), and three `_recheck_accept_reminder` cases
-  (contract already gone from the queue, still unmatched shows the
-  banner, late match is silent) using `isHidden()` rather than
-  `isVisible()` to check banner state — `isVisible()` depends on the
-  whole ancestor widget chain being shown, which this test harness's
-  CardContainer never is (no `app.exec()`), while `isHidden()` reflects
-  only this widget's own explicit shown/hidden state, which is what
-  these checks actually care about. 45/45 total checks pass.
-
-  This was explicitly split from the tabbed-card-layout redesign
-  requested in the same message — two independent changes, easier to
-  test/review separately; the tab redesign is a separate commit
-  immediately after this one.
-
-- **2026-09-08 — Card redesigned with a tabbed action layout.** Second of
-  two builds split from the same user request (see the accept-reminder
-  entry above). Five workflow buttons (SCAN CONTRACT/COPY ROUTE/
-  REPROCESS/COMPLETE/CLEAR) and three setup buttons (SET SCAN AREA/
-  PROFILE/CLEAR LOG) had accumulated across sessions into two flat rows
-  that had gotten genuinely noisy. Grouped into a `QTabWidget` with two
-  tabs — **SCAN** (the workflow row + status label, default/selected tab)
-  and **SETUP** (the setup row + region status label) — same buttons,
-  same handlers, no behavior changes, purely a layout reorganization.
-  LOCATION picker stays outside the tabs (always-visible context, not a
-  "noisy button"); CONTRACTS/FREIGHT MANIFEST/ROUTE sections below are
-  completely untouched. The accept-reminder banner (built in the prior
-  commit) also stays outside the tabs on purpose — it needs to be visible
-  regardless of which tab is active.
-
-  `action_tabs.currentChanged` is wired to `card.apply_size()` — a tab
-  switch changes the visible content's size the same way collapse/error
-  transitions already do, and needed the same explicit resize nudge (see
-  `Card.apply_size()`'s own docstring) or the card would size itself for
-  whichever tab happened to be active at creation.
-
-  New regression check `action_tabs_group_buttons_with_scan_default`
-  confirms the actual `QTabWidget` structure (tab labels, SCAN selected
-  by default, SCAN CONTRACT living inside the SCAN tab, the reminder
-  banner NOT nested inside either tab). 46/46 total checks pass.
-
-  Verified visually, not just via the regression suite: rendered the
-  real card standalone (offscreen, with `host/main.py`'s actual
-  `load_fonts()` so text isn't tofu boxes — same discipline as prior
-  popup verification this project has needed before) and screenshotted
-  both tabs. Confirmed clean side-by-side grouping, correct default tab,
-  and no regressions to CONTRACTS/FREIGHT MANIFEST/ROUTE below. Hit and
-  worked around one render-order quirk in the offscreen QPA platform
-  itself (the very first `grab()` after a resize comes back at the old,
-  pre-layout size regardless of which tab — a throwaway warm-up grab
-  first fixes it) — a test-script artifact, not a real app bug; not
-  worth writing up further since it doesn't affect the actual running app
-  (which paints continuously, not via one-shot `grab()` calls).
-
-- **2026-09-08 — Accept reminder now mirrors onto the Tracker popout.**
-  Real gap found by the user: the reminder banner only lived on the main
-  card, so scanning + accepting, popping out the Tracker, then stowing
-  mobiOverlay's main window (a real, fast workflow) made the reminder
-  permanently invisible — the exact scenario the reminder exists for.
-
-  `_show_accept_reminder()`/`_toggle_reminder_blink()`/
-  `_dismiss_accept_reminder()` now operate on `_reminder_banners()` (the
-  card's banner, plus the popout's own if the Tracker is open) instead of
-  a single fixed widget — clicking either one dismisses both, since
-  they're the same reminder. New `_reminder_text` instance var holds the
-  active reminder's text (`None` when nothing's active) so a Tracker
-  opened *after* a reminder already fired still shows it immediately
-  (`_open_route_popout` checks this on creation), not just reminders that
-  fire while it's already open.
-
-  The popout's banner is inserted into its OUTER layout (right after the
-  header, via `popout.layout().insertWidget(1, ...)`), deliberately NOT
-  into `_route_popout_layout` (the route-rows content layout) — that one
-  is fully cleared and rebuilt by `_populate_route_rows()` on every
-  render, which would silently delete a banner living there.
-
-  3 new regression checks: a reminder already active appears on a popout
-  opened afterward, dismissing from either banner clears both, and a
-  reminder firing while the popout is already open reaches both. 49/49
-  total checks pass. Verified visually — rendered the popout with an
-  active reminder and confirmed it renders correctly.
-
-- **2026-09-08 — Fixed the real cause of two consecutive live-test
-  misses: the fixed 500KB tail-read, not the time window.** User
-  completed a full real cycle (accept in-game + in-app, deliver, complete
-  in-game + in-app) twice; both `gamelog_verify` debug entries showed no
-  match despite the already-widened 1800s window. Root cause found by
-  measuring this project's own real `Game.log`: 4.1MB spanning ~4h43m,
-  averaging **~14.5KB/min** — a fixed 500KB tail read reliably covers only
-  **~34 minutes** of that on average, well short of even the 1800s window
-  it was nominally serving, and considerably less during busier stretches
-  (combat, loading, heavy network chatter can spike well above the
-  average rate). The time window and the byte-read budget were two
-  independent limits, and the byte budget was silently the tighter one.
-
-  `_tail_lines()`'s `max_bytes` is no longer fixed — `find_recent_haul_events()`
-  now computes it via `_estimate_tail_bytes(window_seconds)`:
-  `ESTIMATED_BYTES_PER_MINUTE = 100_000` (~7x the observed real average,
-  a safety margin for busy periods), floored at `MIN_TAIL_BYTES` (500KB,
-  the old fixed value) and capped at `MAX_TAIL_BYTES` (20MB) so a very
-  large configured window can't force reading an unreasonable chunk of a
-  multi-hundred-MB log. `nearest_haul_event_gap_seconds()` (which
-  deliberately ignores the window entirely, by design) now always reads
-  at the `MAX_TAIL_BYTES` ceiling rather than the old fixed 500KB, giving
-  it the best real shot at finding something genuinely distant.
-
-  2 new regression checks: `_estimate_tail_bytes()`'s floor/scale/ceiling
-  behavior, and a real reproduction of the bug itself — an event ~25
-  minutes old followed by >500KB of filler (simulating real gameplay log
-  volume) is found with the new window-scaled budget and confirmed
-  invisible under the old fixed 500KB one, in the same test. 51/51 total
-  checks pass.
-
-  Also noted from this same real test data (not yet acted on): the first
-  of the two real accepts *did* find a Contract-Accepted line in-window
-  (108s gap) — but for an unrelated contract ("Seraphim Station >
-  Baijini Point", score 0), correctly rejected rather than
-  cross-contaminating. Worth a second look once this fix is live to see
-  whether it was a genuinely different, separately-accepted contract or
-  a sign of something else — can't tell from one data point.
-
-- **2026-09-08 — Fixed the "Covalex Orison" phantom-dropoff bug, confirmed
-  with real evidence from tonight's live test.** "Covalex Shipping" (the
-  mission-giver company's own name, present in every Covalex contract's
-  flavor text) was substring-matching a real UEX location literally named
-  "Covalex Orison", producing a phantom dropoff with no real cargo data
-  ("cargo unknown") — and, worse, blocking Game.log's commodity/tonnage
-  correction from ever attaching, since Game.log's own destination text
-  can never mention a company name. Confirmed as a repeat offender across
-  two separate real sessions (2026-09-07 and 2026-09-08).
-
-  Added `"covalex shipping"` (the exact real offending phrase) and
-  `"covalex shippina"` (the same real phrase via a common OCR letter
-  typo, added pre-emptively — only ever observed failing to match
-  harmlessly so far, but it's the identical underlying noise source) to
-  `_PHRASE_STOPWORDS` — the same established, narrow, evidence-driven
-  exclusion mechanism already used for "PICK UP"/"DROP OFF" false
-  substring matches. Confirmed with tonight's exact real captured OCR
-  text: the real dropoff, "HDPC-Cassillo", isn't in the cached UEX
-  location data at all (confirmed by grepping `locations_cache.json` —
-  genuinely absent, not a naming mismatch this project can fix), so with
-  the phantom Covalex Orison match removed, it now correctly falls back
-  to an honest "HDPC-Cassillo" unresolved raw entry — **with its correct
-  commodities attached** (22 SCU Pressurized Ice, 302 SCU Processed
-  Food), since commodity extraction can now anchor to the real
-  own-line-hinted dropoff phrase instead of losing to the false match.
-  A real, honestly-labeled unresolved location beats a wrong one shown as
-  if it were real.
-
-  New `run_covalex_orison_check()` — not a FIXTURES entry, since that
-  format's comparison silently drops any dropoff/pickup with no resolved
-  terminal (exactly this fix's correct outcome) — using tonight's exact
-  real captured raw OCR text. 3 checks: the phantom dropoff never
-  reappears, the real pickup (Everus Harbor) still resolves with correct
-  cargo, and the correct dropoff commodities survive once honestly
-  unresolved. 54/54 total checks pass.
-
-- **The ACCEPT-timing race (Game.log verify's immediate check missing a
-  contract accepted within ~1-2 seconds of the app's own ACCEPT click) is
-  already handled — confirmed working for real tonight, not just in
-  theory.** This was the exact scenario `_schedule_accept_reminder()`/
-  `_recheck_accept_reminder()` (see the accept-reminder entry above) was
-  built for: the immediate check at ACCEPT missed (log line not written
-  yet, `events_in_window: 0`), but the delayed recheck 11 seconds later
-  found and matched it (`matched: true`, real mission ID). No further
-  change needed here — the existing two-stage design (immediate check,
-  then a later recheck if it missed) already covers exactly this race by
-  construction; a race this size (seconds) is comfortably inside even the
-  original 30s default reminder delay, let alone a longer one.
-
-- **2026-09-08 — Fixed real cross-contract mismatching in Game.log
-  verification, found by reviewing the last 3 accepted missions from a
-  real session.** Two real, distinct bugs in the same review:
-
-  1. Two different real accepts sharing a pickup station (Baijini Point,
-     from routine repeat hauling) both matched the SAME real Game.log
-     mission_id — one legitimately (full origin+destination overlap,
-     score 4), the other only by pickup-name coincidence.
-  2. A contract whose real dropoff was "Lively Pathway Station" matched a
-     real mission whose actual destination was "Everus Harbor" — a
-     completely different place — purely on shared pickup text (score 2,
-     accepted as a match with the old `score > 0` bar).
-
-  Neither corrupted data this time only because neither had a correction
-  to apply — a near miss, not proof the bug was harmless.
-
-  Two fixes in `gamelog_verify.py`/`module.py`:
-
-  1. **`MIN_MATCH_SCORE = 4`** — a match now requires BOTH origin and
-     destination overlap (2+2), not just one. A pickup-only or dropoff-
-     only match is rejected outright (`reason:
-     "best_candidate_below_match_threshold"`) rather than accepted as
-     weak-but-good-enough.
-  2. **`exclude_mission_ids`** — `verify_contract()` now takes a set of
-     mission ids to exclude before scoring at all (so an excluded event
-     can't win a tie or pollute `candidates_considered`).
-     `_verify_against_gamelog()` builds this set from every OTHER
-     contract currently in the queue's own `contract["gamelog_mission_id"]`
-     (new field, set on a successful match) — so the same real accept can
-     never be attached to two different scanned contracts, which #1 alone
-     doesn't prevent (two genuinely full-score matches to the same real
-     mission is exactly what happened in the first bug above).
-
-  6 new regression checks: rejecting a pickup-only partial match,
-  excluding a claimed mission id (down to zero remaining candidates, and
-  separately, correctly falling through to a second real candidate when
-  one exists), and two module-level integration checks proving
-  `_verify_against_gamelog()` itself builds the exclude set from queued
-  contracts and records its own claim on a match — not just
-  `gamelog_verify.py`'s functions in isolation. 60/60 total checks pass.
-
-## 2026-09-08 — Salvage module shelved; mobiNotes scoped instead
-
-Explored a salvage-focused module (parallel to Logistics Hub's hauling
-focus). Ranked 10 candidate ideas down to 3, then checked each against
-the live UEX API directly (not just documentation, which was itself
-incomplete/unreliable for these endpoints):
-
-- No dedicated salvage endpoints exist at all.
-- RMC (Recycled Material Composite) does not appear as a commodity in
-  `commodities` at all — confirmed via a live query, not just docs.
-- `refineries_yields` is ore-only (Iron, Gold, Quantainium, Bexalite,
-  Corundum, etc. — mining outputs) — confirmed via a live query. No
-  salvage-material processing/yield data exists to build a "yield
-  calculator" from.
-- Trade-route and buy/rent-price-finder variants were also rejected on
-  reflection: salvage is a one-way sell (no round-trip loop to
-  optimize), and ship buy/rent is a rare one-time decision, not something
-  worth a persistent overlay card.
-
-**Shelved — not a UEX data gap that can be worked around, salvage
-mechanics simply aren't exposed by the API.** Revisit only if UEX adds
-salvage-specific endpoints.
-
-Pivoted instead to **mobiNotes** — a lightweight, no-API notes/organization
-module (tagged, paged, searchable). Researched three open-source note
-apps for ideas (ReText, QOwnNotes, Zim Desktop Wiki) — all three are
-GPL-licensed, so decided to borrow **ideas, not code**, to avoid pulling
-copyleft obligations into this module. Designed a data model meant to
-support incremental extension without a rewrite: a `meta: {}` field per
-note reserved for future fields (location tagging via the existing
-`LocationService`, cross-module reference links) and a `schema_version`
-root field for future format migrations. Full scope written to
-`docs/modules/mobi-notes.md`. Not built yet.
-
-- **2026-09-08 — mobiNotes built: `NotesStore` (`modules/mobi_notes/store.py`)
-  + card UI (`modules/mobi_notes/module.py`), architected and scaffolded
-  autonomously per user direction.** Page switcher implemented as a
-  `QComboBox` (with a `+ New Page...` sentinel that prompts for a name)
-  rather than a tab strip — scales to any number of pages without layout
-  work; can become real tabs later if that turns out to matter. Tag
-  filter is a second combo seeded from `STARTER_TAGS` plus every tag
-  actually in use. Search box filters title/body/tags live via
-  `NotesStore.search_text`. Pinned notes sort to the top of the list,
-  then most-recently-modified first. `refresh()` is a confirmed no-op —
-  there's no remote data, same shape as Crosshair.
-  Hit and fixed one real bug immediately: the module's first draft used
-  `from .store import NotesStore` — a normal relative import — which
-  throws `ImportError: attempted relative import with no known parent
-  package` at runtime, because `module_loader.py` loads every
-  `module.py` via `importlib.util.spec_from_file_location` (a file-path
-  import, not a real package member — see the Packaging decision above).
-  Fixed with the same file-path-import pattern `logistics_hub/module.py`
-  already uses to reach its own `gamelog_verify.py` sibling — copy the
-  pattern instead of reinventing it, this project already had the answer.
-  Storage lives at `app_root()/mobinotes_data.json`, external to
-  `modules/` for the same reason `config.json` is (see Packaging
-  decision) — added to `.gitignore` alongside the other per-install data
-  files.
-
-- **2026-09-08 — Copy/paste treated as a first-class mobiNotes feature,
-  not an afterthought — added per direct user request mid-scope, not
-  in the original mobi-notes.md scoping doc.** Three mechanisms, in
-  order of how much code each needed:
-  1. The editor's body field is a real `QTextEdit`, title/tags are
-     `QLineEdit` — native Ctrl+A/Ctrl+C/Ctrl+V/Ctrl+X already work with
-     zero extra code. Worth stating explicitly because it would have
-     been easy to reach for a custom-painted text widget elsewhere in
-     this app's HUD styling and lose that for free.
-  2. **COPY NOTE** button and each list row's small ⧉ icon button both
-     format a note (title, `[tags]`, blank line, body) as plain text
-     and push it onto the real system clipboard via
-     `QGuiApplication.clipboard()`.
-  3. **PASTE AS NEW** reads the clipboard, uses its first line (capped
-     60 chars) as the title and the full text as the body, creates a
-     note on the current page in one click — the common case being
-     "copy a chunk of Discord/Spectrum text, turn it into a note"
-     without retyping anything.
-  Verified against the real OS clipboard, not a mock: a separate
-  PowerShell process set clipboard content via
-  `System.Windows.Forms.Clipboard`, a real UI Automation `InvokePattern`
-  click fired PASTE AS NEW, and the resulting note in
-  `mobinotes_data.json` matched the injected text exactly. Same pattern
-  in reverse for COPY NOTE (click it, then read the clipboard back from
-  a separate process). This is the same "verify with the exact runtime
-  mechanism, not an isolated stand-in" lesson this project has hit
-  before (see the PySide6/Qt6 enum-mismatch entries above) applied to
-  the OS clipboard instead of Qt's event system.
-
-- **2026-09-08 — mobiNotes verified end-to-end live, not just unit-style
-  checks.** Full app launch confirmed all 6 modules (including the new
-  one) discover cleanly with no contract/duplicate-id errors. A real
-  note was typed into the actual running card via UI Automation
-  (`ValuePattern.SetValue` on the real `QLineEdit`/`QTextEdit` controls,
-  `InvokePattern.Invoke()` on the real SAVE button) and confirmed on
-  disk in `mobinotes_data.json` with the multi-line body and
-  comma-parsed tags intact — then re-screenshotted (`PrintWindow`, this
-  project's standard technique, run from source so the target PID is
-  the real window's own process, no PyInstaller-onefile child-process
-  indirection to work around) to confirm the list view, editor, and
-  second saved note all rendered correctly. Test note data removed from
-  `mobinotes_data.json` afterward — it was verification data, not a
-  real user note.
-
-- **2026-09-08 — mobiNotes bug fix: a newly-created empty page vanished
-  immediately, found by the user on first real use.** User tried
-  creating a "Salvaging" page twice and it never showed up in the list.
-  Root cause: `store.pages()` only returns pages that already have at
-  least one note on them (by design — pages are a note field, not a
-  stored entity); a page just created via `+ New Page...` has neither,
-  so the very next picker rebuild (which reads `store.pages()`) silently
-  dropped it and fell back to whatever page was first alphabetically —
-  before the user ever got a chance to save a note onto it. Fixed with a
-  `custom_pages` list in the module's own persisted settings
-  (`modules/mobi_notes/module.py`), unioned with `store.pages()`
-  everywhere the page picker is built, so a page stays visible from the
-  moment it's created regardless of whether it has notes yet. Caught
-  and fixed at code-review time (traced from the user's description,
-  not yet re-verified live at the moment of the fix — the live launch to
-  confirm it was deliberately deferred because the user was actively
-  playing Star Citizen at the time; see the entry below for how that
-  was actually confirmed, headless).
-
-- **2026-09-08 — Added rename-page and delete-page actions, plus removed
-  the 5 built-in default pages entirely — all three driven directly by
-  live user feedback in the same session, none from the original
-  mobi-notes.md scoping doc.**
-  - **Delete page** (✕ button next to the page dropdown): user asked
-    "is there a way to delete a page" after noticing DELETE only existed
-    for individual notes. Confirmed the intended behavior first (delete
-    the page's notes along with it, vs. blocking until empty) rather
-    than guessing — user chose "delete the notes too," matching the
-    existing single-note DELETE's confirm-then-destroy pattern.
-  - **Rename page** (✎ button): natural follow-up once delete existed —
-    added `NotesStore.rename_page(old, new)`, a bulk field update over
-    every note on `old` (bumps each note's `modified` timestamp), plus
-    UI wiring to keep `custom_pages` in sync with the new name.
-  - **Removed all 5 default pages** (Trade/Fleet/Org/Builds/Missions —
-    these were just the example list from the original scoping doc,
-    never meant to be permanent fixtures): user's own words, "get rid of
-    that 'always there' for the 5 pages. The first thing we should have
-    to do is create our first page." `NotesStore.pages()` no longer
-    unions in any hardcoded list — it returns only pages that genuinely
-    have notes. `module.py` now tracks a real "zero pages" state: the
-    card's whole main UI (search/list/editor/page-management row) sits
-    inside a `_content_widget` that starts hidden, with a separate
-    `_empty_state` widget ("No pages yet. Create one to start taking
-    notes." + a **+ CREATE FIRST PAGE** button wired to the same
-    `_prompt_new_page` the `+ New Page...` combo entry uses) shown
-    instead until at least one page exists (via `custom_pages` or a real
-    note) — checked once right after `create_card` and again after every
-    page create/rename/delete via a new `_update_empty_state()` helper.
-    Deleting the last remaining page correctly returns to this same
-    empty state rather than reintroducing a fallback default.
-  - **Verified entirely headless**, deliberately — the user was actively
-    playing Star Citizen through this exchange and asked not to have the
-    game interrupted by a real launch (see the earlier hard lesson about
-    never repositioning/launching windows onto the gaming display,
-    documented in memory and in this file's environment notes). Used
-    `QT_QPA_PLATFORM=offscreen` (no window ever painted to a real
-    display) to drive the actual `MobiNotesModule` instance — not a
-    reimplementation — through the full lifecycle: fresh install shows
-    the empty state with `current_page` still `None` and only the
-    `+ New Page...` sentinel in the combo; creating "Salvaging" (via a
-    mocked `QInputDialog.getText`, since a real modal can't be driven
-    headlessly) flips to the normal content view with the new page
-    selected; saving a note lands on it; renaming to "General" (mocked
-    dialog again) moves the note and leaves the old name with zero
-    notes; deleting the page (mocked `QMessageBox.question` returning
-    Yes) removes the note and returns to the empty state with zero
-    pages. One tooling snag hit along the way: `QWidget.isVisible()`
-    reads ancestor visibility, not just the widget's own `setVisible()`
-    call — same underlying gotcha as the 2026-09-03 Stow/Deploy tray
-    bug — so the empty-state/content-widget visibility assertions read
-    as permanently `False` until the fake card's top-level widget was
-    actually `.show()`-n (still fully offscreen, never touching a real
-    display or the game).
-
-## 2026-09-08 — mobiThrottle built: ThrottleWatch ported as a native module
-
-ThrottleWatch (a separate, already-shipping standalone SC overlay by the
-same author — `throttle_watch.py`, Tkinter) becomes mobiOverlay's 7th
-module, per direct user request. Architected first, in
-docs/modules/mobi-throttle.md, before writing any code — a deliberate
-rewrite, not a copy/paste port, since a lot of ThrottleWatch's complexity
-exists only to work around Tkinter limitations Qt doesn't have.
-
-**What Qt let us delete outright**, not just relocate:
-- The two-window transparent-color-key trick + Win32 `SetWindowRgn`/
-  `CreateRoundRectRgn` panel-shaping (`RECT`, `_apply_window_shape`) —
-  existed only because Tkinter has no real per-pixel alpha compositing on
-  Windows. `Qt.WA_TranslucentBackground` on a single `QWidget` gives real
-  alpha directly; one `paintEvent` now draws the background panel AND the
-  ticks/track/knob, matching the same recipe (Source composition +
-  explicit transparent clear) `host/main_window.py`'s own paintEvent
-  already uses.
-- ThrottleWatch's duplicated `draw_track`/`draw_track_h`,
-  `draw_ticks`/`draw_ticks_h` method pairs for vertical vs. horizontal —
-  collapsed into one drawing path with an along/cross coordinate swap
-  (`to_xy`), since the layout math is identical either way and only the
-  axis mapping differs.
-- The separate Settings `Toplevel` window, ThrottleWatch's own tray icon,
-  and its "Open Settings" hotkey — all folded into/replaced by the card,
-  since a module lives inside mobiOverlay's own window and hotkey system
-  rather than being its own standalone app.
-- Manual `SetProcessDpiAwareness` — Qt6 is per-monitor-DPI-aware by
-  default.
-
-**What ported over almost verbatim** because it was never Tk-specific to
-begin with: the tick/track/knob layout math (`TRACK_MARGIN`, `TICK_COUNT`,
-`panel_radius_for`'s corner-clearance logic), the deadzone-to-amber
-`value_to_color`/`lerp_color` gradient, `list_joysticks`/`find_joystick`
-(pure pygame calls) — though `find_joystick` dropped ThrottleWatch's
-hardcoded `DEVICE_NAME_HINT` ("VKBsim Gladiator EVO L") for a generic
-first-device-with-axes fallback, since mobiOverlay is meant to run on
-someone else's rig eventually, not just this machine's throttle.
-
-**Hotkeys reused, not reimplemented.** `host/hotkey.py`'s `GlobalHotkey`
-is already a proven port of ThrottleWatch's own `HotkeyState`/reconcile-
-watchdog design (ported earlier for the host's Stow/Deploy hotkey) — the
-module just instantiates two of its own instances (bar toggle, position
-toggle). Confirmed two independent low-level `keyboard.hook()` installs
-in the same process don't conflict.
-
-**One real host addition, not just a module-local change:**
-`ModuleBase.shutdown()`, a new optional hook every module can implement,
-called for every loaded module from a new `app.aboutToQuit` connection in
-`host/main.py`. Reason: `host/main_window.py`'s `relaunch()` already had
-to explicitly call `self._hotkey.shutdown()` before spawning the new
-process (2026-09-04 fix — Windows only reclaims a `WH_KEYBOARD_LL` hook
-when the owning *process* dies, not when a Python object is destroyed, so
-skipping this could let the old and new instance both hold a live hook
-for the same combo briefly). mobiThrottle introduces two *more* such
-hooks; without a generic module-shutdown hook, Relaunch would have had
-that exact bug again, just scoped to a module instead of the host. Fixed
-once, generically, for every future module that opens a similar
-process-wide resource instead of patching this one call site again.
-
-**Verified live against the real running app**, not just headlessly:
-- Headless smoke test first (`QT_QPA_PLATFORM=offscreen`): instantiated
-  the module, built its card, exercised `refresh()`'s error path (no
-  device configured with a bogus GUID → correctly raises, caught by the
-  host's error boundary), grabbed the bar widget's pixmap in both
-  orientations, called `shutdown()` — all clean.
-- Then launched the actual packaged entry point (`python host/main.py`)
-  alongside all 6 other modules — no errors in the log, real
-  auto-detected device (a genuinely connected VKB throttle) showed as
-  Connected in the card.
-- Screenshotted both the card and the floating bar via `PrintWindow`
-  (same convention as every other module's live verification — see the
-  Environment/process notes in docs/PROGRESS.md; never repositioned a
-  window onto the primary/gaming monitor to do this). Bar rendered
-  correctly: rounded translucent panel, ticks with corner clearance,
-  center line, knob.
-- Sent the real global toggle hotkey (`keyboard.send('ctrl+alt+o')`) and
-  confirmed via `GetWindowRect`/`IsWindowVisible` that the bar's actual
-  Win32 window visibility changed, then confirmed the new state persisted
-  to `config.json`. Sent the position-toggle hotkey with no positions
-  saved yet and confirmed it safely no-ops (no crash, no log error).
-- Found and fixed a real bug this way: the bar's hardcoded (200, 200)
-  default landed on the primary monitor, which is this machine's active
-  gaming display — the exact mistake `host/main_window.py`'s own
-  `_default_launch_position()` exists to avoid for the main window. Now
-  reuses that identical non-primary-monitor-selection logic
-  (`_default_bar_position()`), applied only when no position has ever
-  been saved for the bar.
-
-**Not yet verified — needs a hand on the actual hardware, not just fed
-synthetic values:** the knob tracking a real throttle movement live, and
-Home Chirp's audible beep actually firing on a real center crossing. The
-poll → paint pipeline itself is proven correct (headless synthetic-value
-test above); what's unverified is only the last link to real human input,
-which no amount of automation can substitute for.
-
-## 2026-09-08 — mobiThrottle: tiny spinbox arrows replaced with a stepper
-
-First real user feedback on mobiThrottle, after testing it live with the
-real throttle: "working well," with one usability complaint — "hard to
-click on the buttons/arrows... that increment or decrement counts on
-fields." The card's Axis, Hold time, and Home Chirp count/cooldown fields
-were stock `QSpinBox`/`QDoubleSpinBox`, whose native up/down arrows are
-only a few px tall (visibly shorter than half the field's own height) —
-an easy miss, especially at the compact width these fields sit in inside
-a card.
-
-Fixed by replacing all four with a new `_Stepper(QWidget)`: a value label
-flanked by explicit `[−]`/`[+]` `QPushButton`s at a fixed 26×24px, themed
-the same as Crosshair's existing nudge buttons (same precedent — that
-module already solved "give the user a big enough click target for a
-small increment/decrement action" for its offset nudging). Exposes
-`value()`/`setValue()`/`valueChanged` so call sites needed almost no
-changes — same method names as the QSpinBox API it replaces.
-
-One coercion gotcha caught during verification: `_Stepper.valueChanged`
-is declared `Signal(float)` (so one class handles both int and
-float-with-decimals fields), but Qt's signal marshaling coerces a
-Python `int` to `float` in transit even when the value is a whole
-number. The two settings that must stay integers (`home_chirp_count`,
-`position_hold_ms`) now cast with an explicit `int(value)` in their
-`_on_*_changed` handlers — without it, `config.json` silently drifted to
-storing `2.0`/`50.0` instead of `2`/`50` for those fields.
-
-Verified headlessly: incrementing/decrementing, clamping at both the
-configured min and max (chirp count 1-10, hold-ms 0-5000, etc.), and
-confirming the final `config.json` values land as the correct Python
-type (`int`, `int`, `float` for cooldown) after driving the buttons
-programmatically.
-
-**Process-hygiene lesson from this pass, worth remembering for the next
-live-verification round on any module:** while re-testing this fix
-against the real running app, a second `python host/main.py` instance
-was launched for screenshotting *without first checking whether the
-user's own instance was already running* — it was, mid-session, with
-settings the user had already hand-tuned (axis index, opacity, chirp
-count/cooldown). A `keyboard.send('f3')` sent to test that second
-instance's deploy/stow behavior is a real OS-level keyboard event with
-no notion of "which process should receive this" — a low-level
-`keyboard.hook()` in *every* running instance sees it, so it went to the
-user's live instance too. No lasting harm this time (config and window
-state were both confirmed intact afterward), but the risk is real:
-check `Get-CimInstance Win32_Process -Filter "Name='python.exe'"` (or
-equivalent) for an already-running instance before launching a second
-one to verify a fix, and prefer the headless smoke-test path (which
-already covers hotkey/logic correctness without touching a real keyboard
-hook) over sending an actual global hotkey once a live user instance
-might be running.
-
-## 2026-09-08 — mobiThrottle: click-through toggle
-
-Direct user request after playing with the bar live: "I occasionally
-click and drag the bar by accident while playing and would like a toggle
-that makes it so it is completely click through while toggled."
-
-Added a "Click-through (disable drag/resize)" checkbox to the card, right
-under the SHOW/HIDE BAR button. Enabling it calls a new
-`_ThrottleBar.set_click_through()`, which sets
-`Qt.WA_TransparentForMouseEvents` on the bar widget — the exact mechanism
-`modules/crosshair/module.py`'s `_CrosshairOverlay` already uses so its
-reticle never intercepts an aim click. With the attribute set, every
-mouse event on the bar's screen area passes straight through to whatever
-is underneath (the game) instead of reaching `mousePressEvent`/
-`mouseMoveEvent`/`mouseReleaseEvent` at all — so drag-to-move and
-right-drag-to-resize are structurally impossible while it's on, not just
-suppressed by a flag check.
-
-`set_click_through()` also clears any in-progress `_drag_offset`/
-`_resize_start` state when called, so toggling click-through mid-drag
-(via the checkbox, reachable at any time) can't leave a stale drag
-anchor that would otherwise jump the bar the next time click-through is
-switched back off and a fresh drag begins.
-
-New setting `click_through` (default `False`, so drag/resize behave
-exactly as before out of the box) — persists via the same
-`self.settings`/`config.set_module_settings()` path as everything else.
-No hotkey for this one; it's a deliberate, occasional toggle (arm it
-before undocking to fly, presumably), not something reached for
-mid-combat the way Stow/Deploy is.
-
-Verified headlessly: default state is click-through off (both the
-checkbox and the underlying Qt attribute), toggling the checkbox flips
-`WA_TransparentForMouseEvents` and `config.json`'s `click_through` in
-both directions correctly. Not yet confirmed with a real mouse against
-the real running game — same category as the axis-tracking/Home-Chirp
-checks still pending a hands-on pass, and per the process-hygiene note
-above, deliberately not verified by spawning a second live instance or
-sending synthetic mouse events against the user's already-running one.
-
-**Follow-up (2026-09-08, same day): user reported click-through doesn't
-actually work** ("Everything else works as expected with it"). Root
-cause: `WA_TransparentForMouseEvents` is a Qt *widget attribute*, and
-Qt's Windows platform plugin only reliably pushes that attribute down
-into the native window's real `WS_EX_TRANSPARENT` extended style at
-window-*creation* time — toggling it later via `setAttribute()` on an
-already-shown top-level widget doesn't consistently re-push the change
-into the live native window on this Qt/Windows combination, so the
-click-through checkbox silently no-op'd in practice even though the
-Qt-side attribute and the persisted setting were both flipping correctly
-(confirmed by the headless test above — the bug was invisible to that
-test precisely because it only checks the Qt-side attribute, not the
-real OS-level window style).
-
-Fixed with the same category of fix this app already uses elsewhere for
-window behavior Qt doesn't expose reliably (see host/hotkey.py's
-`GetAsyncKeyState` watchdog, or ThrottleWatch's own
-`SetWindowRgn`/`CreateRoundRectRgn` panel-shaping this module's
-architecture doc describes replacing): `_ThrottleBar.set_click_through()`
-now reads/writes the `WS_EX_TRANSPARENT` bit directly via
-`GetWindowLongW`/`SetWindowLongW` on the widget's real `HWND`
-(`int(self.winId())`), which Windows checks live on every hit-test —
-no window-creation-time dependency, no caching to fight. The Qt
-attribute is still set alongside it (harmless, keeps Qt's own internal
-bookkeeping consistent) but the actual click-through behavior no longer
-depends on it taking effect.
-
-Attempted to verify this the same way as the rest of mobiThrottle's live
-checks — a standalone test widget plus `WindowFromPoint` to prove a
-screen coordinate's hit-test target genuinely changes when the bit
-flips, without touching the user's already-running instance — but Star
-Citizen's own window (`CryENGINE`), running fullscreen-exclusive on the
-primary monitor at the time, dominated `WindowFromPoint` results across
-*both* monitors regardless of where the test widget was placed or
-whether the bit was set, making that harness unreliable while the game
-is running. The underlying mechanism (`WS_EX_TRANSPARENT`) is the
-standard, decades-proven Win32 technique for click-through overlays —
-correct by construction — but this specific instance of it is only
-confirmed by the user's own next real-mouse test after relaunching, not
-by an automated check.
-
-- **2026-09-08 — New module: Multi-Commodity Finder, direct user request.**
-  User: reducing stops matters more than squeezing the best price on any one
-  commodity — wanted the ability to cross-reference several commodities at
-  once and find terminals that trade multiple of them, even at a worse price
-  each. No UEX endpoint does this kind of cross-referencing (confirmed by
-  inspection — `commodities_prices` is per-commodity, same endpoint every
-  other module already uses), so it's a client-side grouping of
-  per-commodity price rows by `id_terminal`, ranked by `(coverage_count,
-  total_value)` rather than pure price — coverage wins first, total value is
-  only the tiebreak. Reused Commodity Prices' exact gating rules (BUY side
-  requires `scu_buy > 0`, no `scu_sell` gate on SELL — see 2026-09-05 entry)
-  since it's the same underlying data and the same "quoted price with 0
-  real stock isn't real" problem applies. Supports both directions per user
-  answer: SELL (find a terminal that buys several of your hauled
-  commodities at once) and BUY (find a terminal that sells several raw
-  materials at once before a refining/hauling run). New module chosen over
-  extending Commodity Prices, per user preference, since it's a genuinely
-  different question (cross-commodity/per-terminal) from Commodity Prices'
-  per-commodity/cross-terminal scope.
-  Verified against live UEX data, not stubs, all headless
-  (`QT_QPA_PLATFORM=offscreen`, no window painted — same convention
-  mobiNotes used for a similar reason): module contract loads cleanly
-  alongside all 7 existing modules with no duplicate-id issues; a real
-  3-commodity scan (Laranite/Gold/Agricium) found multiple terminals
-  covering all 3, correctly ranked by total value among ties; a 4-commodity
-  BUY-mode scan mixing a common commodity with a rare one (Osoian Hides)
-  produced the key proof this ranking actually does what it's for: a
-  terminal covering 2/5 checked commodities outranked one covering only 1/5
-  despite that 1/5 terminal being worth roughly 8x more in raw total value —
-  coverage genuinely wins over price, not just in theory; the Pyro system
-  filter correctly narrowed live results afterward. Not yet human-tested in
-  the actual running app. See docs/modules/multi-commodity-finder.md.
-
-- **2026-09-08 — Terminal facility flags (refinery, cargo center, loading
-  dock, etc.) added to the shared `host/locations.py`, not hand-rolled in
-  Multi-Commodity Finder alone.** User asked whether UEX's data includes
-  what a location actually has, then explicitly asked whether it's worth
-  wiring in at the shared level now versus only in the one module that
-  needs it today, anticipating other modules wanting it later. Confirmed
-  live: every `terminals` row already carries `is_refinery`,
-  `is_cargo_center`, `is_habitation`, `is_medical`, `is_food`,
-  `is_shop_fps`, `is_shop_vehicle`, `is_refuel`, `is_repair`,
-  `is_jump_point`, `has_loading_dock`, `has_docking_port`,
-  `has_freight_elevator` as plain 0/1 flags — no new endpoint, no added API
-  cost, since `all_locations()` already fetches these rows for every
-  module that uses the shared service. Added `LocationService.FACILITY_FLAGS`
-  (raw flag -> clean display name) and `LocationService.facilities(terminal)`
-  (returns the matching clean-name set) as the single shared mapping,
-  mirroring why `display_name()`/`friendly_label()` already live here
-  instead of duplicated per module (see the Phase 1-4 location-service
-  entries above). Wired an optional facility filter into Multi-Commodity
-  Finder as the first consumer (`facility_filter` setting, "Any Facility"
-  default). Verified live: real terminal data does carry both Refinery and
-  Loading Dock flags for real Stanton/Terminus/Pyro terminals, and filtering
-  by "Loading Dock" correctly narrowed a real 8-terminal result set down to
-  5 genuine matches. Next module that wants facility-aware results (e.g.
-  Refinery Finder cross-checking capacity against `is_refinery`, or a future
-  route planner) can call the same helper for free.
-
-- **2026-09-08 — Two fixes to Multi-Commodity Finder's COPY button, both
-  found within a day of shipping it.** (1) User reported the copied text
-  said "Mode: BUY" while the app's mode combo was actually set to SELL —
-  `_format_for_clipboard()`'s mode label had index 0/1 backwards relative
-  to every other place in the module reading the same combo (the
-  `_on_mode_changed`/`_render_results` gating logic was correct the whole
-  time — only the printed label in the copy text was wrong, so results
-  data itself was never affected). Fixed and reverified against a real
-  scan. (2) User: the commodity search box's filter text shouldn't be in
-  the copied summary — it's a UI narrowing aid over the checkable list, not
-  part of the actual query, so including it was noise for something meant
-  to be shared. Removed it from `_format_for_clipboard()` and the button's
-  tooltip; kept `Commodities (N): ...` (the actual checked list) as the
-  real content.
-  **Process note, not a code bug**: verifying fix (1) surfaced that this
-  session's earlier headless verification of the COPY feature had used the
-  user's real `config.json` (via the default `Config()`/`CONFIG_PATH`)
-  instead of an isolated test file, leaving stray settings (a facility
-  filter, extra checked commodities) bleeding into what the user saw when
-  they next opened the app — cleared those back to empty and switched to
-  monkeypatching `host.config.CONFIG_PATH` to a scratch file for this kind
-  of headless module testing going forward. Same class of mistake
-  PROGRESS.md already flagged once before (Logistics Hub's confirm-gate
-  testing writing into the real debug log) — worth remembering as a
-  standing rule, not a one-off.
-
-- **2026-09-08 — Missing-commodity wording made mode-aware ("doesn't buy
-  from you" / "doesn't sell to you"), replacing the ambiguous "not
-  available here."** User flagged real confusion: under SELL mode
-  (terminal buys from you), seeing "Construction Materials: not available
-  here" reads naturally as "out of stock," not its actual meaning — this
-  terminal doesn't purchase that commodity at all. The direction (buy vs.
-  sell) was never in the missing-line text at all, only implied by context
-  the reader had to hold in their head separately. New shared
-  `_missing_text(name, is_buy_mode)` used by both the on-card result rows
-  and the COPY clipboard summary, so the two can't drift out of sync with
-  each other. Verified live (isolated test config): a SELL-mode scan
-  correctly prints "doesn't buy from you" for every uncovered commodity,
-  and re-running the same scan in BUY mode correctly flips every instance
-  to "doesn't sell to you."
-
-- **2026-09-20 — Full-product PyInstaller build with easyocr/torch/torchvision.**
-  Phase 1 of public release: the packaged exe now bundles the complete OCR
-  stack (easyocr, torch, torchvision, Pillow, numpy, opencv, scipy, skimage)
-  so Logistics Hub works out of the box without a separate Python install.
-  Key gotchas:
-  - **UPX disabled**: Compressing torch binaries with UPX causes runtime
-    crashes and barely reduces size. Set `upx=False` in the spec.
-  - **collect_all() for torch**: PyInstaller's default analysis misses many
-    torch/torchvision native libraries. Using `collect_all('torch')` and
-    `collect_all('torchvision')` captures everything.
-  - **CPU-only torch in CI**: Installing torch via the PyPI `cpu` index
-    (`--index-url https://download.pytorch.org/whl/cpu`) saves ~2GB of
-    CUDA libs that aren't needed. Resulting exe is ~600-900MB.
-  - **CI disk space**: Added a step to free disk in the workflow; torch
-    install + PyInstaller temp files can exceed 10GB transiently.
-  - **First-scan latency**: easyocr initializes lazily on first use (already
-    the case pre-bundle), so first Logistics Hub scan still takes 10-30s.
-    Language models (~100MB) are downloaded to `~/.EasyOCR/` on first-ever
-    run, not bundled — this is easyocr's standard behavior.
-  `modules/` still ships external (plain .py next to the exe) per existing
-  architecture — only the host and its heavy deps are frozen into the exe.
-
-- **2026-09-20 — pygame-ce collection added after smoke-test failure.**
-  mobiThrottle was missing from the frozen build — `discover_modules` skipped
-  it because `import pygame` failed. pygame-ce bundles SDL2 DLLs that
-  PyInstaller doesn't pick up by default. Added `collect_all('pygame')` to
-  the spec (same pattern as torch/easyocr). Caught during Mitch's local
-  smoke test before public release.
-
-- **2026-09-20 — Safety hardening after real incident: WH_KEYBOARD_LL hook
-  blocked Star Citizen keyboard input.** Incident: mobiOverlay v0.1.0
-  (packaged exe, first real new-user test) was left running while Mitch
-  played Star Citizen. The global keyboard hook (`host/hotkey.py` via the
-  `keyboard` library) left SC able to mouse-look but unable to WASD/move.
-  Force-killing SC was attempted first but the real problem was the
-  overlay's hook — a WH_KEYBOARD_LL hook that isn't unhooked before its
-  owning process dies (or hangs, or is killed improperly) can block
-  keyboard input system-wide until Windows' ~5-second timeout fires.
-  Running two instances doubles that risk. Three fixes shipped together:
-
-  1. **Single-instance guard** (`host/single_instance.py`): a lockfile
-     with an exclusive write lock prevents running two mobiOverlay
-     processes at once. Covers both the frozen exe and `python host/main.py`.
-     A second instance shows a clear dialog ("mobiOverlay is already
-     running") and exits immediately. The lock is process-lifetime — no
-     cleanup code needed, crash/kill releases it automatically.
-
-  2. **Bulletproof hotkey teardown**: the hook was already released in
-     `GlobalHotkey.shutdown()`, called from `MainWindow.closeEvent()` and
-     `MainWindow.relaunch()`. Added `atexit.register(shutdown)` as a
-     belt-and-suspenders safety net for cases where neither runs (crash,
-     SIGKILL, slow interpreter teardown due to easyocr/torch's native
-     thread pools). Module-owned hotkeys (mobiThrottle's two
-     `GlobalHotkey` instances) are released via `ModuleBase.shutdown()`,
-     already wired to `app.aboutToQuit`.
-
-  3. **Lazy hook install**: the global keyboard hook is now installed
-     only when `set_hotkey()` is first called with a non-empty combo, not
-     unconditionally in `GlobalHotkey.__init__()`. A user running with no
-     global hotkey configured never even has a WH_KEYBOARD_LL hook
-     installed, eliminating any risk of that hook blocking game input.
-     The reconcile watchdog timer also starts lazily now.
-
-  **Residual risk**: WH_KEYBOARD_LL hooks are inherently dangerous around
-  exclusive-fullscreen games. Even with these fixes, if the mobiOverlay
-  process hangs hard (infinite loop, debugger attached, etc.) while the
-  hook is installed and a hotkey is armed, keystroke delivery will stall
-  until Windows' timeout fires or the process is killed. The single-
-  instance guard and lazy install reduce the surface area; the atexit
-  handler and module-shutdown path ensure cleanup on every normal exit;
-  but a truly unresponsive process with a live hook is a Windows-level
-  hazard no user-mode code can fully prevent. Users should quit
-  mobiOverlay before troubleshooting SC input issues, and never leave it
-  running unattended with SC for extended periods.
-
-- **2026-09-20 — Switched to TRUE single-file exe: modules bundled inside.**
-  CEO wanted one double-clickable `mobiOverlay.exe` with no separate
-  `modules/` folder required. Changed approach:
-  - `mobioverlay.spec`: Added `Tree('modules', prefix='modules')` to bundle
-    the entire modules tree (all 8 modules) as data, extracted to
-    `sys._MEIPASS/modules` at runtime.
-  - `host/paths.py`: Added `modules_root()` — returns `sys._MEIPASS/modules`
-    when frozen, `modules/` when running from source. `app_root()` unchanged
-    (still returns the exe folder, where config/data must persist).
-  - `host/module_loader.py`: Uses `modules_root()` instead of `app_root() /
-    "modules"` for discovery.
-  - `release.yml`/`BUILD.md`/`README.md`: Simplified — no more "copy modules
-    next to exe" step for end users.
-  **Development workflow unchanged**: modules are still plain .py in the repo,
-  edited in place; the frozen build just bundles them at build time.
-  **Data files still persist next to exe**: config.json, notes data, cache
-  files — anything that must survive between launches — still use `app_root()`.
-
-- **2026-09-20 — System tray icon added for overlay recovery.**
-  `host/single_instance.py` already told users to "check your system tray"
-  when a second instance tried to start, but no tray icon actually existed.
-  Added `QSystemTrayIcon` to provide a recovery path when users forget the
-  Stow/Deploy hotkey or lose track of the stowed pill.
-
-  **Why tray, not taskbar:** The main window uses `Qt.Tool` (alongside
-  `Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint`) specifically to exclude
-  it from the Windows taskbar — an overlay shouldn't occupy a taskbar slot.
-  That's intentional. The system tray (notification area) is the correct
-  alternative affordance: always accessible, doesn't fight the overlay design.
-
-  **Implementation:**
-  - `_SystemTray` class in `host/main_window.py`, created at startup only if
-    `QSystemTrayIcon.isSystemTrayAvailable()` returns true.
-  - Menu: Show (deploys if stowed, raises if deployed), Stow, Quit.
-  - Double-click or activation → deploy/show (same as Show menu item).
-  - Quit runs the same clean-shutdown path as closing the window (saves
-    geometry, releases hotkey hook, releases tray icon).
-  - Menu state updates when app stows/deploys (Show enabled when stowed,
-    Stow enabled when deployed).
-  - Tray icon: `host/assets/icons/mobioverlay.png` (64×64 RGBA), a cyan "m"
-    on dark background matching the HUD theme, generated programmatically
-    with Pillow at build time and bundled in the PyInstaller spec.
-  - Minimize button tooltip updated to mention the tray icon as a third way
-    back (alongside clicking the pill and using the hotkey).
-
-- **2026-09-20 — mobiThrottle home chirp: switched from winsound.Beep to
-  pygame.mixer.Sound.**
-  **Root cause**: `winsound.Beep()` uses the legacy Windows PC speaker (or
-  its emulated software fallback), not the system's audio output device.
-  When a game like Star Citizen owns WASAPI exclusive-mode audio or even
-  just when the legacy beep is disabled/muted (common on modern Windows),
-  `winsound.Beep()` either blocks briefly and produces nothing, or raises
-  a `RuntimeError` — both swallowed silently in the daemon thread, so no
-  chirp is audible even though the edge-detection logic fires correctly.
-  **Fix**: Generate a short sine-wave WAV in memory (1400 Hz, 45 ms, same
-  frequency/duration as before) and play it via `pygame.mixer.Sound()`.
-  pygame.mixer uses SDL_mixer under the hood, which routes through WASAPI
-  shared-mode on Windows — this keeps working even when a game has
-  exclusive audio focus, same reason system notifications still play
-  during gameplay. The mixer is initialized lazily on first chirp
-  (frequency 22050 Hz, mono, small 512-sample buffer for low latency);
-  multi-beep sequences use `QTimer.singleShot` scheduling (non-blocking,
-  Qt-event-loop integrated) instead of a daemon thread with `time.sleep`.
-  **Fallback**: If mixer init fails (missing audio device, driver issue),
-  `_init_chirp_sound()` returns False and the chirp degrades silently —
-  bar tracking/flashing continues unaffected, only audio is lost.
-  **No config changes**: `home_chirp_enabled`, `home_chirp_count`,
-  `home_chirp_cooldown` all work unchanged; edge-detection logic
-  (deadzone, reverse, startup-at-home) untouched.
-
-- **2026-09-20 — Fixed: Stow/Deploy hotkey appeared to fully hide the
-  overlay instead of showing a visible pill.**
-  **Root cause**: When `pill_geometry` was empty (first stow, or config
-  cleared), the pill inherited the deployed window's top-left coordinates
-  after resize. If the deployed window sat near the right edge of a
-  monitor (common when positioning an overlay on a secondary display at
-  x=2660), the now-tiny pill (~150×60px) kept that same top-left and
-  landed mostly or entirely off-screen — users saw it "vanish" rather
-  than stow to a visible pill.
-  **Fix**: New `_ensure_pill_on_screen()` helper in `host/main_window.py`,
-  called from `stow_app()` only when no saved `pill_geometry` exists.
-  Clamps the pill position to stay fully within the screen bounds (with
-  a 20px margin), using `QGuiApplication.screenAt()` to find the correct
-  monitor. The computed position is saved as the new `pill_geometry` so
-  subsequent stows reopen there without re-computing.
-  **Click-through unchanged**: `pill_click_through` setting and
-  `_apply_native_click_through()` (WS_EX_TRANSPARENT via Win32) work
-  exactly as before — when enabled, the pill is visible but unclickable,
+# Decisions
+
+Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
+
+- **2026-09-03 ΓÇö Pivoted from Game.log combat overlay to UEX-API trading overlay.**
+  Investigated Game.log on current patch (4.10, build ~12545750) across 51
+  real sessions covering ~1 week of the user's actual PvE combat. Found no
+  attacker/weapon/kill-attribution data at all ΓÇö only signal was a bare
+  `[ActorState] Dead` line for the player's own death, no cause info. Concept
+  wasn't worth building on. Pivoted to UEX Corp API (community SC trade data)
+  instead.
+
+- **2026-09-03 ΓÇö PySide6/Qt chosen over CustomTkinter and pywebview.**
+  A prior overlay (pygame + Tkinter, different SC tool) hit packaging
+  failures getting all dependencies into one distributable exe. PySide6 +
+  PyInstaller is a more reliable one-file packaging path, and Qt's widget
+  system handles card drag/drop and custom-font styling natively.
+
+- **2026-09-03 ΓÇö Modules are folder-per-module, auto-discovered.**
+  Chosen over an explicit registry list so adding a module is purely
+  additive ΓÇö drop a folder in `modules/`, zero edits to host code or other
+  modules.
+
+- **2026-09-03 ΓÇö Project name: mobiOverlay.**
+  Nods to Star Citizen's in-game MobiGlas UI, generic enough for public
+  open-source release (doesn't use the user's in-game callsign).
+
+- **2026-09-03 ΓÇö Visual design approved.**
+  Mockup at https://claude.ai/code/artifact/63a18572-a046-4045-aa3c-caa8dfa0f4bc
+  (working source: `design/Main.dc.html`). Approved as-is, no revisions
+  requested. Key values to carry into Qt/QSS:
+  - Fonts: Orbitron (headers, 600/800/900 weight) + Share Tech Mono (data/body),
+    both via Google Fonts ΓÇö must be bundled as files for the packaged exe,
+    not linked at runtime
+  - Background: deep charcoal/near-black (`#06090b` void, `#0d1417` card panel,
+    `#101a1e` card header)
+  - Primary accent: cyan `#2de1d0`, glow via `box-shadow: 0 0 0 1px + 0 0 14px`
+  - Alert/error accent: amber `#ffb443`, same glow treatment, used for the
+    Market Alerts / error-state card
+  - Text: `#dff5f2` primary, `#7fa3a1` muted, `#3f5c5a` dim/labels
+  - Sharp corners everywhere ΓÇö no border-radius
+  - Card header: small circular status dot + Orbitron label (letter-spaced,
+    uppercase) + collapse chevron + close X, all right-aligned
+  - Optional subtle scanline overlay (1px repeating gradient, very low
+    opacity, blend-mode overlay) on the outer container
+  - Card states to replicate in Qt: expanded (full body), collapsed
+    (header-only), error (amber border + warning icon + retry action)
+
+- **2026-09-03 ΓÇö Modules ship external, not bundled into the packaged exe.**
+  Decided before a third module made this expensive to reverse. Two
+  reasons: (1) preserves the original "drop a folder in `modules/`, zero
+  rebuild" goal ΓÇö bundling would've quietly broken that; (2) directly helps
+  the exe-trust-skepticism problem raised in conversation ΓÇö a `modules/`
+  folder of plain readable `.py` sitting next to the exe is auditable in a
+  way a monolithic compiled binary isn't. `config.json` gets the same
+  external treatment for an unrelated but equally load-bearing reason: a
+  PyInstaller onefile build's temp extraction directory is wiped every
+  launch, so a config path resolved relative to that would never actually
+  persist. Both resolved via the new `host/paths.py` `app_root()` (exe's
+  own folder when frozen, project root when running from source). Required
+  switching the module loader from a dotted `modules.<name>.module` package
+  import to file-path loading (`importlib.util.spec_from_file_location`),
+  since external `modules/` won't be a real importable package once frozen.
+  Fonts stay bundled inside the exe (not pluggable, no reason to externalize).
+
+- **2026-09-03 ΓÇö Project's own git repo initialized separately from the
+  home-directory repo.** Found that `C:\Users\mhoward` itself is a git repo
+  (tracking the whole home directory, including things like `.ssh/` and
+  `NTUSER.DAT` ΓÇö no commits made there by this project). Initialized an
+  independent `git init` inside `mobiOverlay/` instead, since a GitHub
+  Actions workflow needs to live at an actual repo root, and this project
+  clearly shouldn't be nested inside a home-directory-wide repo.
+
+- **2026-09-03 ΓÇö CI release build verified end-to-end before wiring up
+  automation.** Built `mobiOverlay.exe` locally with PyInstaller
+  (`mobioverlay.spec`, onefile + windowed) and ran the actual packaged exe
+  with a `modules/` folder copied next to it, matching the real
+  distribution layout. Confirmed: bundled fonts render, both real modules
+  load externally, live API data fetches correctly, config persists next
+  to the exe. One non-obvious thing hit during verification: a PyInstaller
+  **onefile** build's visible top-level window belongs to a **child
+  process** the bootloader spawns, not the process you launched ΓÇö checking
+  `Get-Process`/window enumeration against the original PID shows nothing
+  useful (tiny working set, no window); you have to find the child via its
+  parent PID to see the real app. `.github/workflows/release.yml` builds
+  the exe the same way (same spec file) on a tag push and publishes it as
+  a GitHub Release with a SHA256 checksum; `BUILD.md` documents the
+  identical steps for anyone who'd rather build it themselves.
+
+- **2026-09-03 ΓÇö Repo pushed to GitHub, public: github.com/h2mCoreAi/mobiOverlay.**
+  License: MIT (matches the user's prior ThrottleWatch project). Bundled
+  fonts (Orbitron, Share Tech Mono) stay separately licensed under SIL OFL ΓÇö
+  see `host/assets/fonts/LICENSE.txt` ΓÇö not superseded by the root MIT
+  LICENSE. No release tag pushed yet ΓÇö user is still heavily testing;
+  `.github/workflows/release.yml` only fires on a `v*.*.*` tag, so nothing
+  auto-publishes until that's deliberately pushed.
+
+- **2026-09-03 ΓÇö Card hide/show renamed to Stow/Deploy, dropdown replaced
+  with a themed tray panel.** User's own instinct: generic desktop "hide/
+  add" language didn't fit, asked how SC itself would handle it. SC already
+  has the exact concept under different words ΓÇö stowing a weapon/tool,
+  deploying it again ΓÇö so reused that vocabulary throughout, not just in
+  UI text: `Card.stowed` signal (was `closed`), `CardContainer.stow_card`/
+  `deploy_card` (was `hide_card`/`show_card`), the title-bar button reads
+  "TRAY (n)" (was "+ ADD CARD"), and the plain `QMenu` dropdown became a
+  custom `_TrayPanel` styled like the rest of the HUD (dark panel, cyan
+  border) listing only stowed cards with a DEPLOY action, rather than a
+  native OS menu checklist of everything.
+  Hit and fixed a real bug while building this: `Card.isVisible()` is
+  unreliable for tracking stow state ΓÇö Qt's `isVisible()` reflects
+  ancestor visibility too, so every card read as "not visible" (and the
+  tray badge showed everything as stowed) until the top-level window
+  itself had been shown. Fixed by having `CardContainer` track stowed
+  card IDs itself (`self._stowed: set[str]`) instead of querying Qt
+  widget visibility.
+  Verified the full stow ΓåÆ tray ΓåÆ deploy cycle end-to-end via UI
+  Automation (`System.Windows.Automation`, `InvokePattern` on real
+  buttons, `BoundingRectangle`-derived clicks for the plain-QWidget tray
+  rows) ΓÇö not coordinate-guessed clicks, which proved unreliable on this
+  multi-window desktop (a "click" can land on whatever window is actually
+  topmost at that screen position, which `PrintWindow`-based screenshots
+  don't reveal since they capture by window handle, not screen region).
+  Testing stayed entirely on the secondary monitor throughout ΓÇö never
+  touched the user's active game session on the primary display.
+
+- **2026-09-03 ΓÇö Clicking anywhere in a card raises it to front.**
+  User-requested. Implemented as an application-wide event filter in
+  `CardContainer` (`QApplication.instance().installEventFilter(self)`)
+  rather than a `mousePressEvent` override on `Card` ΓÇö a press on a child
+  widget (combo box, button, label) never bubbles up to the parent Card's
+  own `mousePressEvent`, so watching at the application level is the only
+  reliable way to catch a click anywhere inside a card, not just its
+  header. Smoke-tested via UI Automation (click doesn't crash the app);
+  full visual confirmation of the raise (two overlapping cards) needs a
+  human dragging one over the other, not yet done by this session.
+
+- **2026-09-03 ΓÇö Never embed our own UEX token; "most profitable" done as
+  a client-side brute-force scan instead.** User asked how to make
+  Commodity Prices smarter (query for most profitable) and separately
+  drew a hard line on distribution: no shared app token baked into the
+  exe, ever ΓÇö it'd get extracted from the public repo immediately and
+  either get abused by randoms or revoked by UEX, breaking the feature for
+  everyone at once. Investigated the "real" ranking path first:
+  `commodities_ranking` is deprecated (confirmed live, returns empty). Its
+  documented replacement `commodities_averages` requires a bearer token
+  AND is still per-commodity (`id_commodity` required) ΓÇö not actually a
+  ranking/discovery query even with a token. With per-user tokens ruled
+  out as a *requirement* (optional/degraded is fine, required for a core
+  feature is not) and the "official" path a dead end anyway, landed on:
+  scan every commodity via `commodities_prices` (already anonymous, ~150-
+  200 calls), compute margin client-side, cache 30 min, chunk via `QTimer`
+  so it doesn't freeze the UI or look like a stub while running. See
+  docs/modules/commodity-prices.md for the mechanics.
+
+- **2026-09-03 ΓÇö Price Lookup renamed to Commodity Prices.** User noticed
+  it only covers commodities (ore, agricultural goods) ΓÇö the old name
+  implied broader scope (items, ship components) it never had. Renamed
+  the module folder, `module_id`, and class to match
+  (`price_lookup`/`PriceLookupModule` ΓåÆ `commodity_prices`/
+  `CommodityPricesModule`), not just the display string, since it's still
+  pre-release and there's no cost to getting the internal name right too.
+  Also dropped a hardcoded "default to Laranite if present" fallback that
+  existed only because that's what got typed in while first building the
+  module ΓÇö not tied to profitability or any real signal. Removing it
+  surfaced a latent bug (see PROGRESS.md): the new alphabetical-first
+  default landed on a commodity with zero active listings, and `refresh()`
+  treated that as a hard error instead of the graceful empty state the
+  per-row display logic already supports. Fixed the actual bug rather than
+  reintroducing a hardcoded "safe" commodity to paper over it.
+
+- **2026-09-03 ΓÇö Settings menu added; Window/Card Opacity split, Text Size
+  added.** User: opacity slider belonged in a real settings surface, not
+  loose in the title bar, and 1440p made the default text hard to read.
+  Added `_SettingsPanel` (same themed Qt.Popup pattern as the Tray).
+  Window Opacity (existing slider, relocated) and the new Card Opacity
+  (card background alpha, independent of the window ΓÇö lets you see through
+  cards without making window chrome/text transparent too) both apply
+  live: `Card._apply_border` now composites `theme.BG_PANEL` through
+  `theme.hex_to_rgba` at the card's stored opacity, and
+  `CardContainer.set_all_card_opacity` broadcasts a change to every
+  existing card immediately. Text Size does NOT apply live ΓÇö every
+  font-size in the app is a literal baked into a stylesheet string built
+  once (`theme.fpx()`, a scale-aware helper, reads `theme.FONT_SCALE` at
+  the moment each stylesheet function runs); rebuilding and reapplying
+  every stylesheet on every existing widget live was out of scope for this
+  pass, so it's an honest "applies next launch" setting instead, labeled
+  as such in the panel. `theme.FONT_SCALE` must be set from config
+  (`main.py`) before `MainWindow` is constructed and before modules are
+  imported ΓÇö `host/main_window.py`'s top-level `STYLESHEET` constant had
+  to be converted from a module-level string (frozen at import time, i.e.
+  before config even loads) into a function called at construction time,
+  otherwise the scale-aware helper would always see the default 1.0.
+
+- **2026-09-03 ΓÇö Dropped real-time text scaling; kept everything else from
+  that request.** Considered actually attempting live font rescaling
+  (every stylesheet rebuilt and reapplied to every existing widget on a
+  Settings change) rather than assuming it was too painful, per the user's
+  instruction. User then explicitly cut it before implementation to keep
+  scope sane. In its place: reworded the existing Text Size description
+  to point at the new Relaunch button rather than building a separate
+  toast/notice ΓÇö the panel already had a persistent description line, no
+  new UI needed.
+
+- **2026-09-03 ΓÇö Find Most Profitable split into Retrieve Data +
+  Find Most Profitable; user caught a real correctness bug.** The
+  original combined scan computed sell-minus-buy margin across ALL
+  systems, silently ignoring the Best Sell/Best Buy system filters right
+  above it on the same card ΓÇö a real bug the user found by asking "does
+  it take into account the selected system filters?" rather than one
+  caught by our own testing. Fixed by separating concerns: "Retrieve
+  Data" does only the network fetch (~150-200 calls, cached in
+  `_all_commodity_data`, no margin math); "Find Most Profitable" is a
+  separate, instant, local-only action that reads `sell_system`/
+  `buy_system` filter state at click time ΓÇö same filter logic already
+  proven correct in `_apply_filters`, just applied across every cached
+  commodity instead of one. This also enables the countdown/force-update
+  UX below, since "when was the data retrieved" is now a separate concept
+  from "what did we do with it."
+
+- **2026-09-03 ΓÇö Countdown + "FORCE UPDATE?" confirm on Retrieve Data.**
+  User-specified UX: after retrieving, the button counts down (MM:SS) to
+  the next recommended refresh (reuses the existing 30-min cache window).
+  Clicking mid-countdown doesn't immediately re-fetch ΓÇö it swaps to
+  "FORCE UPDATE?" as a confirm step (auto-reverts after 4s if ignored,
+  via a singleShot `QTimer`), and only a second click while that's showing
+  triggers an actual forced retrieve. One implementation detail worth
+  recording: verifying the two-click force-confirm sequence requires both
+  clicks to land within that 4-second window, which is impossible across
+  two separate tool-call round-trips (each has real latency exceeding 4s)
+  ΓÇö had to combine "click, verify prompt, click again" into one atomic
+  script to test it at all. Same underlying lesson as the earlier
+  UI-Automation-popup-timing issue, one level up: it's not just popups
+  that need atomic scripts, anything with its own auto-reverting timeout
+  does too.
+
+- **2026-09-03 ΓÇö Settings > Relaunch button; found and fixed a real
+  process-leak bug while verifying it.** Spawns a fresh instance via the
+  new `host/paths.py` `relaunch_command()` (mirrors `app_root()`'s
+  frozen-vs-source detection) and closes the current one. First
+  implementation only called `self.close()`, which turned out to be
+  insufficient: the Settings panel itself is where the Relaunch button
+  lives, and it's a separate top-level `Qt.Popup` widget still open at
+  the moment it's clicked ΓÇö `self.close()` only closes `MainWindow`, not
+  that popup, so Qt's `quitOnLastWindowClosed` never fires and the old
+  process lingers forever (confirmed live: old PID stayed `Responding:
+  True` indefinitely, spawned the new instance as its own child process).
+  Fixed with an explicit `QApplication.instance().quit()` after
+  `self.close()`, not relying on last-window-closed detection at all.
+  Re-verified clean afterward: old PID fully exits, exactly one new PID
+  ends up running, its window is the real visible one.
+
+- **2026-09-03 ΓÇö Trade Route Optimizer: "Admin -" terminal names fixed;
+  terminal picker made searchable.** User asked why so many terminals
+  showed as "Admin" ΓÇö checked the raw API response directly rather than
+  guessing: `name` really is `"Admin - Baijini Point"` (that's genuinely
+  the in-game kiosk's name, not a UEX data error), but `nickname` gives
+  the clean location name (`"Baijini Point"`, `"ARC-L1"`). Switched the
+  terminal picker to `nickname`. `commodities_routes` (used for the route
+  list itself) has no equivalent nickname field for destinations, so
+  those fall back to stripping the `"Admin - "` prefix by hand.
+  Also made the terminal combo editable with a filtering `QCompleter`
+  (`Qt.MatchContains`) per explicit request ΓÇö type to narrow a 100+ item
+  list, or still scroll the full dropdown. Had to switch its signal
+  connection from `currentTextChanged` to `textActivated`: an editable
+  combo's `currentTextChanged` fires on every keystroke, which would
+  trigger a refresh (and an "unknown terminal" error) per character
+  typed rather than only on a real, committed selection.
+  Verification note: confirmed both the display-name fix (screenshot) and
+  that the field genuinely accepts keyboard input (real keystrokes did
+  change its content), but couldn't cleanly demonstrate the completer's
+  filtered dropdown popup itself through UI Automation in this session ΓÇö
+  `SendKeys` timing produced garbled input (`"arcbbbbb..."`) rather than
+  clean text, and `ValuePattern.SetValue` doesn't reliably trigger Qt's
+  real keystroke-driven signals (same class of issue as the earlier
+  combo-selection problem). The underlying pattern
+  (`QCompleter` + `MatchContains` on an editable `QComboBox`) is
+  standard, well-tested Qt behavior ΓÇö left for the user to confirm
+  directly rather than over-investing further in fighting the test
+  tooling.
+
+- **2026-09-04 ΓÇö Trade Route Optimizer: added a "Sell In" destination
+  filter and clearer buy/sell labeling.** User had to ask what a route
+  row actually meant (origin terminal = buy, each row's destination =
+  sell) ΓÇö real signal the layout wasn't self-explanatory. Added "Γû▓ BUY
+  HERE" above the origin picker and changed each row's destination text
+  from a bare "ΓåÆ ..." arrow to "SELL AT ...". Also added the destination
+  filter itself: `commodities_routes` rows already carry
+  `destination_star_system_name` per row, so this is pure client-side
+  filtering (populate the dropdown from systems seen in the fetched
+  routes, filter+resort before slicing to the top 5) ΓÇö identical pattern
+  to Commodity Prices' sell/buy filters, no new API call.
+  Verification note: confirmed the UI renders correctly (labels, filter
+  dropdown present) and confirmed the filter *logic* is exactly correct
+  by extracting it into a standalone script with sample data (no Qt
+  involved) ΓÇö Pyro-only and Stanton-only both returned exactly the right
+  rows. Could NOT get UI Automation to actually change the destination
+  combo's selection to prove the live interaction end-to-end: tried
+  `SelectionItemPattern.Select()` on the popup item, `ValuePattern
+  .SetValue()`, and real keyboard nav (`{F4}{DOWN}{DOWN}{ENTER}` after
+  `SetForegroundWindow`) ΓÇö all three reported success but the combo's
+  value never actually changed on readback, even within one atomic
+  script. That's a strong signature of a genuine Qt-accessibility-bridge
+  limitation for `QComboBox` popup *selection* specifically (buttons via
+  `InvokePattern` have been reliable all session) rather than an app bug
+  ΓÇö logged as a general lesson, not just for this feature.
+
+- **2026-09-04 ΓÇö Whole-app minimize-to-pill, Collapse All, and a
+  system-wide Stow/Deploy hotkey.** All user-requested, implemented
+  together since the hotkey's whole purpose is toggling the same
+  stow/deploy behavior the minimize button drives directly.
+  - **Minimize-to-pill** reuses `MainWindow` itself rather than spawning
+    a second window ΓÇö hides `card_container`/size grip, hides
+    Tray/Settings/minimize in the title bar (keeps wordmark + close),
+    resizes down to the wordmark's `sizeHint()` (padded for
+    `MainWindow`'s own content margins, which `sizeHint()` alone
+    ignores), and remembers the pre-stow geometry to restore exactly.
+    Avoided a second top-level window on purpose ΓÇö it would've resurrected
+    the "which window is actually on top" z-order/focus fights this
+    session already hit repeatedly with popups.
+  - **Global hotkey required real Win32 API access** (`ctypes`,
+    `RegisterHotKey`/`WM_HOTKEY`), not a Qt `QShortcut` ΓÇö shortcuts only
+    fire while the app itself has focus, useless for "toggle while I'm
+    alt-tabbed into the game," which is the actual use case per the
+    request ("utilized more as part of the player's UI"). New
+    `host/hotkey.py`, a `QAbstractNativeEventFilter` installed on
+    `QApplication` to catch `WM_HOTKEY` regardless of focus.
+  - **Hard requirement: at least one modifier.** A hotkey capture field
+    that accepted a bare key would let someone accidentally register,
+    say, plain `M` as a system-wide hotkey ΓÇö hijacking that key
+    everywhere, including normal typing in the game. Rejected before
+    `RegisterHotKey` is ever called, with an inline message telling the
+    user why.
+  - Verification is split, and the gap matters: the click-to-arm
+    "listening" state change is confirmed live (real mouse click,
+    visible text change). The key/modifierΓåÆVK-code parsing logic is
+    confirmed correct in isolation (`Ctrl+Shift+M` ΓåÆ exactly
+    `MOD_CONTROL|MOD_SHIFT` + `VK_M`, using real `Qt` constants, no GUI
+    involved). But actual keystroke capture ΓÇö pressing the combo while
+    the field is armed ΓÇö could not be verified at all: `SendKeys`,
+    even after `SetForegroundWindow` on the main window, never visibly
+    reached the field, and `config.json` confirmed nothing was actually
+    saved. Root cause suspected rather than confirmed: the Settings
+    panel is its own `Qt.Popup` HWND, and focusing the *owner* window
+    doesn't necessarily focus the popup's own HWND ΓÇö `NativeWindowHandle`
+    came back empty for the field too, so there wasn't even a handle to
+    route input to directly as a workaround. This is a real, flagged gap
+    in PROGRESS.md, not a "probably fine" ΓÇö a human needs to actually
+    click the field and press a real combo before trusting it works.
+
+- **2026-09-03 ΓÇö The hotkey field's real bug was a PySide6/Qt6 API
+  mismatch, not focus routing.** The previous entry's "SendKeys never
+  reaches it" theory turned out to be a red herring for the underlying
+  functional bug (though the focus-routing problem is real and separately
+  documented in memory). `_HotkeyField.keyPressEvent` built its display
+  string with `QKeySequence(int(event.modifiers()) | key)` ΓÇö but in
+  PySide6/Qt6's new-style enums, `event.modifiers()` returns a
+  `Qt.KeyboardModifier` flag object that `int()` cannot coerce, raising
+  `TypeError` on every single keypress, for every key, with or without a
+  modifier. The exception was thrown and silently swallowed by Qt's event
+  loop before `set_stow_hotkey()` was ever reached ΓÇö so the field had
+  *never* worked, for anyone, the entire time it existed. Fixed with
+  `QKeySequence(QKeyCombination(event.modifiers(), key))`. Confirmed by
+  reproducing the exact `TypeError` in an isolated script, then confirming
+  the fix produces correct strings for both a bare `F3` and a modified
+  combo (`Ctrl+Shift+M`).
+
+- **2026-09-03 ΓÇö Window background transparency decoupled from card
+  opacity; `WINDOW OPACITY` now controls only the empty space.**
+  `setWindowOpacity()` scales the whole rendered window's alpha uniformly
+  at the compositor level, so cards could never look more opaque than the
+  window they sit in ΓÇö the two opacity sliders were coupled despite
+  looking independent in the UI. Switched to `Qt.WA_TranslucentBackground`
+  with a per-pixel rgba background on `MainWindow` (same
+  `theme.hex_to_rgba()` pattern `Card.set_card_opacity()` already used),
+  so the void area's alpha is now genuinely independent of each card's own
+  background alpha. Title bar and panels keep their own solid/gradient
+  backgrounds, unaffected by this slider ΓÇö that's a visible behavior
+  change from before (previously lowering window opacity dimmed the
+  title bar too), but it's the correct trade for making the setting mean
+  what its label says.
+
+- **2026-09-03 ΓÇö Pill and deployed-window positions are tracked and
+  persisted independently.** Previously the pill always reopened wherever
+  the full-size window last was, forgetting any position it had been
+  dragged to; `pre_stow_geometry` lived only in memory and was lost on
+  restart if the app closed while stowed. Added a `pill_geometry` config
+  key alongside `pre_stow_geometry` (already in the config schema but
+  unused until now), both updated via debounced `moveEvent`/`resizeEvent`
+  handlers on `MainWindow` (400ms after the last move, so a drag doesn't
+  hammer disk I/O) rather than only at the moment of stow/deploy.
+
+- **2026-09-03 ΓÇö Both hotkey and transparency fixes above shipped broken;
+  root causes were different from what they looked like.** Caught by the
+  user re-testing the live app rather than by this session's own
+  verification, which is the actual failure worth learning from:
+  - The hotkey "fix" (`QKeyCombination(event.modifiers(), key)`) still
+    threw `TypeError` on every keystroke ΓÇö `QKeyCombination` needs an
+    actual `Qt.Key` enum for its key argument, and `event.key()` returns
+    a plain `int` in PySide6. The isolated test written to confirm the
+    first fix used `Qt.Key_F3` directly, which is already the right
+    type, so the test couldn't have caught this even in principle ΓÇö it
+    wasn't testing the real code path. Fixed with `Qt.Key(key)`, and this
+    time verified by importing the actual `_HotkeyField` class and firing
+    real `QKeyEvent`s at its real `keyPressEvent` end-to-end, which is
+    the only version of this check that could have caught either bug.
+  - The transparency fix (`WA_TranslucentBackground` + rgba background)
+    was missing `Qt.WA_StyledBackground`, without which a plain `QWidget`
+    doesn't paint a QSS `background` property at all ΓÇö so the window was
+    permanently fully transparent no matter the slider, not "decoupled
+    from card opacity" as intended. This one had no isolated test at all
+    the first time; a synthetic-widget check written afterward to
+    understand it turned out to be unreliable too (`QWidget.grab()`
+    reports alpha=0 for `WA_TranslucentBackground` widgets even when they
+    render correctly on real screen via DWM), so the real signal was
+    reading `PrintWindow` screenshots of the actual running app, not a
+    synthetic reproduction.
+  - Lesson: for anything routing through PySide6/Qt6's new-style enums,
+    "isolated test passes" only means something if the test uses the
+    exact runtime types the real code path produces (e.g. `event.key()`
+    is `int`, not `Qt.Key`) ΓÇö reproducing the shape of the call, not just
+    its intent, is what makes a regression test meaningful here.
+
+- **2026-09-03 ΓÇö Window opacity fix #3: QSS `background:` on a
+  `WA_TranslucentBackground` top-level widget doesn't reliably work at
+  all; switched to painting the void directly in `paintEvent()`.**
+  `WA_StyledBackground` (the previous fix) was a real, necessary
+  requirement but not sufficient ΓÇö the user reported no visible change
+  from the slider at any position. Live debug output proved the Python
+  side was unambiguously correct (right rgba string recomputed and
+  reapplied on every slider move, both attributes `True`, right class
+  name for the QSS selector), and `GetWindowLong`/`GWL_EXSTYLE` confirmed
+  Windows genuinely created the native window with `WS_EX_LAYERED`. So
+  the bug was in Qt's own QSS-background-to-layered-window compositing
+  path specifically ΓÇö a real, if obscure, rough edge, not a code mistake
+  this time. Fix: paint the void directly with `QPainter` in
+  `CompositionMode_Source` inside `MainWindow.paintEvent()`, which writes
+  ARGB pixels straight into the translucent surface instead of going
+  through the QSS pipeline. Proof this actually changed something (not
+  just another unverified guess): sampling the same screen pixel at
+  100% vs. 40% opacity went from `(6, 9, 11)` ΓÇö exactly `theme.BG_VOID`,
+  correctly rendered ΓÇö down to `(2, 4, 4)`, matching premultiplied-alpha
+  scaling by ~0.4 almost exactly. The *previous* (QSS) attempt sampled as
+  flat `(0, 0, 0)` at both settings ΓÇö not even the right color, let alone
+  reactive to the slider ΓÇö which is hard confirmation the QSS path was
+  never really working, not just hard to verify.
+  Still can't fully confirm the on-screen result against real desktop
+  content behind the window (PrintWindow only proves Qt is producing
+  correct, opacity-reactive premultiplied pixel data, not what DWM does
+  with it against the desktop) ΓÇö needs the user's own eyes as the final
+  check, same as before, but now with much stronger evidence the
+  mechanism itself is doing the right thing.
+
+- **2026-09-03 ΓÇö Replaced RegisterHotKey with a low-level keyboard hook
+  (the `keyboard` library), because RegisterHotKey doesn't fire while
+  Star Citizen has focus.** The hotkey field's capture bug (int vs
+  Qt.Key) was fixed and confirmed working ΓÇö but the user then reported
+  the hotkey still didn't actually toggle stow/deploy while the game was
+  focused, even with a correctly-captured combo. `RegisterHotKey` posts
+  `WM_HOTKEY` through the normal window message queue; a fullscreen or
+  exclusive-input game can block that queue from ever reaching a
+  background process's hotkey registration. Told to look at how
+  ThrottleWatch (a separate, already-shipping Star Citizen overlay by
+  the same author, at `D:\Documents\Mitch\Star Citizen\ThrottleWatch\
+  throttle_watch.py`) handles this ΓÇö its hotkey reliably works with the
+  game focused. It uses the `keyboard` Python library, which installs a
+  low-level global keyboard hook (`WH_KEYBOARD_LL` via
+  `SetWindowsHookEx`) that intercepts the actual keyboard input stream
+  below the window message queue entirely, so which window currently has
+  focus is irrelevant to whether the hook sees the keystroke.
+  Ported ThrottleWatch's `HotkeyState` design directly rather than
+  reinventing it: raw key down/up events (not `keyboard.add_hotkey`,
+  whose shared cross-hotkey pressed-keys dict can get a modifier stuck
+  "held" forever if a single key-up event is ever lost ΓÇö e.g. a UAC
+  prompt stealing focus mid-combo, which happens easily alt-tabbing out
+  of a fullscreen game) plus a `GetAsyncKeyState`-based `reconcile()`
+  watchdog that self-heals exactly that stuck-state case. Also ported the
+  capture mechanism ΓÇö `keyboard.read_hotkey()` in a background thread ΓÇö
+  replacing the Qt-keyPressEvent-based capture entirely, which
+  incidentally also resolves the Qt.Popup-keyboard-focus unreliability
+  documented earlier for that field, since this capture path doesn't
+  depend on Qt focus routing at all.
+  `keyboard.hook()`'s callback runs on the `keyboard` library's own
+  dispatch thread, not the Qt/GUI thread ΓÇö `GlobalHotkey` is a `QObject`
+  with a `Signal`, and emitting a Qt signal from a non-GUI thread is the
+  standard, correct way to marshal a callback that touches Qt widgets
+  back onto the GUI thread (Qt auto-queues cross-thread signal delivery).
+  This plays the same role ThrottleWatch's `self.root.after(0, ...)`
+  plays for marshaling onto the Tk thread.
+  Verified `HotkeyState`'s combo-matching logic directly with synthetic
+  key events (not the live hook, which needs a human's real keyboard):
+  bare `f3` fires on down and correctly re-fires on a fresh press after
+  release, a multi-key combo (`ctrl+alt+p`) correctly waits for every
+  modifier to be down before firing, and `clear()` correctly stops
+  dispatch. New dependency: `keyboard>=0.13` (already vendored/used by
+  ThrottleWatch, confirmed installed in this environment).
+  Config schema changed: `hotkey_mod`/`hotkey_vk` (Win32 concepts)
+  replaced by a single `hotkey_combo` string (the `keyboard` library's
+  own canonical form, e.g. `"f3"` or `"ctrl+alt+p"`) ΓÇö simpler, and
+  matches what `keyboard.read_hotkey()` already returns with no
+  translation needed. Old keys left as harmless orphans in existing
+  users' `config.json` rather than actively migrated/deleted.
+
+- **2026-09-03 ΓÇö Fixed a real race in pill-position persistence: a
+  shared debounce timer read stow-state at fire time, not per-event.**
+  The pill-position-memory feature (shipped earlier this session) used
+  one `QTimer` restarted on every `moveEvent`, which after a 400ms quiet
+  period would save either `pill_geometry` or `pre_stow_geometry`
+  depending on `self._app_stowed` *at that moment*. This breaks the
+  instant two different-state moves happen within the same 400ms window:
+  drag the pill, then deploy shortly after (an entirely natural thing to
+  do ΓÇö most people don't pause half a second after dragging something
+  before clicking it) restarts the same timer from the deploy's own
+  `move()`/`resize()` calls, so when it finally fires it reads
+  `self._app_stowed == False` and saves `pre_stow_geometry` ΓÇö the pill's
+  just-dragged position is never written to disk at all, silently.
+  Fixed by removing the debounce for moves entirely and instead saving
+  position immediately, synchronously, at the exact moments a move
+  actually finishes: `_TitleBar.mouseReleaseEvent` (covers both pill and
+  deployed-window dragging ΓÇö the same handler drives both, distinguished
+  by `is_app_stowed()`) and the end of `stow_app()`/`deploy_app()`'s own
+  programmatic repositioning. `resizeEvent` keeps a debounce (resizing is
+  naturally bursty ΓÇö dozens of events for one drag of the corner grip)
+  but no longer branches on stow state at all, since the grip is hidden
+  whenever the app is stowed and so can never race against a pill move.
+
+- **2026-09-03 ΓÇö Deploying via the hotkey now takes real OS foreground
+  focus, via AttachThreadInput, not the "tap Alt" heuristic.** User
+  asked that toggling into full mode via the hotkey actually take input
+  focus, not just visually appear on top while the game keeps keyboard
+  input. First attempt: `keybd_event`-simulate an Alt press/release
+  before `SetForegroundWindow`, the commonly-cited trick for background
+  processes to bypass Windows' foreground-switch lock. Live-tested with
+  Star Citizen genuinely holding foreground focus (confirmed via
+  `GetForegroundWindow` before the test) ΓÇö `SetForegroundWindow` reported
+  success and, checked immediately from inside the same process, the
+  window *was* foreground ΓÇö but a separate follow-up check (a new
+  PowerShell process, one tool-call round-trip later) found focus back
+  on Star Citizen. Root cause: that gap was pure measurement latency
+  (~300-500ms from spawning a new process to run the check), not the fix
+  failing ΓÇö an atomic single-script test (press F3, then sample
+  `GetForegroundWindow` at 20/200/800ms, all in one script with no
+  cross-process delay) confirmed mobiOverlay held foreground at every
+  sample. Switched anyway to `AttachThreadInput` (temporarily joining
+  this process's input queue with the current foreground window's
+  thread, called around `SetForegroundWindow`/`BringWindowToTop`) since
+  it's the actual documented mechanism Windows' foreground-switch
+  restriction checks against, rather than relying on a lock-timeout
+  heuristic ΓÇö more robust than the Alt-tap trick even though that one
+  turned out to work too once measured correctly. Also caught and fixed
+  a separate real bug along the way: the first draft called
+  `SetForegroundWindow`/`GetForegroundWindow` without declaring
+  `ctypes` `argtypes`/`restype`, which defaults to 32-bit `c_int` ΓÇö on
+  64-bit Windows an `HWND` is a 64-bit pointer, so window handles could
+  have been silently truncated. Fixed by declaring proper
+  `ctypes.wintypes.HWND`/`DWORD`/`BOOL` signatures throughout.
+
+- **2026-09-03 ΓÇö Commodity Prices had the same raw-kiosk-label bug Trade
+  Route Optimizer already had fixed; fixed the same way.** User spotted
+  `"Admin - MIC-L2"` in the Best Buy row. Checked the live
+  `commodities_prices` API response directly rather than guessing: it
+  has `terminal_name` (always the raw label) and `id_terminal`, but no
+  nickname field of its own ΓÇö unlike `terminals`, which has both `name`
+  (raw) and `nickname` (clean, e.g. `"MIC-L2"`) for the same terminal.
+  Fetch `terminals?type=commodity` once at card creation
+  (`_populate_terminal_nicknames()`) and look the clean name up by
+  `id_terminal` in `_format_location()`, falling back to the raw
+  `terminal_name` if a terminal isn't in that map. Same `nickname` field
+  the trade route picker already uses ΓÇö not a new pattern, just applied
+  to the one place it was missed.
+
+- **2026-09-03 ΓÇö UEX's `commodity_name` query param is a substring match,
+  not exact ΓÇö filter results client-side or the wrong commodity can win
+  "best price."** User flagged Diamond's reported sell price (80,000
+  aUEC/SCU) as suspiciously high. Cross-checked against UEX's own website
+  (~7,800) and the raw API directly: `commodity_name=Diamond` returns
+  rows for both `"Diamond"` (id 25) and `"Diamond Laminate"` (id 119) ΓÇö
+  a different commodity that happens to contain "Diamond" as a substring.
+  `_apply_filters`/`find_most_profitable` took `max()`/`min()` over
+  `price_sell`/`price_buy` across every row returned with no check that
+  the row's `commodity_name` actually matched the selected commodity, so
+  Diamond Laminate's much higher price silently won. Fixed by filtering
+  to `r["commodity_name"] == name` right after fetching, in both
+  `refresh()` and the Retrieve Data loop. Worth remembering for any
+  future UEX endpoint call using a `*_name` filter param ΓÇö this API
+  doesn't appear to support exact-match filtering, so assume substring
+  matching unless proven otherwise.
+
+- **2026-09-04 ΓÇö Small border-radius added everywhere, `theme.RADIUS = 4`.**
+  User wanted the 90┬░ corners softened globally, not just on one widget.
+  Added a single shared constant and applied `border-radius:
+  {theme.RADIUS}px` next to every `border:` declaration across
+  `host/main_window.py`, `host/card.py`, `host/card_container.py`, and
+  all three module files ΓÇö cards, buttons, combos, line edits, the tray/
+  settings popups, the title bar. Skipped `border: none` rules with no
+  background fill (nothing to round) and `:checked`/`:disabled`
+  pseudo-state rules that only override color (Qt keeps the base rule's
+  radius across states on the same widget). Confirmed visually after
+  relaunch.
+
+- **2026-09-04 ΓÇö The radius pass above missed the window's own true outer
+  shape, including the pill.** User asked directly whether the pill got a
+  radius. It hadn't: `MainWindow.paintEvent()` painted the void background
+  with a plain `fillRect` (sharp corners), and that rect *is* the window's
+  actual outer edge in both deployed and stowed-to-pill mode ΓÇö the
+  previous pass's `border-radius` only rounded the title bar's own QSS
+  border, an inset element sitting inside that sharp-cornered void, not
+  the window boundary itself. Fixed by painting a `QPainterPath` rounded
+  rect instead of a plain rect, using the same `theme.RADIUS` constant ΓÇö
+  since `paintEvent` is shared by both deployed and pill states, this
+  rounds both identically for free, nothing to keep in sync separately.
+  Had to clear the whole rect to transparent first before filling the
+  rounded path ΓÇö `fillPath` alone only touches pixels inside the shape,
+  so without the clear the four corners cut off by the rounding would
+  keep whatever stale/garbage pixels were already in the translucent
+  backing store instead of being genuinely see-through. Also bumped
+  `theme.RADIUS` from 4 to 8 per the user's "increase it" ask. Confirmed
+  visually on both the pill and the deployed window after relaunch.
+
+- **2026-09-04 ΓÇö Checked mobiOverlay's styling directly against a live
+  MobiGlas (in-game device menu) screenshot, not memory/guesswork.**
+  User asked for this explicitly. Captured the actual Star Citizen window
+  via `PrintWindow` (found by window title, not by trusting a stale PID ΓÇö
+  the game had restarted since it was last checked this session) while
+  MobiGlas was open. Observations: dark navy-black panel fills and thin
+  cyan borders already matched our palette closely, no color changes
+  needed ΓÇö but MobiGlas's panels use a visibly larger, softer corner
+  radius than ours, and each panel is clearly two-tier: a separate,
+  slightly lighter, more-rounded header strip sitting above a flatter
+  body, not one uniform box. Bumped `theme.RADIUS` 8 -> 10. Gave
+  `_DragHeader` (card.py) its own background fill with only the top
+  corners rounded and a bottom border separating it from the body ΓÇö
+  `theme.BG_PANEL_HEADER` already existed for exactly this in `theme.py`
+  (from the original approved design mockup) but had never actually been
+  wired up anywhere until now. Confirmed visually after relaunch.
+
+- **2026-09-04 ΓÇö Shifted the whole color palette from teal-black to
+  MobiGlas's actual blue-gray, sampled from the live screenshot pixel by
+  pixel, not eyeballed.** User asked for the app to look like it's part
+  of the game's own UI. Used PIL to sample real pixel colors from
+  specific regions of the MobiGlas screenshot (panel body, panel border,
+  body text, deep-space background) rather than guessing from the
+  earlier visual inspection. Findings: `BG_VOID` (deep space background)
+  already matched almost exactly (sampled `#03080d` vs. our `#06090b`) ΓÇö
+  no change needed there. Everything else was off: MobiGlas panel bodies
+  sample as a lighter blue-gray (`#202832`) than our near-black teal
+  (`#0d1417`); its border/chrome glow is a pale ice-blue (`#87bee6`
+  family), not the teal-cyan (`#2de1d0`) this app used everywhere; body
+  text carries a blue-white tint (`#e4e7f3`), not teal-white. Note:
+  MobiGlas *does* also use a bright mint-teal (`#57f3d0`, close to this
+  app's old accent) but only for a secondary "tracked/active" status
+  indicator, not as the dominant chrome color ΓÇö keeping our primary
+  accent teal would have kept the app looking like a HUD sitting next to
+  MobiGlas rather than part of it. Updated `BG_PANEL`, `BG_PANEL_HEADER`,
+  `BORDER_FLAT`, `ACCENT_CYAN`/`ACCENT_CYAN_DIM`/`BORDER_CYAN`,
+  `TEXT_PRIMARY`/`TEXT_MUTED`/`TEXT_DIM` in `theme.py`, plus the title
+  bar's hardcoded gradient in `main_window.py` (the only color anywhere
+  in the codebase not already routed through `theme.py`). Left
+  `SNAP_BORDER`/`SNAP_FILL` (purple grid-snap) and `ACCENT_AMBER` (error/
+  retry) alone ΓÇö unrelated to this pass. Confirmed visually after
+  relaunch.
+
+- **2026-09-04 ΓÇö Named the `host/` package "mobiOverlay Core."** Docs/naming
+  only ΓÇö no folder rename, no import changes. `host/` remains the actual
+  package path; "mobiOverlay Core" is the name used in docs and
+  conversation for what it contains (window, card container, config,
+  module loader, hotkey, HTTP client). Updated CLAUDE.md and
+  ARCHITECTURE.md's forward-facing descriptions; left historical
+  entries in this file and PROGRESS.md referring to "the host" as-is
+  since this log is append-only.
+
+- **2026-09-04 ΓÇö v1.0-readiness review fixes, Critical items (C1-C4).**
+  A senior-dev-style review of mobiOverlay Core flagged 4 critical gaps
+  in module fault isolation before a public v1.0. Fixed:
+  - **C1** (no fault isolation for hung/blocking modules) ΓÇö modules run
+    synchronously on the GUI thread by design (see "Module contract"
+    above); a true preemptive timeout would require a threading/process
+    redesign, out of scope here. Added a soft diagnostic watchdog instead
+    (`main.py`'s `_timed_call`): logs a warning naming the module and
+    call if `create_card()`/`refresh()` takes >2s, so a slow module is
+    visible in the log instead of just "the app feels laggy."
+  - **C2** (no contract validation) ΓÇö `module_loader.py`'s new
+    `_validate_module_contract()` checks `module_id`/`display_name` are
+    non-empty strings and `create_card`/`refresh` are callable, at load
+    time, before the module is used anywhere else. `main.py`'s new
+    `safe_create_card()` also now guards `create_card()` (previously
+    unguarded ΓÇö an exception there crashed the whole app before other
+    modules loaded) and validates it returns an actual `Card`.
+  - **C3** (duplicate module_id) ΓÇö `discover_modules()` now tracks
+    claimed `module_id`s and skips (with a logged error naming both
+    folders) any module trying to reuse one already claimed.
+  - **C4** (`settings_schema` documented but never implemented) ΓÇö
+    removed from the documented contract in ARCHITECTURE.md and
+    `module_base.py` rather than building it now; it wasn't used by
+    Core or any of the 3 existing modules, and a fictional required
+    field is worse than no field for a public module-authoring guide.
+
+- **2026-09-04 ΓÇö Logistics Hub (OCR module) ships as an optional,
+  manual-install module; its deps are not bundled into the exe.**
+  `modules/logistics_hub/` (OCR-driven hauling mission board reader +
+  route optimizer) depends on `easyocr`, which pulls in PyTorch +
+  torchvision (~500MB+). Per the Packaging decision, `modules/` is
+  deliberately kept external/unfrozen so it's editable without a
+  rebuild ΓÇö but that also means PyInstaller never bundles a module's
+  dependencies, only `host/`'s. A user who drops this module folder
+  next to the packaged exe without also running
+  `pip install -r modules/logistics_hub/requirements.txt` in a Python
+  environment will see the module's own clear "not installed" error
+  rather than a crash (see `OCR_AVAILABLE` guard in `module.py`).
+  Considered instead bundling this module's deps into the exe as an
+  exception to the external-modules rule ΓÇö rejected for now: it would
+  bloat every user's download by hundreds of MB even if they never use
+  this module, just to save an optional module's users one pip command.
+  Documented as an opt-in, power-user module in release notes/README
+  instead. Revisit bundling (or a companion installer script) if this
+  module proves popular enough to justify the packaging investment.
+
+- **2026-09-04 ΓÇö Superseded same-day: distribution is all-inclusive,
+  every module always bundled together.** The "optional, manual-install
+  module" framing above (same day, Logistics Hub's own deps) no longer
+  reflects how the project ships ΓÇö user decided to keep the modular
+  *architecture* (folder-per-module stays valuable for adding/changing
+  features without touching Core) but not modular *distribution*.
+  Practical effect: `modules/logistics_hub/requirements.txt` (easyocr/
+  Pillow) should be treated as part of the app's real dependency set
+  going forward, not an opt-in extra ΓÇö packaging work should fold it
+  into whatever the standard install path becomes, not keep it
+  separately documented as power-user-only.
+
+- **2026-09-04 ΓÇö Logistics Hub built: OCR mission-board reader + UEX-
+  backed route planner.** `modules/logistics_hub/` ΓÇö originally scaffolded
+  by Aider (DeepSeek V4 Flash, see below) then substantially hardened by
+  Claude across several real-contract test/fix rounds. Final design,
+  each piece earned from a real OCR failure, not designed upfront:
+  - **Contracts, not a flat stop list.** A contract holds `pickups: []`
+    and `dropoffs: []` (symmetric, either can have more than one ΓÇö real
+    contracts use both "DROP OFF LOCATIONS (ANY ORDER)" and "PICK UP
+    LOCATIONS (ANY ORDER)" panel styles). Scanning accumulates contracts
+    (CLEAR to reset) rather than overwriting on every scan.
+  - **Location text is resolved against real UEX data**, not guessed
+    from strings: every capitalized 2-4-word phrase (plus a separate
+    pass for single hyphenated station codes like "HDMS-Edmond", which
+    the multi-word pattern can't see at all) is a *candidate*; only
+    phrases that match a real `terminals`/`space_stations`/`outposts`/
+    `cities` record survive. Letting the API be the filter turned out
+    far more robust than trying to regex-parse contract narrative text
+    correctly, since OCR corrupts any single mention but a real contract
+    repeats each place name several times across different sentences.
+  - **Cross-endpoint id collision was a real, silent-data-loss bug**:
+    `terminals`, `space_stations`, `outposts`, `cities` each have their
+    own independent id sequence (UEX `terminals` id 17 = "Bud's
+    Growery"; `space_stations` id 17 = a completely different real
+    place, "MIC-L1 Shallow Frontier Station"). Deduping by raw `id`
+    silently dropped one of every colliding pair ΓÇö fixed by tagging
+    each row with its source endpoint at index-build time and keying
+    every dedup (`_build_contract`'s merge, the location picker, route
+    cost's "same terminal" check) on `(endpoint, id)` instead.
+  - **Pickup-vs-dropoff role** comes from nearby keywords ("Collect X
+    from Y" -> pickup; "Deliver...to Y" or a "DROP OFF LOCATIONS"/"PICK
+    UP LOCATIONS" section -> dropoff/pickup) with the section header
+    scoped to only apply to lines that actually look like a location row
+    (contain "at") ΓÇö otherwise it kept bleeding into trailing footer/
+    signature text and misclassifying the contractor's own name as a
+    stop.
+  - **Commodities** ("Waste", "Silicon", ...) are extracted the same
+    way ΓÇö "Collect X from Y"/"Deliver...of X to Y" ΓÇö and attached per
+    pickup/drop-off, matched by substring against every name the
+    location is known by (resolved candidate text, nickname, full name).
+  - **Route planning**: nearest-neighbour, starting from a CURRENT
+    LOCATION picker (searchable combo over the same UEX location data,
+    labeled with both name and short code ΓÇö e.g. "Shallow Frontier
+    Station (MIC-L1)" ΓÇö since search-by-code silently found nothing
+    before this). Falls back to "start at the first stop" only if no
+    location has been picked. **Hard constraint, not a cost tiebreaker:**
+    a drop-off is ineligible until every pickup on its own contract has
+    been visited ΓÇö cargo can't be delivered before it's collected.
+    Travel cost is currently a coarse same-terminal/same-body/same-
+    system/different-system tier, not real distance ΓÇö see the Next
+    section, this is a known near-term follow-up (`terminals_distances`
+    / `orbits_distances` exist and were verified live against real
+    location pairs; the module just isn't using them yet).
+  - Bare-hyphenated-code candidates ("MIC-L1" alone) can resolve to an
+    unrelated shop that happens to share the exact same short-code
+    nickname as the station itself, producing a spurious duplicate stop
+    ΓÇö fixed by suppressing the bare-code candidate specifically when a
+    fuller phrase immediately follows it on the same line (the common
+    case), rather than trying to merge look-alike results after the
+    fact (tried a signature-based merge first; it wrongly collapsed two
+    genuinely different stations that happened to share a planet, and
+    was reverted).
+
+- **2026-09-04 ΓÇö Aider (DeepSeek V4 Flash) added as a secondary dev
+  tool for new-module work, with a hard boundary.** Configured via
+  `.aider.conf.yml` (`openai/deepseek-v4-flash`, DeepSeek's OpenAI-
+  compatible endpoint ΓÇö LiteLLM's built-in `deepseek/` provider doesn't
+  know this model id) + a gitignored `.env` for the key. Used to
+  scaffold Logistics Hub's first pass. Explicit rule given to it and
+  worth keeping for any future use: **only create files under one new
+  module's folder ΓÇö never edit `host/` or another module.** Observed
+  behavior worth remembering: it iterates against its own mistakes more
+  than a stronger model would (multiple fix-commits in a row on the same
+  file ΓÇö pytesseract, then easyocr, then several follow-up fixes, all
+  same session) ΓÇö review its diffs rather than trusting a single pass.
+
+- **2026-09-04 ΓÇö Decided: a shared Location service belongs in Core
+  (`host/`), not as a module other modules depend on.** All three real
+  modules (`commodity_prices`, `trade_route_optimizer`, `logistics_hub`)
+  independently fetch `star_systems`/`terminals` and build their own
+  system/terminal pickers ΓÇö duplicate API calls and, in Logistics Hub's
+  case, a lot of endpoint-safe-dedup logic that the other two modules
+  don't have and would benefit from. Considered making it a "location
+  module" other modules pull from ΓÇö rejected: `module_loader.py` has no
+  mechanism for one module to depend on another (each is loaded
+  independently, no registry), so that would mean inventing inter-
+  module dependency wiring in Core anyway. If Core has to change either
+  way, do it directly as a shared service (same tier as `UexApiClient`)
+  instead of building a fake "module" that's actually Core-shaped.
+  Not implemented yet ΓÇö planned as a phased rollout (Core service ->
+  migrate Logistics Hub -> migrate the other two -> swap Logistics
+  Hub's route cost onto real `terminals_distances`/`orbits_distances`
+  -> optionally share a "current location" across modules), each phase
+  its own tested checkpoint before starting the next. See PROGRESS.md
+  Next section.
+
+- **2026-09-04 ΓÇö Location-service phases 1-3 complete; reordered the
+  remaining plan.** Built `host/locations.py` (Phase 1), migrated
+  Logistics Hub onto it (Phase 2), then moved the real-distance route-
+  cost swap ahead of migrating the other two modules ΓÇö new order:
+  Phase 3 = real distance data (done), Phase 4 = migrate Trade Route
+  Optimizer/Commodity Prices, Phase 5 = shared current-location
+  concept. Phase 3 turned into a much longer live-test-driven
+  hardening pass than expected ΓÇö every fix was verified against real
+  captured Star Citizen contracts, several rounds catching genuine
+  regressions from earlier fixes (see PROGRESS.md's Done section for
+  the itemized list: hint-priority bugs resurfacing at a second merge
+  point, short-nickname false positives, ambiguity disambiguation,
+  duplicate-contract detection). Phases 4-5 not started.
+
+- **2026-09-04 ΓÇö Location-service Phase 4 complete: Trade Route
+  Optimizer and Commodity Prices migrated onto `host/locations.py`.**
+  Both modules' system/terminal fetching now goes through
+  `LocationService` instead of their own `star_systems`/`terminals`
+  calls:
+  - Trade Route Optimizer: `_populate_systems` uses
+    `available_systems()`; `_populate_terminals` filters
+    `all_locations()` to `_endpoint == "terminals"`, the chosen
+    `id_star_system`, `type == "commodity"`, `is_available_live`, and
+    displays via `LocationService.display_name()` (same nickname/short-
+    code disambiguation Logistics Hub already benefits from).
+  - Commodity Prices: `_populate_terminal_nicknames` builds its
+    `id_terminal -> display name` map the same way, from
+    `all_locations()` filtered to commodity terminals, instead of its
+    own unscoped `terminals?type=commodity` call.
+  - `commodities_routes`' destination-terminal naming (Trade Route
+    Optimizer) intentionally stays a hand-rolled `Admin -` prefix strip
+    ΓÇö that endpoint returns no `id_terminal` for the destination, so
+    there's no id to resolve through the shared service; not a gap in
+    the migration, a real endpoint limitation already documented in
+    the module's own doc.
+  - Verified against the real UEX API via a backend smoke script
+    (available systems, Stanton commodity-terminal filtering/counts,
+    a live `commodities_prices` and `commodities_routes` call cross-
+    checked against the new nickname map) ΓÇö not through the Qt UI.
+  Phase 5 (shared current-location concept) is next and last.
+
+- **2026-09-04 ΓÇö Logistics Hub UI/UX polish batch: auto-rescan removed,
+  route popout added, ROUTE renamed from "SUGGESTED VISITING ORDER".**
+  User-requested batch, independent of the location-service phased plan
+  (Phase 5 explicitly not being done). Notable pattern: the ROUTE popout
+  is a separate top-level QWidget (Qt.Window | Qt.WindowStaysOnTopHint,
+  no minimize button) that's just an alternate render target for the same
+  underlying `_route_order`/`route_done` state the card already owns ΓÇö
+  closing it doesn't lose anything, it just switches `_render_results()`
+  back to rendering into the card's own layout. It's independent of the
+  main window's stow-to-pill mechanism (a resize of the same top-level
+  window, not a separate widget), so popping out and stowing don't
+  interact. Per-route-stop done/skip state is keyed by
+  `"{contract_id}:{role}:{index}"` (not list index) so it survives
+  contract removal/reordering.
+
+- **2026-09-04 ΓÇö Logistics Hub CONTRACTS list moved out of the card into
+  its own detached window.** Follow-up to the polish batch above: the
+  inline contracts list shared one QScrollArea with the ROUTE section
+  below it, and in live testing a freshly-scanned contract reliably
+  landed the user's view in the ROUTE section instead of showing the new
+  contract ΓÇö a shared-scroll-position problem, not a data bug (contracts
+  were always saved and correct; a restart showed them fine). Rather than
+  fight scroll-position/auto-scroll-to-top timing in a shared QScrollArea,
+  gave CONTRACTS the same detached-always-on-top-window treatment already
+  built for the ROUTE popout, and factored the shared shell into
+  `_make_always_on_top_window()` so both use the same window flags/scroll
+  setup. Per-contract remove still lives on the same row widget, now
+  inside that window instead of the card.
+
+- **2026-09-04 ΓÇö Reverted the CONTRACTS detached-window popup; found and
+  fixed a real app-quit bug in the host along the way.** Two problems
+  surfaced in live testing of the previous entry's popup:
+  1. The CONTRACTS list still "disappeared" after a scan ΓÇö because the
+     button opening it lived inside the same shared QScrollArea as the
+     ROUTE section, so it was just as vulnerable to being scrolled out of
+     view as the original inline list was. Fixed by giving CONTRACTS its
+     own independent `QScrollArea` on the card (separate from ROUTE's),
+     not a popup at all ΓÇö the user explicitly didn't want the popup
+     approach either.
+  2. Closing the popup via its title-bar X closed the *entire app*. Root
+     cause: `host/main.py`'s `QApplication` never set
+     `quitOnLastWindowClosed`, so Qt's default (`True`) applied ΓÇö and
+     `MainWindow` (`host/main_window.py`) uses `Qt.Tool`, which Qt
+     excludes from its "last window" tracking. So any ordinary
+     `Qt.Window` a module opens (the popup, and the still-present ROUTE
+     popout) looks like the *only* real window from Qt's point of view;
+     closing it quits the app out from under the still-open, still-
+     Qt.Tool main window. Fixed generally in `host/main.py` with
+     `app.setQuitOnLastWindowClosed(False)` ΓÇö this was latent and would
+     have hit the ROUTE popout (or any future module window) too, not
+     just this one popup.
+
+- **2026-09-04 ΓÇö Standardized "mobi<Name>" branding across all 4 module
+  card titles; found and fixed a case bug this exposed.** User request:
+  every card title reads "mobi" in white (`theme.TEXT_PRIMARY`) + the
+  rest in the current blue accent (`theme.ACCENT_CYAN`) ΓÇö mobiOverlay
+  (main window wordmark), mobiTrade (was "Trade Routes"), mobiAim (was
+  "Crosshair"), mobiCommodities (was "Commodity Prices"), mobiLogistics
+  (Logistics Hub, name unchanged, only the rendering bug below fixed).
+  Found a real bug while doing this: `host/card.py`'s `_DragHeader` was
+  calling `title_label.setText(title.upper())` on every card title.
+  Logistics Hub's title was already rich HTML and already all-uppercase,
+  so `.upper()` was a harmless no-op there ΓÇö but the target branding is
+  **mixed case** (lowercase "mobi"), so `.upper()` would have silently
+  forced every new mobi-branded title back to all caps. Proof this
+  already mattered before any of this work started: the Logistics Hub
+  route-popout window builds its own title separately
+  (`_open_route_popout`) as mixed-case "mobi"+"Logistics", so the popout
+  already rendered correctly while the card header right next to it
+  showed "MOBILOGISTICS" in full caps ΓÇö a real, pre-existing mismatch.
+  Fixed by removing the `.upper()` call entirely; every module's
+  `display_name` is now the rich-text HTML directly. The stow Tray needed
+  no separate change ΓÇö `CardContainer.stowed_cards()` reads back
+  `card.header.title_label.text()` (whatever HTML the header ended up
+  with) and `_TrayRow` renders it as-is, so it picked up the corrected
+  casing for free.
+
+- **2026-09-04 ΓÇö Renamed Logistics Hub's "SELECT REGION" button to "SET
+  SCAN AREA".** User flagged real ambiguity: "region" reads as an
+  in-game/UEX star-system region, not the screen rectangle being
+  configured for OCR capture. Renamed the button, its status message
+  ("No capture region set ΓÇö use SET SCAN AREA..."), and the matching
+  code comments/docstring in `modules/logistics_hub/module.py`. No
+  behavior change.
+
+- **2026-09-04 ΓÇö Fixed dropdown text clipping on the right edge in
+  Logistics Hub's location combo and Trade Route Optimizer's terminal/
+  system combos.** User-reported. Root cause: none of the project's
+  `QComboBox` QSS blocks styled the `QComboBox::drop-down` subcontrol ΓÇö
+  once a stylesheet sets custom padding/border on `QComboBox`, Qt no
+  longer automatically reserves room for the drop-down arrow the way it
+  does with an unstyled native combo, so the arrow button was painted
+  directly over the last few pixels of text/completer content. Fixed by
+  adding an explicit `QComboBox::drop-down { width: ...px; border: none; }`
+  rule plus a larger right-padding on `QComboBox` itself (enough to clear
+  the arrow) to every combo style block in `modules/logistics_hub/module.py`
+  and `modules/trade_route_optimizer/module.py` ΓÇö the user only reported
+  Logistics Hub's combo, but Trade Route Optimizer's terminal/system/
+  destination-filter combos share the exact same stylesheet pattern and
+  would have had the identical bug.
+
+- **2026-09-04 ΓÇö Added a startup splash screen instead of speeding up the
+  slow import.** User reported a "significant delay" on launch; added
+  diagnostic timing first rather than guessing (see the log in this
+  conversation) and confirmed it's NOT the UEX API ΓÇö `discover_modules()`
+  took 2.80s of a 3.64s total startup, and 2.79s of that was Logistics
+  Hub's unconditional top-level `import easyocr` (pulls in PyTorch),
+  which runs before any window exists. Locations loaded instantly from
+  the on-disk cache; no module's `create_card()`/`refresh()` tripped the
+  existing >2s watchdog. Offered to make the `easyocr` import genuinely
+  lazy (deferred to first SCAN CONTRACT click) instead ΓÇö user chose a
+  splash screen over that fix. New `host/splash.py`: a themed
+  (`QSplashScreen`, void background, cyan border, rounded corners via
+  `WA_TranslucentBackground`) splash with the two-tone mobiOverlay
+  wordmark baked into the pixmap and a status line via `showMessage()`
+  updated at each startup stage ΓÇö including per-module ("Loading
+  Logistics Hub...") via a new `on_module_loading` callback param on
+  `discover_modules()`, so the 2.8s pause is now visibly explained
+  rather than looking like a frozen launch. `showMessage()` only takes
+  plain text, so `main.py`'s new `_plain_text()` strips the HTML tags
+  out of a module's rich-text `display_name` before showing it on the
+  splash. `splash.repaint()` is called after every status update since
+  the caller is about to block the event loop with the next slow
+  synchronous step, with no natural repaint opportunity otherwise. The
+  diagnostic timing log lines added for this investigation
+  (`main.py`/`module_loader.py`) were left in place ΓÇö cheap, and useful
+  if startup regresses again later.
+
+- **2026-09-04 ΓÇö Added a "Debug Console" toggle to Settings** (`ui.show_console`,
+  default off, applies on next relaunch ΓÇö same pattern as Text Size).
+  Mainly matters for the packaged exe: `mobioverlay.spec` builds
+  `console=False`, so stdout/stderr normally go nowhere and every
+  `logging`/print call (including the startup-timing diagnostics added
+  earlier this session) is silently dropped with no way to see it without
+  rebuilding. `host/main.py`'s new `_maybe_allocate_console()` uses
+  `ctypes`' `AllocConsole()`/`GetConsoleWindow()` to open a real console
+  window and rebind `sys.stdout`/`stderr`/`stdin` to it when the setting
+  is on ΓÇö must run before `logging.basicConfig()` (which grabs
+  `sys.stderr` at call time) and before any other import that might log,
+  so `Config` is now imported and read before the PySide6 imports rather
+  than alongside them. Running from an actual terminal already has a
+  console (`GetConsoleWindow()` catches that) so the toggle is a no-op
+  there ΓÇö it only changes anything for a windowed/no-console launch.
+
+- **2026-09-04 ΓÇö Added a "by Kestryl" byline to the splash screen,
+  centered below the wordmark.** User request: same two-tone split as
+  everywhere else ("by " white/TEXT_PRIMARY, "Kestryl" in the blue
+  accent), but as its own centered line rather than trailing inline like
+  the main window's title-bar byline. Factored the wordmark's two-tone
+  draw logic out into a shared `_draw_two_tone()` helper in
+  `host/splash.py` since the byline needed the identical
+  white-then-blue/horizontally-centered treatment at a smaller size.
+  Pixmap height bumped 140 -> 150 to fit the extra line above the
+  status-message area at the bottom.
+
+- **2026-09-04 ΓÇö Bug fix: Logistics Hub was auto-scanning on its own,
+  appending garbage contracts.** User-reported symptom: new contracts
+  appeared with "messed up" data with no SCAN CONTRACT click. Root cause:
+  `host/main.py`'s generic per-module periodic-refresh `QTimer` (every
+  `DEFAULT_REFRESH_SECONDS` = 300s, applies to every module uniformly)
+  calls `module.refresh()` regardless of module type. Logistics Hub's
+  `refresh()` only no-ops on the very first call (`self._started` guard,
+  meant for main.py's one-time initial-fetch call) ΓÇö every subsequent
+  timer tick ran a real OCR capture of whatever was on screen at that
+  moment (desktop, chat, game menus, anything), built a "contract" out of
+  garbled text, and appended it. This directly contradicts the module's
+  documented on-demand-only design (docs/modules/logistics-hub.md: "No
+  auto-rescan ΓÇö on-demand SCAN CONTRACT only"), which had only ever
+  disabled the module's own now-removed opt-in auto-rescan toggle, not
+  Core's separate generic refresh timer. Fixed two places: `host/main.py`
+  now skips starting the periodic timer entirely when a module's
+  `refresh_interval_seconds` is falsy, and `LogisticsHubModule.__init__`
+  defaults its own `refresh_interval_seconds` to `0` (via `setdefault`, so
+  an explicit user config value would still win). Syntax-checked both
+  files; not yet live-tested by the user.
+
+- **2026-09-04 ΓÇö Bug fix: Logistics Hub reversed pickup/dropoff for a
+  real contract** (user pasted a real COPY ROUTE export: "Everus Harbor"
+  showed as the pickup with cargo unknown, "Seraphim" as the dropoff,
+  backwards from the actual contract text). Root cause in
+  `_candidate_phrases()`: OCR's two-column layout wrapped the real
+  dropoff name across a line break ("...SCU of Agricultural Supplies to
+  Everus" / "Harbor above Hurston:"), so the phrase regex (single-line
+  only) never saw "Everus Harbor" intact on the keyworded line. It only
+  resolved later via an unrelated, unhinted repeat mention two lines
+  later ΓÇö and the existing lookback heuristic (nearest keyword within 2
+  lines back) grabbed a coincidentally-adjacent "Collect...from Seraphim"
+  pickup line and mis-attributed its hint to that mention instead,
+  flipping the roles. Fixed by also re-scanning a line joined with the
+  next one for phrase matches, but *only* when the current line's hint
+  came directly from its own text (`own_line`, not `lookback`/`section`)
+  ΓÇö trying this unconditionally first backfired: it let a lookback-hinted
+  line's contamination reach one line further and wrongly hinted
+  "Seraphim Station" too. Verified against the user's real pasted OCR
+  text for both the broken contract (Everus Harbor -> dropoff, Seraphim
+  Station -> neutral -> correctly falls back to pickup) and an
+  already-correct multi-dropoff contract from the same export (no
+  regression). Does not retroactively fix contracts already saved in
+  `contracts` config ΓÇö needs a rescan.
+
+- **2026-09-04 ΓÇö Two Logistics Hub route/display fixes, user-requested
+  after reviewing a real (now-correct) route export.**
+  1. **SCU quantity now shown alongside every commodity** ("13 SCU
+     Agricultural Supplies" instead of a bare name) ΓÇö the module extracted
+     commodity names but silently dropped the SCU count that was sitting
+     right there in the same "Deliver N/TOTAL SCU of X to..." line. New
+     `_commodity_quantities()` builds a commodity-name -> total-SCU map
+     once per contract (the "Collect X from Y" pickup line never carries a
+     quantity itself ΓÇö it's the same cargo moving through both ends, so
+     the map is looked up for both roles). `_extract_commodities()` now
+     returns `(name, qty)` pairs; `_cargo_label()` formats accordingly and
+     still accepts bare strings for contracts saved before this change
+     (old `commodities` lists in `config.json` aren't migrated). Verified
+     against real pasted OCR text for a single-commodity contract and a
+     genuine two-commodity contract (Waste 6 SCU + Scrap 7 SCU, same
+     pickup/dropoff pair) ΓÇö both quantities correct on both ends.
+  2. **Drop-off now wins ties over pickup in route ordering.** When a
+     station has both a due pickup and a due drop-off at equal travel
+     cost (most commonly "same stop, cost 0" ΓÇö already standing there),
+     `_plan_route`'s nearest-neighbour `min()` previously picked whichever
+     came first in `nodes`, which happened to always be pickups (built
+     before drop-offs per contract in `_stop_nodes`) ΓÇö an accident of
+     internal ordering, not a deliberate choice. Per user direction
+     (clear cargo you're already carrying before loading more), the
+     nearest-neighbour cost key now breaks ties by role
+     (`dropoff` before `pickup`) before falling back to list order.
+
+- **2026-09-04 ΓÇö Settings > Relaunch review, user-reported "the old
+  process isn't always fully dead before the new one starts."** Found
+  two real gaps on inspection (not yet reproduced live):
+  1. `GlobalHotkey` (`host/hotkey.py`) stored the return value of
+     `keyboard.hook()` in `self._hook` but never actually called
+     `keyboard.unhook()` on it anywhere ΓÇö `clear()` (used both by
+     Settings' own Clear button and, previously, by shutdown) only reset
+     the combo/callback, deliberately leaving the OS-level `WH_KEYBOARD_LL`
+     hook installed since a user might set a new combo later without
+     restarting. That's correct for the Settings Clear case but wrong for
+     process exit ΓÇö added a separate `GlobalHotkey.shutdown()` that stops
+     the reconcile `QTimer` and actually `keyboard.unhook()`s the hook,
+     called from `closeEvent` and `relaunch()` instead of `clear()`. The
+     OS does remove a dead process's hook automatically, but the old
+     instance was reachable for a bit *before* fully dying (see next
+     item) and would have kept a genuinely live global hook until then.
+  2. `relaunch()` started the new process (`subprocess.Popen`) *before*
+     tearing this instance down (`self.close()` / `quit()`) ΓÇö meaning
+     both instances could be briefly alive together: two global keyboard
+     hooks racing for the same Stow/Deploy combo, and the new instance
+     reading `config.json` before this one's `closeEvent`-driven
+     `window_geometry` save had landed. Reordered: save geometry + hotkey
+     shutdown now happen first, then the new process is spawned, then
+     this one closes.
+  3. Added `os._exit(0)` as a hard stop at the very end of `relaunch()`,
+     after everything that needs saving is already done. `keyboard`'s own
+     listener thread is daemon (verified in the installed package,
+     `_generic.py`), so it isn't the risk ΓÇö but easyocr/torch's native
+     (non-Python) thread pools are a known source of slow/stuck CPython
+     interpreter shutdown on Windows once a Logistics Hub scan has
+     actually loaded them, which lines up with the reported symptom.
+     `os._exit()` skips that risk entirely instead of trusting
+     `sys.exit(app.exec())` to return promptly.
+  Code-reviewed and syntax-checked; not yet live-tested (needs a
+  relaunch after running at least one Logistics Hub scan, to actually
+  exercise the torch-loaded case the fix targets).
+
+- 2026-09-04: **Logistics Hub debug log added** (`logistics_hub_debug.jsonl`,
+  always-on, append-only JSON Lines). Purpose: accumulate real usage data
+  the user can hand to an AI later to evaluate whether parsing/routing is
+  holding up. Scoped with the user before building rather than assumed:
+  - Always-on, no Settings toggle ΓÇö simplest, and avoids forgetting to
+    enable it before a session worth capturing.
+  - Lives at `paths.app_root() / "logistics_hub_debug.jsonl"`, same helper
+    `config.json` uses, for the same reason (must persist outside a frozen
+    build's wiped temp extraction dir).
+  - No size cap/rotation ΓÇö user manages the file manually; scan-triggered
+    logging won't grow large quickly.
+  One JSON object appended per scan (`LogisticsHubModule._log_scan_debug`,
+  called from `refresh()`), with `note` = `"added"` or `"duplicate_pending"`:
+  timestamp, raw OCR text, every candidate phrase with its role hint and
+  priority (`_candidate_phrases()`'s own output, not re-derived), the
+  built contract dict (pickups/dropoffs/commodities/reward/ambiguous
+  notes), and a route snapshot reusing the existing `_format_route_text()`
+  (the same text COPY ROUTE already produces) rather than a second
+  route-formatting implementation. Write is wrapped in try/except OSError
+  so a log-write failure can never break a scan. Code-reviewed and
+  syntax-checked only ΓÇö not yet live-tested (needs a real scan to confirm
+  the file actually gets written and is valid JSONL).
+
+- 2026-09-04: **Bug fix: Logistics Hub relaunch showed persisted contracts
+  but an empty ROUTE section.** `self._route_order` is in-memory only
+  (never persisted) and was only ever recomputed by `_plan_route()` inside
+  a scan, a location change, or CLEAR ΓÇö `create_card()` rendered whatever
+  contracts config.json restored without ever recomputing the route for
+  them. Fixed by calling `_plan_route(contracts)` in `create_card()` right
+  after loading, before the first `_render_results()`, when there are any
+  persisted contracts. Code-reviewed and syntax-checked only ΓÇö not yet
+  live-tested (needs a relaunch with existing contracts to confirm ROUTE
+  now shows immediately). **User confirmed 2026-09-04: fixed** ΓÇö relaunch
+  with existing contracts now shows ROUTE immediately.
+
+- 2026-09-05: **Fuzzy location fallback added for OCR-garbled names that
+  miss substring matching entirely.** Auditing `logistics_hub_debug.jsonl`
+  against live UEX data surfaced two already-tagged `KNOWN BUG`s in
+  PROGRESS.md (a pickup/dropoff role tie-break, a same-terminal duplicate
+  stop) plus a third, distinct gap: a candidate with a real pickup/dropoff
+  hint but zero exact/substring matches in `LocationService.resolve_all()`
+  was silently dropped ΓÇö no stop, no warning ΓÇö whenever OCR garbled a name
+  enough to miss substring matching too (a dropped/altered letter, e.g.
+  "Seraphim Staton"), as opposed to being unreadable.
+  Added `LocationService.resolve_fuzzy()` (`host/locations.py`,
+  `difflib.SequenceMatcher` ratio against the same in-memory name index
+  `resolve_all` already uses) as a deliberately separate, opt-in method ΓÇö
+  never folded into `resolve()`/`resolve_all()` themselves, since every
+  other caller (Trade Route Optimizer's terminal picker, Commodity Prices'
+  nickname lookup, this module's own CURRENT LOCATION combo) has no way to
+  show an uncertainty warning, and a fuzzy guess there would look exactly
+  as confident as a real match. `_build_contract`'s Pass 1 now tries it
+  only when `resolve_all` found nothing **and** the candidate's hint isn't
+  `neutral` (same gating already used for the ambiguous-match note path) ΓÇö
+  on a hit, the stop resolves normally (`merge_resolved`, so it still
+  counts as the same real place if another mention already confirmed it
+  unambiguously) and an amber-warning note is appended, reusing the exact
+  same `ambiguous_notes` mechanism/UI already built for multi-match
+  ambiguity, e.g. `"'Baijni Point' (pickup) fuzzy-matched to Baijini Point
+  (96% confidence) ΓÇö please verify"`.
+  **Cutoff tuned from an initial 0.75 to 0.85 after live verification
+  caught a real false positive**: replaying all 7 real captured contracts
+  from `logistics_hub_debug.jsonl` through the updated `_build_contract`
+  found OCR debris "Tech's Ll" (mangled from "microTech's Ll Lagrange
+  point" ΓÇö not a location mention at all) scoring 0.77 against an
+  unrelated real shop named "Teach's", which would have added a spurious
+  dropoff stop at the original cutoff. Every genuine OCR-garbled name in
+  the same replay (dropped/altered letters, not debris) scored 0.87+, so
+  0.85 cleanly separates the two without losing any real catch ΓÇö confirmed
+  by re-running the same 7 contracts: identical pickups/dropoffs list for
+  all 7 (no regression), with two of them now carrying an accurate fuzzy-
+  match warning for a candidate that previously vanished silently, in both
+  cases merging into an *already*-resolved terminal (widening its `_aka`
+  alias set) rather than adding a new stop. Locations-only for this pass,
+  per the phased plan ΓÇö commodity extraction and an editable
+  correction-combo UI (so a user can override a wrong or low-confidence
+  resolution) are deliberately deferred to later passes.
+
+- 2026-09-05: **Debug log gets a per-candidate resolution trace, closing two
+  remaining blind spots the fuzzy-match feature above didn't cover.** Asked
+  "is there additional debugging that could be added" right after that
+  feature shipped. Two gaps identified: (1) a candidate that misses *both*
+  exact/substring match *and* the fuzzy cutoff still vanishes with zero
+  trace ΓÇö no record it was ever considered, or how close it came; (2) which
+  of `_build_contract`'s five resolution paths (exact/substring match,
+  suffix disambiguation, "already confirmed elsewhere," fuzzy match) won for
+  a resolved candidate wasn't recorded ΓÇö only the final outcome was visible.
+  `LocationService.best_fuzzy_match()` (`host/locations.py`) was split out
+  of `resolve_fuzzy()` ΓÇö same scoring loop, no cutoff applied ΓÇö so a caller
+  can see the *near-miss* score for a dropped candidate; `resolve_fuzzy()`
+  is now a thin cutoff-enforcing wrapper around it, unchanged for existing
+  callers. `_build_contract()` gained an optional `debug_trace: list[dict] |
+  None = None` out-parameter (only one call site, `refresh()`, so a safe
+  additive signature change) ΓÇö a trace entry gets appended at each of the
+  six places a candidate's fate is decided across Pass 1/Pass 2, recording
+  `outcome` (`resolved`/`ambiguous_unresolved`/`dropped_no_match`) and,
+  for `resolved`, which `method` won. Deliberately an out-parameter rather
+  than changing `_build_contract`'s return type ΓÇö keeps the change purely
+  additive/observational with zero risk to the actual resolution logic,
+  `merge_resolved`, or the persisted `config.json` contract schema (the
+  trace is never attached to the contract dict itself, only threaded
+  separately into `_log_scan_debug`). The existing `fuzzy_matches` log field
+  (2026-09-05, earlier the same day) now derives from this trace
+  (`outcome == "resolved" and method == "fuzzy"`) instead of string-matching
+  "fuzzy-matched" in the ambiguous-notes text ΓÇö same field, sturdier source.
+  **Verified via backend replay of all 7 real contracts in
+  `logistics_hub_debug.jsonl`**: `_build_contract`'s output is byte-for-byte
+  identical whether or not `debug_trace` is passed (confirmed by diffing the
+  returned contract dict, ids/timestamps excluded); trace-entry count
+  exactly equals candidate count for every scan; a genuinely irrelevant
+  candidate ("Chase Hewitt", `neutral` hint) correctly shows
+  `dropped_no_match` with no near-miss lookup attempted, matching the
+  existing neutral-hint gating. Locations-only, same phased scope as the
+  fuzzy-match feature ΓÇö a runner-up score on a *successful* fuzzy match and
+  a schema/build-version stamp per log entry were both considered and
+  deferred as lower-value follow-ups.
+
+- 2026-09-05: **Debug log gets a route-planning trace too, not just
+  location-parsing.** User's stated goal: get to ~90% confidence the app
+  isn't "doing anything stupid" on routing before switching to spot-checking
+  logs occasionally instead of live-testing every change. The parsing trace
+  above answers "did it resolve locations correctly" but not "did it route
+  them well" ΓÇö the debug log only ever showed the *final* route, giving no
+  way to tell from the log alone whether `_two_opt` actually improved on the
+  greedy pass or left something on the table. `_plan_route()` gained an
+  optional `route_debug: dict | None = None` out-parameter (same
+  observational-only pattern as `_build_contract`'s `debug_trace`) capturing
+  the greedy route and its cost (via the existing `_route_cost()` helper)
+  *before* handing off to `_two_opt`, alongside the final route/cost after ΓÇö
+  threaded through `_add_contract` (also gains the same optional param) and
+  into `_log_scan_debug` as a new `route_debug` field. New `_node_label()`
+  helper renders a stop as `"[PICKUP] Baijini Point (contract 0)"` for both
+  the greedy and final order lists, so a reordering is readable directly
+  without cross-referencing node indices. **Verified via the same 7-contract
+  backend replay**: 2-opt genuinely improved 6 of the 7 scans (savings of
+  5-19 cost units), one had nothing to improve (0.0) ΓÇö confirms the
+  optimization pass is doing real work, not a no-op, on real captured data.
+  `duplicate_pending` log entries get an empty `route_debug` (`{}`), since
+  the route isn't replanned until a contract actually gets added.
+
+- 2026-09-05: **Or-opt added alongside 2-opt ΓÇö a real routing gap found on
+  live data, planned and fixed the same session.** Reviewing the
+  `route_debug` trace added earlier the same day across several real scans
+  showed the same real terminal (Everus Harbor) visited twice in one
+  route ΓÇö once as a pickup for one contract, once as a dropoff for
+  another ΓÇö instead of merging into a single stop, even though merging was
+  legal (precedence-respecting) and cheaper. Root cause: `_plan_route`
+  only ran 2-opt after the greedy pass, and 2-opt's move set (reversing a
+  contiguous sub-segment) structurally cannot express "relocate one node
+  past several others without reversing anything between them" ΓÇö that's a
+  different move type (Or-opt), not a bug in 2-opt itself. Measured impact
+  on the live case was modest (~5 of ~153 cost units, Γëê3%) but structural,
+  not incidental ΓÇö confirmed it'll recur any time a hub location plays
+  both roles across contracts. New `_or_opt()` (mirrors `_two_opt`'s exact
+  style: repeatedly try one move, keep it if `_route_cost` drops and
+  `_respects_precedence` still holds, run until a full pass finds nothing ΓÇö
+  both existing helpers reused unchanged). `_plan_route` now alternates
+  2-opt and Or-opt (2-opt first each round, since either pass's moves can
+  open new opportunities for the other) until neither improves, capped at
+  5 rounds as a termination safety net. `route_debug`'s `two_opt_improved_by`
+  field (same-day, not yet relied on anywhere) renamed
+  `optimized_improved_by` to reflect the combined effect, plus a new
+  `rounds_run` count. **Verified**: replayed the exact live 4-contract
+  scenario that exposed the gap ΓÇö final cost dropped 153 ΓåÆ 148 (matching
+  the manual live-distance calculation done during the original review),
+  Everus Harbor's two visits landed adjacent in the output (merged), 2
+  rounds to converge. Also confirmed the Or-opt inner loop restarts its
+  scan from the top of the current pass immediately after any accepted
+  move (`break` out of both loops) rather than continuing against a stale
+  pre-move sequence ΓÇö an early draft didn't do this and could have
+  silently discarded an improvement it had just found.
+
+- 2026-09-05: **Three at-a-glance additions to the card, reviewed from a
+  Star Citizen player's perspective mid-session** (user's framing: what's
+  useful to see in a few seconds without reading the whole scrollable
+  list). All three reuse data already computed ΓÇö no new state, no new API
+  calls: (1) a summary line ("4 contracts ┬╖ 268,750 aUEC ┬╖ 143 SCU peak
+  cargo") below the CONTRACTS title, always visible without scrolling
+  either list; (2) peak cargo is deliberately the running max along the
+  *planned route* (`+SCU` on pickup, `-SCU` on dropoff, tracked via a new
+  `_peak_cargo_scu()`), not a flat sum of every pickup ΓÇö a flat sum
+  overstates the hold size needed whenever some cargo gets delivered
+  before more is picked up, confirmed by hand-tracing the same live
+  4-contract scenario (peak 143, vs. a flat-sum figure that would have
+  been higher); (3) a cyan-accented NEXT STOP banner above the ROUTE list
+  (new `_next_stop_banner()`, distinct from the existing amber
+  `_ambiguous_row`) ΓÇö the first not-yet-done stop, verified to correctly
+  advance once that stop is marked done. `_describe_stop()`/`_stop_entry()`
+  extracted from what was inline logic in `_populate_route_rows` so the
+  route list, the peak-cargo walk, and the next-stop lookup all share one
+  implementation instead of three. **Verified** via a backend script
+  (`_total_reward`/`_peak_cargo_scu` cross-checked against a hand-computed
+  trace of the same live scenario, both matched exactly) ΓÇö the actual
+  widgets (`_summary_label`, `_next_stop_banner`) construct real `QLabel`s
+  and can't be exercised without a live `QApplication`, consistent with
+  this project's existing "can't launch the actual Qt UI in this
+  environment" limitation; needs a human glance in the real running app.
+
+- 2026-09-05: **Bug reported: NEXT STOP/ROUTE invisible on the card until
+  the Tracker popout was opened at least once** (same box also made the
+  route stop done/skip toggle look broken ΓÇö nothing to click, since the
+  rows themselves weren't visible). First attempt: theorized a stale
+  `_results_scroll` scroll position (matching a real, documented
+  2026-09-04 bug in the old shared CONTRACTS/ROUTE scroll area) and reset
+  it to 0 at the end of every `_render_results()` call. **User confirmed
+  live: did not fix it.** Root cause was never actually pinned down ΓÇö no
+  way to run the real Qt UI in this environment to inspect it further ΓÇö
+  and continuing to guess blind wasn't converging.
+- 2026-09-05: **Reverted inline ROUTE rendering entirely instead of
+  continuing to chase the bug above.** Per user direction: NEXT STOP isn't
+  a feature that'll get used, and the Tracker popout (confirmed working
+  throughout) is the actual tool for working a route ΓÇö so the card's
+  ROUTE area now shows only a stop count + "click TRACKER" prompt, no
+  per-row list, no done/skip toggling inline. This removes the whole
+  broken code path (the full stop-by-stop list, the NEXT STOP banner, and
+  the scroll-reset attempt above) rather than fixing it blind. Simpler
+  surface area: the card owns "how many stops, how much reward, how much
+  cargo" (all confirmed working live), the Tracker popout owns "walk the
+  route." `_next_stop_banner()` removed entirely (unused);
+  `_describe_stop()`/`_stop_entry()` kept ΓÇö still shared between
+  `_populate_route_rows` (popout only, now) and `_peak_cargo_scu()`.
+  Also fielded in the same review: no way to confirm/edit a fuzzy-matched
+  or ambiguous location from the card ΓÇö this is the already-scoped-out
+  correction-combo UI (see the 2026-09-05 fuzzy-match entry above, "later
+  passes"), not a new finding, reconfirmed still wanted.
+
+- 2026-09-05: **Bug fix: a pickup feeding two drop-offs of the same
+  commodity only counted one of them.** User-reported live: the Tracker
+  showed "PICKUP 50 SCU Titanium" from Ambitious Dream Station, missing
+  that the same contract also delivers 52 SCU of Titanium to a second
+  station (Seraphim) ΓÇö the pickup actually needs 102 SCU total, not 50.
+  Root cause: `_commodity_quantities()` mapped commodity name -> quantity
+  from every "Deliver N/TOTAL SCU of X to Y" line, but a plain dict
+  assignment (`qty[commodity] = ...`) meant the *second* delivery line for
+  the same commodity name silently overwrote the first instead of adding
+  to it ΓÇö and `_extract_commodities`'s dedup-by-commodity-name then
+  dropped the second occurrence entirely once resolving the pickup entry.
+  Fixed two ways at once: `_commodity_quantities()` now sums instead of
+  overwrites (correct for the pickup side, which needs the contract-wide
+  total); `_DROPOFF_COMMODITY_RE` extended to capture the SCU quantity
+  directly from its own line (`\bdeliver\s+(?:\d+/)?(\d+)\s*scu\s+of...`),
+  so each drop-off's `_extract_commodities` call uses *that* line's own
+  exact amount instead of looking it up in the (now summed, and therefore
+  wrong for a single delivery) shared dict ΓÇö otherwise summing would have
+  fixed the pickup but broken every drop-off into showing the combined
+  total instead of its own share. `_all_commodity_names()` updated for the
+  shifted capture group (drop-off commodity is now group 2, group 1 is the
+  quantity). **Verified** against the exact live contract that exposed the
+  bug: pickup now correctly shows `('Titanium', '102')`, the two drop-offs
+  still correctly show `52` and `50` independently ΓÇö and the peak-cargo
+  summary (2026-09-05, earlier the same day) was silently under-reporting
+  too as a direct consequence (143 instead of the correct 193 SCU for the
+  live 4-contract scenario), now fixed as the same side effect.
+
+- 2026-09-05: **New REPROCESS button ΓÇö re-parse saved contracts without
+  rescanning.** Direct follow-up to the commodity-quantity fix above: fixing
+  the *code* doesn't fix the 4 contracts already sitting in `config.json`
+  with the old, wrong quantities baked in (`_build_contract` computes
+  commodities once at scan time and persists the result; nothing re-derives
+  it later), and the only existing option was CLEAR + rescan everything
+  from the game ΓÇö wasteful when every contract's own `raw_text` is already
+  persisted (same text the debug log/COPY ROUTE export already use).
+  New `_reprocess_contracts()` (`modules/logistics_hub/module.py`, right
+  next to `_clear_contracts()`) re-runs `_build_contract()` against each
+  saved contract's own `raw_text` and swaps in the freshly-parsed result,
+  then replans the route ΓÇö no OCR, no rescan, no additional UEX API calls
+  beyond what `_build_contract` already does (location index is already
+  loaded in-memory). Deliberately preserves each contract's original `id`/
+  `scanned_at` rather than the freshly-rebuilt ones: `route_done` entries
+  are keyed `f"{contract_id}:{role}:{index}"` (`_toggle_route_done`), so
+  keeping the same id is what lets an already-marked-done stop stay
+  correctly matched after reprocessing ΓÇö this only holds as long as the
+  fix being picked up doesn't change how many pickups/dropoffs a contract
+  has (true for the quantity fix); a future parsing change that adds/
+  removes a stop would leave a stale `route_done` entry pointing at
+  nothing, same outcome CLEAR-and-rescan already has today, not a new
+  failure mode. Wrapped in `_safe_reprocess()`, matching `_safe_scan()`'s
+  try/except-and-status pattern ΓÇö no busy-button treatment needed since
+  this is pure in-memory regex/lookup work, not OCR or a network call.
+  **Verified**: simulated the exact stale pre-fix state (the real Titanium
+  contract with its pickup quantity hand-corrupted back to the old buggy
+  `50`, plus a `route_done` entry for that same stop) and confirmed
+  reprocessing corrects it to `102`, preserves `id`/`scanned_at` exactly,
+  and the `route_done` entry still matches the reprocessed stop. Button
+  wiring itself (not the underlying logic) can't be click-tested without a
+  live `QApplication` ΓÇö needs a human check in the real running app, same
+  as this session's other UI-only changes.
+
+- 2026-09-05: **REPROCESS now writes a debug log entry too.** User changed
+  CURRENT LOCATION and ran REPROCESS, then asked to verify it worked ΓÇö
+  found nothing in `logistics_hub_debug.jsonl` to check, since only
+  `refresh()` (a live scan) ever called `_log_scan_debug`. New
+  `_log_reprocess_debug()` (`modules/logistics_hub/module.py`) writes one
+  entry per REPROCESS run ΓÇö same shape as a scan's entry, but `contracts`/
+  `resolution_traces` cover every reprocessed contract at once (a list per
+  field) instead of one fresh scan's single `raw_text`/`candidates`/
+  `contract`, since REPROCESS re-parses everything already saved in one
+  pass. Shared the actual file-write/error-handling code with
+  `_log_scan_debug` via a new small `_append_debug_log()` helper rather
+  than duplicating the `try/open/write/except OSError` block a second
+  time. `_reprocess_contracts()` now collects a `debug_trace` list per
+  contract (via `_build_contract`'s existing optional out-param, added
+  2026-09-05 earlier the same day) instead of discarding it. **Verified**:
+  reprocessing 2 contracts (one with a fuzzy-matched pickup) produces
+  exactly one log entry with `note: "reprocessed"`, both contracts'
+  resolution traces present, the fuzzy match correctly surfaced in
+  `fuzzy_matches`, and a populated `route_debug`.
+
+- 2026-09-05: **Trade Route Optimizer's origin picker replaced: system ΓåÆ
+  terminal cascading combo ΓåÆ single searchable combo**, matching Logistics
+  Hub's CURRENT LOCATION picker UX (editable `QComboBox` + `QCompleter` in
+  `PopupCompletion` mode, `Qt.MatchContains`, case-insensitive, labeled via
+  `LocationService.search_label()` so search works by name or short code).
+  User asked for the two pickers to behave the same way. Deliberately kept
+  **terminals-only**, not `LocationService.all_locations()` (which
+  Logistics Hub's combo does use) ΓÇö `commodities_routes` (the endpoint
+  `refresh()` calls) requires a real `id_terminal_origin`; space stations/
+  outposts/cities aren't valid origins for it, so including them would be
+  a dead-end pick with no way to actually use the selection. Kept the same
+  `type == "commodity"` + `is_available_live` filter the old per-system
+  `_populate_terminals` already applied, just no longer scoped to one
+  system at a time. Settings key renamed `origin_system`/`origin_terminal`
+  ΓåÆ single `origin_terminal_name` (stores the combo's search-label text).
+  See docs/modules/trade-route-optimizer.md for the updated card
+  description.
+
+- 2026-09-05: **`LocationService.friendly_label()` added** ΓÇö user reported
+  typing "Glen" found mobiLogistics' CURRENT LOCATION (CRU-L5 Beautiful
+  Glen Station) but found nothing in mobiTrade's new origin combo. Root
+  cause: the two combos read the exact same shared cache (confirmed, not a
+  data-divergence bug), but mobiTrade's combo is terminals-only (see the
+  entry above) and the `terminals` record for that same physical place
+  (`id` 22, "Admin - CRU-L5") has no descriptive name of its own ΓÇö its
+  `name`/`nickname` are both just the bare "CRU-L5" code. The friendly name
+  ("CRU-L5 Beautiful Glen Station") only exists on the sibling
+  `space_stations` record for the same place, which mobiTrade's picker
+  deliberately excludes. `friendly_label(terminal)` in `host/locations.py`
+  looks up a matching non-terminal record by shared (normalized) nickname
+  and borrows its fuller name when the terminal's own name isn't as
+  descriptive ΓÇö built as a shared `LocationService` helper (not a local
+  mobiTrade-only fix) per user direction, so any current/future
+  terminals-only picker gets the same resolution. Deliberately excludes
+  other `terminals` records from the candidate pool (a same-station
+  facility like "Landing Services - CRU-L5" is textually longer than the
+  real place name but isn't the place's name ΓÇö an earlier version of this
+  fix picked exactly that facility name by mistake before restricting the
+  lookup to non-terminal endpoints). Verified against the real
+  `locations_cache.json`: 19 of 114 live commodity terminals gained a
+  fuller name (all Lagrange-point stations plus GrimHEX), CRU-L5
+  specifically now labels as "Beautiful Glen Station (CRU-L5)" and matches
+  "glen"; terminals that already had a real name of their own (e.g. "Bud's
+  Growery") are unchanged.
+
+- 2026-09-05: **mobiCommodities' "Find Most Profitable" (and Best Sell/Best
+  Buy) made stock-aware ΓÇö user caught a real mobiTrade/mobiCommodities
+  disagreement.** mobiCommodities said Compboard was most profitable to buy
+  at Rayari Kaltag and sell at Shubin SM0-22; mobiTrade said Distilled
+  Spirits (sell at MIC-L5) was the best route from the same origin.
+  Investigated live against the real UEX API: `commodities_routes` really
+  does return Distilled Spirits ΓåÆ MIC-L5 as the top route by total profit
+  (3,156,000 aUEC) from Rayari Kaltag ΓÇö mobiTrade was correct. Compboard is
+  in that same route list, worth only 15,080 aUEC total, because Rayari
+  Kaltag has just 2 SCU (`scu_buy: 2`) of it in stock ΓÇö huge per-unit
+  margin, negligible achievable total. Root cause:
+  `find_most_profitable()` (`modules/commodity_prices/module.py`) computed
+  a pure `max(price_sell) - min(price_buy)` price gap with no regard for
+  `scu_buy`/`scu_sell` at all. Fixed to rank by
+  `(price_sell - price_buy) * scu_buy` (best buy/sell pairing per
+  commodity), capped by source stock only. **First pass of this fix also
+  gated the SELL side on `scu_sell > 0` and was wrong** ΓÇö caught before
+  shipping by live-checking the fix against the real data that started
+  this investigation: `scu_sell` reads 0 for Distilled Spirits at MIC-L5
+  (mobiTrade's own correct answer) despite a real `price_sell`, and
+  checked broadly across 5 commodities, `scu_sell` is 0 despite a real
+  sell price 75-95% of the time ΓÇö UEX just doesn't reliably track
+  sell-side demand capacity the way it tracks source stock (confirmed via
+  `commodities_routes`' own `scu_destination`, which mirrors `scu_origin`
+  rather than reflecting an independently-tracked number). Corrected to
+  gate only on `scu_buy` (BUY side, confirmed live to be 0 only when
+  `price_buy` is also 0 ΓÇö reliable) and leave the SELL side as a pure
+  price comparison, both in `find_most_profitable()` and the regular Best
+  Sell/Best Buy rows (`_apply_filters()`). Verified against live data
+  before shipping: Distilled Spirits' stock-aware total (3,156,000, best
+  pairing Rayari Kaltag ΓåÆ Admin - MIC-L5) now correctly and exactly
+  matches mobiTrade's `commodities_routes` answer for the same origin;
+  Compboard drops to 52,700.
+
+- 2026-09-05: **mobiTrade's origin picker made optional ΓÇö "Any Location"
+  search, with a per-system BUY IN filter.** User's ask: a real trader
+  often doesn't have a fixed starting terminal and wants the best trade
+  *anywhere* (or anywhere in a system), then decides where to fly ΓÇö not
+  the other way around. Requested semantics: no filter + no location =
+  whole game; filter only = that system; location picked = that terminal
+  only (unchanged from before). Confirmed live against the real UEX API
+  before designing anything: `commodities_routes` has **no bulk-origin
+  query** ΓÇö `id_star_system_origin` alone returns
+  `missing_one_required_inputs`; it strictly requires one of
+  `id_terminal_origin`/`id_planet_origin`/`id_orbit_origin`/`id_commodity`
+  per call. So "Any Location"/BUY IN genuinely means one API call per
+  candidate terminal (up to 114 for the whole game) and merging results ΓÇö
+  no server-side shortcut exists. Implemented as a manual **SCAN** button
+  (`modules/trade_route_optimizer/module.py`, `_start_scan`/`_scan_step`/
+  `_finish_scan`), ported directly from Commodity Prices' Retrieve Data
+  `QTimer`-throttled scan pattern (same 120ms/~8req/sec pacing, live
+  progress text, skip-on-individual-failure, rate-limit-aware abort, same
+  30-min cache-countdown + "FORCE UPDATE?" confirm) rather than inventing
+  a new mechanism ΓÇö confirmed with user this should be an explicit manual
+  action, not automatic, since `refresh()` runs synchronously on the
+  host's auto-refresh timer and at startup
+  (`host/main.py`'s `wrap_refresh`/`safe_refresh`, no threading) and a
+  15-30+s scan must never block that path; `refresh()` is simply a no-op
+  while origin is Any Location. Each `commodities_routes` row already
+  carries its own `origin_terminal_name`/`origin_star_system_name`/
+  `origin_planet_name` (confirmed live) ΓÇö no extra tagging needed to merge
+  rows from many different scanned terminals into one sorted pool.
+  Route rows now show "BUY AT ..." alongside the existing "SELL AT ..."
+  (confirmed with user) since origin is no longer implied by a single
+  picker selection in scan mode ΓÇö kept in single-terminal mode too, for
+  consistency. Verified the merge/sort logic against real live data: 3
+  real terminals scanned and merged, top result correctly pulled from
+  whichever of the three actually had the best profit (not just the first
+  terminal queried), matching what a real multi-terminal scan will
+  produce.
+
+- 2026-09-05: **Two real bugs in the above, caught by the user immediately
+  after using it for real.**
+  1. **Origin combo's dropdown arrow was clipped/invisible** ΓÇö the BUY IN
+     filter was placed in the same row as the origin combo, squeezing it
+     enough that the arrow region (reserved via `_COMBO_STYLE`'s
+     `padding`/`drop-down width`) had no room left; the box looked like a
+     plain text field. Fixed by moving BUY IN to its own row below the
+     origin combo, restoring its full width ΓÇö same root-cause class as the
+     right-edge combo clipping already fixed once before (PROGRESS.md,
+     "Fixed right-edge text clipping..."), just reintroduced by this
+     session's own layout change.
+  2. **A changed MAX INVESTMENT didn't invalidate a prior SCAN's
+     results.** User set a $1M cap and still saw a 54,500,000 profit
+     figure on screen. Confirmed live this profit is real API-level
+     impossible at that cap ΓÇö scanned 15 real terminals with
+     `investment=1000000`, best genuine result was 447,600; confirmed the
+     `investment` param does correctly cap `commodities_routes`' returned
+     `profit` server-side (Kaltag alone: 3,156,000 uncapped vs 342,849 at
+     $1M). Root cause: unlike SELL IN, which re-slices already-fetched
+     data client-side, `investment` changes what the API itself returns ΓÇö
+     but nothing invalidated a prior SCAN's rows when investment (or BUY
+     IN) changed afterward, since `refresh()` no-ops in Any Location mode
+     and only the explicit SCAN button actually re-queries. The screen
+     kept showing pre-investment-cap numbers next to a filled-in budget
+     field, which reads as "this is what $1M gets you" when it isn't.
+     Fixed with `_invalidate_scan_results()` ΓÇö clears displayed rows and
+     sets "RESCAN NEEDED" whenever investment changes (Any Location mode),
+     BUY IN changes, or origin switches back to Any Location from a
+     specific terminal ΓÇö a fresh SCAN click is required rather than
+     silently trusting stale numbers.
+
+- 2026-09-06: **Fixed the logistics-hub role-assignment KNOWN BUG (logged
+  2026-09-04) ΓÇö two distinct mechanisms in `_candidate_phrases()`
+  (`modules/logistics_hub/module.py`), found together auditing a fresh
+  debug log against a real live contract (Seraphim Station multi-pickup/
+  multi-dropoff: "Collect Pressurized Ice/Processed Food from Seraphim
+  Station" ΓåÆ deliveries split across Beautiful Glen, Shallow Fields, and
+  Ambitious Dream Station).** App output showed "Ambitious Dream Station"
+  as a *pickup* ΓÇö it's actually a drop-off, printed under the contract's
+  own "DROP OFF LOCATIONS (ANY ORDER)" section header.
+  1. **The `own_line` joined-lookahead pass (added 2026-09-04 for the
+     "Everus Harbor" line-wrap case) re-scanned the *entire* next line,
+     not just the wrapped portion of the current line's own phrase.**
+     Line "Collect Processed Food from Seraphim Station." (a real
+     own_line pickup keyword) sat directly before the unrelated "Freight
+     elevator at Ambitious Dream Station at Crusader's Ll" line purely by
+     two-column OCR reordering coincidence ΓÇö the joined re-scan picked up
+     "Ambitious Dream Station" from that second line whole and tagged it
+     `pickup` at the highest priority (`own_line`, 3), permanently
+     locking out any correct later hint for the same phrase. This is
+     exactly the mechanism the original KNOWN BUG entry described for
+     "Everus Harbor"/contract `21c7811e`. Fixed by requiring the regex
+     match to actually straddle the line join (real characters on both
+     sides of the inserted space) before accepting it ΓÇö a genuinely
+     wrapped name always does; an unrelated phrase sitting entirely
+     inside the next line never does. Purely restricts false positives;
+     the original wrap-catching purpose is untouched (a straddling match
+     still qualifies exactly as before).
+  2. **A second, previously-undocumented mechanism produced the same
+     wrong result even after fix #1**: with the bogus `own_line` hint
+     gone, "Freight elevator at Ambitious Dream Station..." (no keyword
+     of its own) fell to the 2-line backward-lookback check, which still
+     found the same nearby "Collect Processed Food from Seraphim
+     Station." pickup line and wrongly inherited its hint ΓÇö even though
+     the line is clearly under the active "DROP OFF LOCATIONS (ANY
+     ORDER)" section header opened several lines earlier. The per-line
+     hint logic checked lookback *before* the section fallback, so an
+     incidental nearby keyword (belonging to a different item's flavor
+     text) always won over the much stronger, on-screen structural
+     section signal. Fixed by checking section first whenever one is
+     active and the line looks like a real section row (contains "at" ΓÇö
+     the same qualifier the section fallback already used); lookback now
+     only runs when no section applies. `HINT_PRIORITY` itself (which
+     hint wins when the *same* phrase is seen twice) is unchanged ΓÇö this
+     only reorders which check computes a fresh line's *first* hint.
+  **Verified** via a standalone backend script (no QApplication, no
+  network ΓÇö `LocationService.ensure_loaded()` read the on-disk
+  `locations_cache.json`) against the exact real OCR text of the
+  contract that exposed this: Ambitious Dream Station now resolves as a
+  drop-off, not a pickup. Regression-checked the same way against the
+  session's other two real contracts (Everus Harbor ΓåÆ Baijini Point, and
+  the MIC-L2 Long Forest Station 4-drop-off contract) ΓÇö both produced
+  identical pickups/dropoffs to their pre-fix output, no change.
+  **Separately noted, not fixed at the time:** the Ambitious Dream Station
+  stop's own commodity came back empty (should be 5 SCU Pressurized Ice)
+  ΓÇö its source line is split across *three* OCR lines ("Deliver 0/5 SCU
+  of Pressurized" / "to Ambitious Dream" / "Station...") with the word
+  "Ice" itself orphaned elsewhere in the raw text entirely, and both
+  `_PICKUP_COMMODITY_RE`/`_DROPOFF_COMMODITY_RE` were single-line
+  regexes. Confirmed already wrong before this session's role-assignment
+  fix too (same value, unrelated bug). **Fixed later the same session ΓÇö
+  see the next entry below.**
+
+- 2026-09-06: **Fixed the commodity-extraction gap logged just above,
+  same session.** Two independent problems, both in
+  `modules/logistics_hub/module.py`:
+  1. **A delivery line split by OCR well before its destination even
+     starts is invisible to `_commodity_quantities`/`_extract_commodities`
+     entirely, not just truncated.** Both regexes require "to"/the
+     destination on the *same* line as "SCU of X"; "Deliver 0/5 SCU of
+     Pressurized" has no "to" on its own line at all (it's on the next
+     line, "to Ambitious Dream"), so `pattern.search(line)` simply never
+     matched ΓÇö the whole delivery vanished, not just its tail. Fixed with
+     a new shared helper, `_find_delivery_match()`: starting from a line,
+     progressively fold in up to 2 following lines and retry the pattern
+     each time, stopping at the first match. Both commodity functions
+     (and the destination-window-widening logic already in
+     `_extract_commodities`, which now widens from the match's actual
+     last consumed line instead of always `i+1`) were switched onto this
+     helper. `_all_commodity_names()` (the "don't treat a commodity name
+     as a location" guard, and now also the completion vocabulary below)
+     deliberately keeps its own single-line-only matching ΓÇö see #2.
+  2. **Even once the delivery line resolves, its commodity name itself
+     can still be truncated with no reachable fix** ΓÇö "Pressurized" ends
+     up alone (missing "Ice"), because "Ice" isn't on the very next line
+     either; it's scrambled several lines further down, orphaned among
+     unrelated trailing footer/button text ("ABANDON\nSHARE\nTRACK\nIce\n
+     point\nbring\nalong:"). No amount of nearby-line joining reaches an
+     orphan that far away without a real risk of grabbing the wrong
+     word. Instead of chasing it, complete the truncated name against a
+     *fuller mention of the same commodity already confirmed elsewhere in
+     the same contract* ΓÇö "Pressurized Ice" is spelled out intact
+     earlier in this very contract, on lines that never got split
+     ("Deliver 0/6 SCU of Pressurized Ice to Beautiful Glen"). New
+     `_complete_commodity_name()`: given a candidate name and the
+     contract's own `_all_commodity_names()` vocabulary, only replaces it
+     when the candidate is a whole-word prefix of *exactly one* longer
+     known name ΓÇö anything else (already complete, no match, more than
+     one candidate) is left untouched rather than guessed.
+     `_all_commodity_names()` changed its return type from a bare
+     lowercase set to a `{lowercase: original-cased}` dict specifically
+     so the completion has real, correctly-cased text to substitute in ΓÇö
+     its one existing call site (`_build_contract`'s fallback-dropoff
+     guard) needed no change, since membership testing against a dict
+     already checks its keys. Deliberately kept `_all_commodity_names`
+     single-line-only rather than also switching it onto
+     `_find_delivery_match`: the completion vocabulary needs to only ever
+     contain names *already known complete*, or a truncated fragment
+     found via joining could end up "completing" a different truncated
+     fragment instead of a genuine full name.
+  **Verified** via the same standalone backend script (real OCR text, on-
+  disk `locations_cache.json`, no QApplication/network): the Ambitious
+  Dream Station drop-off now shows `[('Pressurized Ice', '5')]` instead
+  of `[]`, and Seraphim's pickup-side Pressurized Ice total correctly
+  updated from 6 to 11 (6 to Beautiful Glen + 5 to Ambitious Dream) as a
+  direct consequence ΓÇö both were wired through the same
+  `_commodity_quantities()`/`_extract_commodities()` pipeline, so fixing
+  the extraction fixed the summed total for free. Regression-checked
+  contracts 1 and 3 from the same session (Everus Harbor/Baijini Point;
+  the MIC-L2 Long Forest Station 4-commodity contract) ΓÇö identical
+  commodity output to pre-fix, no change.
+
+- 2026-09-06: **Fixed a route-cost bug found live: the CURRENT LOCATION
+  picker had resolved to a `terminals`-endpoint kiosk record ("Admin -
+  Seraphim") instead of the `space_stations` record ("Seraphim Station")
+  that every actual pickup/dropoff at that place resolves to ΓÇö same real
+  place, two different UEX records. `terminal_key()` equality (used for
+  "am I already here?") only compares `(endpoint, id)`, so it didn't
+  recognize them as the same stop; the real-distance lookup between them
+  came back empty (UEX doesn't track a kiosk-to-its-own-station
+  distance), falling back to the coarse "+5 estimate" instead of 0 ΓÇö that
+  fake cost made a genuinely farther stop (Ambitious Dream Station, real
+  distance 2) look cheaper, sending the route on an avoidable detour.
+  **Fixed at the shared root, not just this one case**: new
+  `LocationService.same_physical_place()` (`host/locations.py`) also
+  recognizes a `terminals` kiosk as the same stop as the
+  `space_stations`/`outposts`/`cities` record it structurally belongs to
+  (via `id_space_station`/`id_outpost`/`id_city`) ΓÇö a real FK link
+  already present in the data, not a name guess. Wired into
+  `LocationService.distance()` itself (the single shared choke point
+  every module already calls for travel cost), not just Logistics Hub's
+  `_terminal_cost`, so any current or future caller benefits. Confirmed
+  this pattern is dataset-wide, not a one-off: 822 terminal kiosks in the
+  cached location data carry this same structural-parent link, all with
+  their parent record present in the index. Verified it doesn't
+  false-merge two *different* shops sharing the same city (only fires
+  when one side literally *is* the structural parent record). Verified
+  live: cost to the Seraphim pickup dropped from the fake 5 to a correct
+  0, and the route no longer detours to Ambitious Dream Station first.
+
+- 2026-09-06: **Fixed a second commodity-misattribution bug, found the
+  same way (reviewing a fresh live scan against the raw OCR text) as the
+  Ambitious Dream Station one earlier this session.** A contract's Port
+  Tressler drop-off showed 13 SCU Corundum; the raw text clearly says 11
+  ("Deliver 0/11 SCU of Corundum to Port Tressler above microTech:") ΓÇö
+  13 is actually Everus Harbor's own Corundum amount from a different
+  line. Root cause: `_extract_commodities`'s destination-window-widening
+  (added earlier to recover a destination name split across a line
+  break) appended the *entire* next line and accepted a location match
+  found *anywhere* in it. Here, "Deliver 0/13 SCU of Corundum to Everus
+  Harbor above" is immediately followed, by pure two-column OCR
+  interleaving, by an unrelated "Freight elevator at Port Tressler..."
+  listing line ΓÇö so Port Tressler's own extraction pass wrongly claimed
+  this Everus-Harbor-bound delivery (stealing its 13 SCU), which also
+  blocked the real 11 SCU Port Tressler line later in the contract via
+  the dedup-by-commodity-name check. The pickup-side total (which sums
+  across every delivery line regardless of destination) was unaffected ΓÇö
+  only the per-stop breakdown was wrong. Fixed the same way as the
+  earlier `_candidate_phrases` line-wrap bug: a match found only in the
+  widened (next-line) portion is now trusted only if it genuinely
+  straddles the line boundary (part of it already in this line's own
+  destination text) ΓÇö a match sitting entirely inside the next,
+  unrelated line no longer counts. A same-line match (the common case)
+  is unaffected. Verified against all 3 real contracts in this session's
+  debug log: Port Tressler now correctly shows 11 Corundum, and the
+  other two, already-correct contracts (Baijini Point/Seraphim single-
+  stop; the earlier Seraphim/Shallow Fields/Beautiful Glen/Ambitious
+  Dream 4-stop contract) are unchanged.
+
+- 2026-09-06: **Added `tests/test_logistics_hub_parsing.py`, a permanent
+  regression suite of real captured contracts** ΓÇö direct response to
+  this session's pattern of fixing one bug, then finding a second,
+  unrelated bug in the same area on the next scan (role-assignment,
+  then a same-place distance bug, then a commodity-misattribution bug,
+  all in `modules/logistics_hub/module.py`/`host/locations.py`). Every
+  fixture is the exact raw OCR text of a contract already hand-verified
+  against its own text during this session, asserting exact pickups/
+  dropoffs/commodities ΓÇö so a future change can't silently reintroduce
+  an earlier fix's bug without a visible test failure. No framework
+  dependency (plain asserts); run with `python tests/test_logistics_hub_parsing.py`
+  after touching any of `_candidate_phrases`, `_build_contract`,
+  `_extract_commodities`, `_commodity_quantities`, or `host/locations.py`'s
+  resolution/distance logic. 6 fixtures currently, including both bugs
+  found this session (`seraphim_4stop_v1_role_tiebreak_bug`,
+  `mic_l2_long_forest_v2_port_tressler_theft_bug`) ΓÇö deliberately named
+  so a future failure names which historical bug came back. One
+  additional verified-correct contract (Baijini Point -> Seraphim, 103
+  Stims) was NOT added ΓÇö its raw OCR text was never captured before the
+  source debug log entry was wiped, and reconstructing it from memory
+  would have meant a "regression fixture" that isn't actually a real
+  capture; add it for real next time that shape recurs. Grow this file
+  every time a new bug is found and fixed, not just at the end of a
+  session ΓÇö that's what keeps it actually protective.
+
+- 2026-09-06: **Fixed a cross-endpoint id-collision bug in
+  `LocationService.same_physical_place()`, caught by a `/code-review`
+  pass immediately after committing it.** The FK check
+  (`kiosk.get("id_space_station") == structural.get("id")`, etc.) never
+  verified `structural` actually came from the endpoint that FK names ΓÇö
+  so a `terminals` kiosk with `id_space_station=27` would wrongly match
+  ANY other record with bare `id == 27`, regardless of whether it was
+  really a `space_stations` row. Confirmed real with live cache data:
+  terminal 259 ("Admin - Seraphim", `id_space_station=27`) wrongly
+  matched `outposts` id 27 ("HDMS-Woodruff") ΓÇö a completely unrelated
+  real place. This is exactly the cross-endpoint id-collision class of
+  bug `host/locations.py`'s own module docstring exists to warn about
+  (see 2026-09-04) ΓÇö introduced by the same-place fix earlier today
+  despite that. Fixed by also requiring `structural.get("_endpoint") ==
+  endpoint` (the FK's own named endpoint) before accepting the match.
+  Added `kiosk_fk_vs_wrong_endpoint_same_id_not_same_place` to
+  `tests/test_logistics_hub_parsing.py`'s `DISTANCE_FIXTURES` using this
+  exact real pair ΓÇö confirmed it fails on the pre-fix code and passes
+  after. Four other findings from the same review pass were triaged and
+  deliberately not acted on: a `_reprocess_contracts` `route_done`-
+  staleness edge case (real, but already a documented accepted
+  limitation, just slightly worse than described); a
+  `_find_delivery_match` line-fold edge case (real but narrow, needs a
+  more careful redesign than a quick patch); and two pure-performance
+  redundant-recomputation findings (correct but negligible at this
+  project's actual data scale ΓÇö single-contract text, 4-8 stops per
+  route).
+
+- 2026-09-06: **New module: Refinery Finder ΓÇö picked up BACKLOG.md's Tier
+  1.3 "Refinery Yield Calculator," but narrowed scope after live API
+  investigation showed a literal calculator isn't buildable from real
+  data.** Investigated the actual endpoints before designing anything
+  (same discipline as Commodity Prices' `commodities_ranking` dead-end):
+  `refineries_yields` gives a per-terminal/per-commodity yield
+  **modifier** (confirmed live range -9 to +13), not an absolute yield
+  percentage; `refineries_capacities` gives per-terminal max job size;
+  `refineries_methods` gives 9 real methods with 1-3 star yield/cost/
+  speed ratings; `refineries_audits` (real reported jobs, quantity in ->
+  quantity_yield + quantity_inert out) has only **3 rows total** across
+  the whole live dataset ΓÇö checked directly, not assumed. Also checked
+  `commodities` itself for any base yield%/purity field on a raw
+  commodity record ΓÇö none exists; raw/refined pairs link only via
+  `id_parent`. Building "enter N SCU, get exact output" would require
+  inventing the missing composition/base-yield constants ourselves,
+  which this project has consistently refused to do. Landed on: rank
+  real terminals by their actual reported yield modifier for a chosen
+  raw commodity (`commodities` filtered to `is_raw == 1`, 45 real
+  entries), show each terminal's capacity, and a static methods
+  comparison table ΓÇö all real UEX data, nothing invented. Confirmed live
+  that `refineries_yields`' `id_commodity` query param does **not**
+  filter server-side despite looking like a real filter (same "verify,
+  don't assume" lesson as Commodity Prices' `commodity_name` substring
+  surprise) ΓÇö filtered client-side instead. Also confirmed terminal
+  names from these endpoints ("Refinement Center - Nyx Gateway (Pyro)")
+  are already clean, unlike the "Admin -" kiosk-name issue Commodity
+  Prices/Trade Route Optimizer both hit, so no nickname-lookup pass was
+  needed here. A terminal can report more than one yield value for the
+  same commodity over time (confirmed live) ΓÇö kept only each terminal's
+  best reported value before ranking, so the top-5 list isn't dominated
+  by one terminal's repeat submissions. Verified end-to-end against live
+  data via an offscreen-Qt backend script (no visible UI in this
+  environment, same limitation as every other module): 45 raw
+  commodities loaded, correct top-5 ranking for Laranite (Raw) across
+  Nyx/Pyro/Stanton, correct explicit "no yield data reported yet" state
+  for a commodity with zero reports (21 of 45 currently have none),
+  system filter narrowing results correctly, settings persisting to a
+  real `config.json` on disk, and clean discovery through the real
+  `discover_modules()` alongside all 4 existing modules (no duplicate
+  `module_id`, contract validation passed). See
+  docs/modules/refinery-finder.md for the full writeup.
+
+- 2026-09-06: **Fixed the logistics-hub duplicate-stop KNOWN BUG (logged
+  2026-09-05), reusing the same-place infrastructure built earlier this
+  session for the CURRENT LOCATION distance bug.** Root cause was
+  identical in shape: `_build_contract`'s `merge_resolved` deduped
+  candidates by `terminal_key()` alone, so two differently-worded
+  mentions of one real place that resolved to *different* UEX records
+  (a `terminals` kiosk vs. the `space_stations`/`outposts`/`cities`
+  record it belongs to) never merged, producing a duplicate route stop.
+  Fixed by checking already-resolved entries for a
+  `LocationService.same_physical_place()` match before creating a new
+  entry, so both mentions land in the same stop regardless of which
+  specific record either one resolved to.
+  **Found and fixed a second-order regression from this same fix before
+  shipping it**: two existing regression fixtures broke immediately ΓÇö
+  not because the merge was wrong, but because it now *also* correctly
+  merges a real, previously-separate pair in those fixtures' own test
+  data (`Admin - MIC-L2` kiosk + `MIC-L2 Long Forest Station`, one of
+  the 822 real kiosk/station pairs confirmed earlier this session), and
+  picked the uglier kiosk name as the display representative purely
+  because of merge order. Fixed by preferring a structural record's name
+  over a `terminals` kiosk's raw label whenever the two merge, regardless
+  of which one resolved first. Verified: all 6 existing parsing fixtures
+  plus a new 7th (`duplicate_stop_same_place_two_records_synthetic`)
+  pass. That 7th fixture is explicitly labeled **synthetic** in the test
+  file, not a real capture ΓÇö the original real contract that exposed
+  this bug (2026-09-05, "Seraphim The"/"Seraphim Station") predates this
+  session's regression suite and its raw OCR text was never saved.
+  Reproduces the exact same confirmed-live mechanism instead (`Seraphim
+  Station` -> `space_stations` id 27, `Seraphim Trade` -> `terminals` id
+  259 "Admin - Seraphim", both verified via a live `resolve_all()` call
+  before writing the fixture, not guessed) ΓÇö add the real capture for
+  real if this shape ever recurs in a live scan.
+  Also noted per user request: the OCR pipeline itself (capture/
+  preprocessing/easyocr settings) hasn't been reviewed against the
+  user's actual real-world screenshots ΓÇö logged in PROGRESS.md's Next
+  section as a future pass, not started.
+
+- 2026-09-06: **Fixed the logistics-hub single-word-city KNOWN BUG
+  (logged 2026-09-05), using Plan Mode to design around a risk found
+  during investigation before writing any code.** `_candidate_phrases`'s
+  main location regex requires 2+ capitalized words in a row, so a
+  location named with one word (real example: "...Teasa Spaceport in
+  Lorville." ΓÇö "Lorville" is a real city) never became a candidate at
+  all; only the 2-word "Teasa Spaceport" was tried, which is genuinely
+  ambiguous between two different real shops there (New Deal vs.
+  Kel-To, confirmed live) rather than resolving to the city itself.
+  **A naive fix (any single capitalized word) was investigated and
+  rejected before implementation**: confirmed live that bare planet
+  names ΓÇö which appear constantly via "above PLANET" in every real
+  template ("above Hurston:", "above Crusader.") ΓÇö collide with
+  unrelated real shops (`resolve_all("Hurston")` wrongly substring-
+  matches "Hurston Dynamics Showcase - Lorville"; `resolve_all("Crusader")`
+  is ambiguous across 3 unrelated shops). Planets aren't part of
+  `LocationService`'s indexed endpoints at all, so nothing already
+  filters them out ΓÇö a broad single-word pass would have flooded
+  contracts with false planet-name candidates, a worse regression than
+  the bug being fixed. Fixed narrowly instead: the new candidate pass
+  only fires after "in " specifically (never "at "/"above "), since
+  every real template seen introduces a planet via "above", never "in" ΓÇö
+  this targets the reported bug shape while structurally avoiding the
+  planet-collision risk, not just avoiding it by luck.
+  Verified live before writing the fix (not after): `resolve_all
+  ("Lorville")` returns exactly one real match ("Landing Services -
+  Lorville"), confirming the fix target genuinely resolves cleanly once
+  offered. Verified after: the exact reported bug shape now correctly
+  resolves "Lorville" as a real dropoff while "Teasa Spaceport" stays
+  honestly flagged ambiguous (a real ambiguity this fix was never meant
+  to resolve, not a lingering bug) ΓÇö confirmed via `_build_contract`
+  directly, and via a live re-check that "Hurston"/"Crusader"/"ArcCorp"
+  still correctly do NOT become candidates from an "above PLANET" line
+  after the fix. Added `single_word_city_lorville_synthetic` to
+  `tests/test_logistics_hub_parsing.py` (labeled synthetic ΓÇö the
+  original 2026-09-05 real capture was never saved, same as the
+  duplicate-stop fixture above) and confirmed it fails on the pre-fix
+  code and passes after. All 13 regression checks pass, no existing
+  fixture regressed.
+
+- 2026-09-06: **OCR pipeline optimization #1: column-aware reading order,
+  first of a ranked list the user asked to implement incrementally (one
+  change, confirm, then proceed to the next).** Investigated the full
+  `_grab_region`/`_ocr` pipeline (`modules/logistics_hub/module.py`) ΓÇö it
+  was minimal: grayscale + autocontrast, then
+  `self._reader.readtext(np.array(gray), detail=0)`, joined directly into
+  `raw_text`. `detail=0` discards each result's bounding box, so text
+  comes back in whatever order EasyOCR's own internal sort produces ΓÇö
+  this doesn't know about or respect the in-game contract panel's real
+  two-column layout (mission narrative text next to a separate PICK UP/
+  DROP OFF list). Recognized this as the root cause behind the large
+  majority of this session's parsing bug fixes (role-assignment,
+  commodity-misattribution, orphaned words) ΓÇö every one of them was
+  really a downstream symptom of reading both columns interleaved by
+  vertical position, not a genuine parsing-logic flaw on its own.
+  Fixed at the source instead of continuing to patch downstream text
+  heuristics: switched to `readtext(..., detail=1)` (keeps bounding
+  boxes) and added `_order_ocr_boxes()` ΓÇö sorts all detected text boxes
+  by horizontal position, finds the single largest gap, and splits into
+  two columns only if that gap is wide enough (relative to the capture's
+  own width, not a fixed pixel count, since capture regions vary a lot
+  in size) to plausibly be a real column boundary rather than normal
+  text spacing; each column is then sorted top-to-bottom and the left
+  column is read in full before the right one. A capture with no real
+  column split (common for a single-pickup/single-dropoff contract, or
+  any non-two-column capture) finds no wide-enough gap and degrades to
+  one column sorted top-to-bottom ΓÇö never worse than the previous
+  behavior.
+  **Verified the ordering algorithm directly** with synthetic bounding-
+  box data mimicking a real two-column layout (narrative text
+  interleaved by vertical position with a PICK UP LOCATIONS list) ΓÇö
+  confirmed it correctly reads the left column in full before the right
+  one instead of interleaving them, and confirmed a single-column
+  capture (no wide gap) stays in plain top-to-bottom order, unchanged.
+  Ran the full existing regression suite (13/13) ΓÇö unaffected, since
+  those fixtures feed hand-written `raw_text` directly to
+  `_build_contract` and never exercise `_ocr()` itself.
+  **Known limitation, stated plainly**: this only verifies the
+  reordering *algorithm* in isolation ΓÇö there is no way to verify the
+  full real end-to-end improvement (actual game screenshot -> actual
+  EasyOCR bounding boxes -> actual reordering) without a live capture
+  and a running EasyOCR pass, which needs the user's own screen and
+  game session. A real scan is the next real test of this change.
+  Per user direction, stopping here for confirmation before moving to
+  the next ranked optimization (upscaling small in-game text before
+  OCR).
+
+- 2026-09-06: **OCR pipeline optimization #2: 2x upscale before OCR.**
+  User confirmed proceeding through the rest of the ranked list without
+  a checkpoint after each (will test the whole batch together once
+  done). In-game UI text captured at native resolution is often small ΓÇö
+  a single contract line can be well under 20px tall ΓÇö and OCR engines
+  read text substantially more reliably above a certain pixel-height
+  floor. Added a 2x LANCZOS resize of the grayscale capture before
+  `readtext()` runs (`modules/logistics_hub/module.py`'s `_ocr()`) ΓÇö
+  this happens *before* EasyOCR's own detection pass, not the same
+  thing as its internal `mag_ratio` parameter. LANCZOS specifically
+  (not the default nearest-neighbor) to keep character edges reasonably
+  clean at 2x instead of introducing new blockiness. Also fixed a
+  correctness detail this surfaced: `_order_ocr_boxes()`'s column-gap
+  threshold is relative to image width, so it now receives the
+  *upscaled* width (`gray.width`), not the original pre-upscale capture
+  width (`pil_rgb.width`) ΓÇö bounding boxes from EasyOCR are in the
+  upscaled image's coordinate space.
+  **Verified with a genuinely small synthetic test case** (9pt text,
+  16px-tall image, PIL-rendered to sidestep an unrelated headless-Qt
+  font-rendering issue found while testing ΓÇö offscreen `QPainter` text
+  rendered as empty glyph boxes in this environment, not a real bug,
+  just not usable for this test): without upscaling, EasyOCR fragmented
+  "Deliver 0/37 SCU of Quartz to Port Tressler" into 3 disjoint,
+  unusable pieces ("Delver 037 SCU _", "Ontr", "Pontesh"); with 2x
+  upscaling, it stayed as one coherent line (still character-garbled ΓÇö
+  "Delver 037 SCU 01 Cuarz *0 Pon Tresskr" ΓÇö but the structure/word-
+  boundaries survived, which is what the downstream line-based parsing
+  in `_candidate_phrases` actually depends on). This is real evidence
+  of the intended benefit, not just "didn't break anything" ΓÇö a larger,
+  easier test case had shown no visible difference either way, which
+  would have been a false reassurance if used as the only test. Full
+  regression suite (13/13) unaffected.
+
+- 2026-09-06: **OCR pipeline optimization #3: investigated, NOT
+  implemented ΓÇö thresholding/sharpening didn't hold up under real
+  testing.** The original ranked idea was "preprocessing tuned to this
+  UI specifically (inverted threshold for light-text-on-dark)." Tested
+  it properly before implementing, per the user's own explicit push
+  mid-investigation ("rather than guessing or over testing, how are the
+  results compared to the old model?") ΓÇö a direct comparison against
+  the true pre-session baseline (no upscale, plain grayscale +
+  autocontrast), not just candidate-vs-candidate.
+  **Otsu binarization** (auto-thresholding to pure black/white, computed
+  per-image from its own histogram ΓÇö implemented as a small pure-Python
+  helper, no new dependency): tested against 4 synthetic cases. Result:
+  a wash. On the hardest case it fixed two details ("0/37" keeping its
+  slash, "of" instead of "01") but introduced two new errors elsewhere
+  in the same line ("Cvarz"/"Quitz" both wrong differently). No
+  consistent win. This matches a known general pattern: EasyOCR (a
+  modern neural OCR engine trained on natural anti-aliased text) doesn't
+  reliably benefit from hard thresholding the way a classic engine like
+  Tesseract does ΓÇö unlike Tesseract, forcing pure black/white can
+  introduce jagged edges unlike anything in its training distribution.
+  **Mild UnsharpMask** (radius=2, percent=150) tested next as a lower-
+  risk alternative: meaningfully helped the hardest case (correctly
+  recovered "0/37", "of", and "Tressler" in full ΓÇö the single best
+  result across every technique tried), had zero effect on a second
+  case, and introduced new errors on a third ("Calec"/"Corrcum"/"Lorg").
+  **Direct comparison against the true original pipeline** (the
+  question that actually mattered) showed the already-shipped 2x
+  upscale (#2) is the real, consistent win: on the hardest case, the
+  original pipeline fragmented "Deliver 0/37 SCU of Quartz to Port
+  Tressler" into 3 disjoint, unusable pieces ("Dewver 037 SCU", "Ontz",
+  "PotTes" ΓÇö half the real content gone); 2x upscale alone kept it as
+  one coherent line. Same pattern on a second case (original split
+  "Freight elevator at..." into two lines, losing "at" entirely; 2x
+  upscale kept it as one line). Neither Otsu nor sharpening improved on
+  that already-shipped baseline consistently enough to justify adding
+  more preprocessing complexity/risk for an unproven, case-by-case
+  benefit. Decision: skip this item as originally scoped rather than
+  ship something the data doesn't actually support ΓÇö consistent with
+  this project's standing rule to verify before implementing, not just
+  before calling something done.
+
+- 2026-09-06: **OCR pipeline optimization #4 (last of the ranked list):
+  EasyOCR character allowlist.** New `OCR_ALLOWLIST` constant
+  (`modules/logistics_hub/module.py`) ΓÇö letters, digits, and every
+  punctuation mark observed across this session's real captures
+  (periods, commas, colons, semicolons, apostrophes/quotes, hyphens,
+  slashes for "0/37", parens, brackets for "[BP]*", asterisks,
+  underscores ΓÇö a documented real OCR artifact standing in for a period
+  ΓÇö plus basic sentence punctuation), passed as `readtext(...,
+  allowlist=OCR_ALLOWLIST)`.
+  A/B tested against 4 synthetic cases (including one with brackets,
+  since `[BP]*` is a real recurring pattern in captures): **identical
+  output with and without the allowlist in every case** ΓÇö a genuinely
+  inconclusive result, not a validated win, and said so plainly rather
+  than overselling it. The reason is structural, not a flaw in the
+  change: synthetic PIL-rendered text can't reproduce the actual failure
+  mode an allowlist targets ΓÇö genuine OCR hallucination into an
+  impossible character (a reward-icon glyph misread as a stray currency
+  symbol, a UI decoration read as a letter) ΓÇö because there's no real
+  icon/compression/anti-aliasing noise in a clean synthetic render for
+  the model to hallucinate from. Kept the change anyway on theoretical
+  grounds specific to this exact mechanism: restricting a classifier's
+  candidate output set can only remove options that were already wrong,
+  never introduce a new error, *provided the list is genuinely complete*
+  ΓÇö the only real risk is an incomplete list suppressing a legitimate
+  character, which is why the list was built generously (every
+  punctuation mark actually observed this session) rather than narrowly.
+  Full regression suite (13/13) unaffected; confirmed `_ocr()` still
+  runs end-to-end without error with the new parameter wired in.
+  **This is the last of the 4 ranked OCR optimizations ΓÇö the user will
+  test the full batch together against real scans next**, which is the
+  only way to actually confirm #1 (column ordering) and #4 (allowlist)
+  specifically, since neither could be fully validated against synthetic
+  test data in this environment.
+
+- 2026-09-07: **First live scans after the OCR pipeline optimization
+  batch ΓÇö both parsed correctly overall, but one exposed a real
+  commodity-extraction gap, fixed same day.** Two real contracts
+  scanned: a 3-commodity Everus Harbor -> Faithful Dream Station haul
+  (Quantum Fuel/Hydrogen Fuel/Ship Ammunition, all correct ΓÇö added as
+  `real_faithful_dream_station_three_commodities`, the first fixture in
+  this suite built from a genuinely clean real scan rather than a bug
+  report) and an Everus Harbor -> Lorville haul that reproduced the
+  single-word-city fix live for real: "Lorville" correctly resolved as
+  a real dropoff while "Teasa Spaceport" correctly stayed flagged as a
+  genuine ambiguity (New Deal vs. Kel-To) ΓÇö exactly as predicted when
+  that fix shipped, first real confirmation outside synthetic testing.
+  **But its commodities came back empty**, a gap the synthetic fixture
+  for that same bug never caught. Root cause: the real contract phrases
+  the destination as "Deliver...to Teasa Spaceport" / "in Lorville:" ΓÇö
+  split across the line break ΓÇö and the straddle check added for the
+  Port Tressler theft bug (2026-09-06) can *never* pass for a single-
+  word-city candidate by construction: a destination introduced via
+  "in CITY" always puts the entire city name on the *next* line, none
+  of it on the current one, so it structurally can't straddle the
+  boundary the way a genuinely truncated name (the case that check was
+  built for) does. This is a real, mechanical incompatibility between
+  the single-word-city fix and the Port-Tressler-theft fix, not a
+  coincidental edge case ΓÇö it would have failed for every single-word-
+  city dropoff's commodities, every time. Fixed by adding a narrow
+  carve-out: if the next line itself opens with "in " immediately
+  followed by the same word as the candidate's own loc_key, trust the
+  widened match even without straddling ΓÇö that pattern is a direct
+  grammatical continuation of the same destination ("X in CITY"), never
+  the coincidentally-adjacent unrelated mention (a different terminal's
+  own freight-elevator listing) the straddle check exists to reject.
+  **Verified against the real captured text**: Lorville's commodities
+  now correctly show 27 SCU Pressurized Ice + 278 SCU Processed Food,
+  matching the pickup total exactly. Confirmed the fix is actually
+  necessary (reverted it, watched the real capture fail again, restored
+  it). Confirmed the Port Tressler fixture still passes ΓÇö this carve-out
+  doesn't reopen that bug, since it only fires for the specific "in "-
+  opening-a-line pattern, never a "Freight elevator at..." one. Added
+  both real captures as regression fixtures
+  (`real_lorville_in_continuation_commodity_gap`,
+  `real_faithful_dream_station_three_commodities`) ΓÇö the first fixtures
+  in this suite sourced from live post-fix scans rather than reconstructed
+  from memory. All 15 regression checks pass.
+
+- 2026-09-07: **Card ROUTE section restored to a full inline per-stop
+  list** (was a single "N stops planned, click TRACKER" placeholder since
+  2026-09-05 ΓÇö see that entry above). User reported the card "doesn't
+  seem to be displaying correctly" ΓÇö everything past the CONTRACTS list
+  needed the Tracker popout to see any detail, when the card is supposed
+  to hold the majority of the information. Root cause of the original
+  2026-09-05 revert was genuinely never found (no way to run the real Qt
+  UI in that pass, per its own writeup) ΓÇö this time it was: launched the
+  app from source with two real fixture-derived contracts seeded into
+  `config.json`, screenshotted the running card via `PrintWindow`, and
+  the full 4-stop route list rendered correctly the very first try. The
+  2026-09-05 "invisible rows" symptom did not reproduce ΓÇö most likely
+  cause, never fully isolated since it wasn't reproduced either: the
+  scroll-position-reset attempt from that same day, still present in the
+  code, may have been enough on its own even though it was judged
+  ineffective at the time on a different symptom. `_render_results()`
+  now calls `_populate_route_rows(self._results_layout, contracts)`
+  directly instead of the placeholder branch; the Tracker popout is kept
+  as an optional always-on-top detached window alongside it (both stay in
+  sync via the same call), not removed.
+- 2026-09-07: **Manual cargo capacity added.** User hit a real case: two
+  queued contracts needed 612 SCU combined but their ship only holds 512
+  ΓÇö nothing in the app would have caught that before undocking. Considered
+  a UEX-vehicle-data ship picker vs. manual entry; user explicitly
+  preferred manual ("I trust it more than the ship picker") since a
+  picker can't reflect a customized cargo-grid loadout. New `CARGO
+  CAPACITY` field on the card (`cargo_capacity_scu` in settings,
+  `QIntValidator`, saved on `editingFinished`). The existing summary line
+  (`_peak_cargo_scu()`, already computed) now compares against it and
+  turns amber with `EXCEEDS N SCU CAPACITY BY <over-amount>` when the
+  planned route's peak cargo would overflow the hold. Verified live: set
+  to 512 via a real UI Automation click + Tab (not just
+  `ValuePattern.SetValue`, which set the field's text but never fired
+  `editingFinished` since Qt's own focus-loss signal never ran ΓÇö the
+  first attempt silently didn't trigger the warning for exactly that
+  reason), summary correctly read "612 SCU peak cargo ΓÜá EXCEEDS 512 SCU
+  CAPACITY BY 100".
+- 2026-09-07: **Freight Manifest added** ΓÇö a running list of every
+  commodity being hauled across all active contracts, new card section
+  between CONTRACTS and ROUTE. Per user direction: the game makes it very
+  hard to tell two pickups of the same commodity apart once they're both
+  in the hold, so accidentally taking two contracts hauling the same
+  freight is a real trap worth flagging on sight, not discovered mid-run.
+  `_freight_manifest()` sums each contract's *pickup*-side commodity
+  totals only (a pickup entry already holds that contract's contract-wide
+  total per the 2026-09-05 quantity-summing fix; drop-offs would double-
+  count the same freight split across destinations) and tracks how many
+  distinct contracts each commodity name appears in. Any commodity in 2+
+  contracts renders as an amber warning row (reusing the existing
+  ambiguous-location row style) instead of a plain one. Verified offline
+  with a synthetic 3-contract case (Titanium split 50/30 across two
+  contracts correctly summed to 80 SCU and flagged; Gold in one contract
+  correctly left unflagged) and confirmed rendering live in the running
+  app alongside the two real seeded fixture contracts (no overlap in that
+  particular pair, so no flag fired there ΓÇö the flagging logic itself was
+  checked separately, above). New regression check
+  `freight_manifest_flags_same_commodity_across_contracts` added
+  (16 total checks now).
+- 2026-09-07: The debug log (`logistics_hub_debug.jsonl`) was deleted at
+  user request after a game crash lost their in-progress contracts ΓÇö
+  it's always-on and regenerates fresh on the next scan, nothing lost
+  from deleting it (it's untracked, not a source file).
+
+- 2026-09-07: **Scan ΓåÆ review popup (Part 1 of the confirm-gate/grading
+  plan).** SCAN CONTRACT used to add straight to the queue/route, pausing
+  only for a duplicate. Per user direction, every scan now pauses for
+  review first. `_DuplicatePopup` generalized into `_ReviewPopup`
+  (pickupsΓåÆdropoffs summary, reward, SCU, an inline duplicate warning when
+  relevant, ACCEPT/REJECT) ΓÇö one popup path instead of two.
+  `_pending_duplicate` renamed `_pending_scan`; `refresh()` always shows
+  the popup after a successful `_build_contract()` instead of ever calling
+  `_add_contract()` directly. Grading (letter grade + reason) is a
+  separate, later part of the same plan ΓÇö this popup already has a slot
+  for it once the Hauler Profile + compatibility DB land.
+
+  **Caught two real bugs building this, both fixed before shipping:**
+  1. `_show_review_popup()` formatted `reward` with `f"{reward:,}"` ΓÇö
+     `reward` is the raw OCR-extracted *string* (e.g. `"87,250"`, already
+     comma-formatted), not an int, so this raised `ValueError` on every
+     real popup. The first version of the regression checks didn't catch
+     it because they called `_on_review_accept`/`_on_review_reject`
+     directly, never actually building the popup widget ΓÇö only a live
+     launch surfaced it. Fixed (drop the `:,` format spec, same pattern
+     `_contract_row` already uses) and a new regression check
+     (`review_popup_renders_without_crashing`) added that actually calls
+     `_show_review_popup()`, specifically so a future change can't
+     reintroduce a popup-construction crash behind a passing test suite.
+  2. The new regression checks (`review_popup_reject_does_not_add`/
+     `review_popup_accept_adds_pending_contract`) used the default
+     `Config()`, which points at the real `config.json` ΓÇö since
+     `_on_review_accept()` saves to disk, running the test suite silently
+     overwrote the user's actual saved contracts with fixture data. Caught
+     immediately by re-checking `config.json` after a test run. Fixed by
+     giving `run_ui_state_checks()` its own isolated temp-file `Config`
+     instead (deleted at the end of the function) ΓÇö the real config.json
+     is never touched by this test file again. User's real contracts
+     (there weren't any at the time ΓÇö already empty from earlier cleanup)
+     and `cargo_capacity_scu: 512` were verified intact by hash-comparing
+     `config.json` before/after a full test run.
+
+  Verified live end-to-end: launched the app from source, clicked SCAN
+  CONTRACT via real UI Automation `InvokePattern.Invoke()` (not synthetic
+  state), confirmed the `_ReviewPopup` window actually exists as its own
+  top-level widget (not visible in a `PrintWindow` capture of the main
+  window ΓÇö it's a separate `Qt.Popup` top-level, captured separately),
+  screenshotted it directly showing real theme/fonts with the ACCEPT/
+  REJECT buttons, clicked REJECT via `InvokePattern`, and confirmed
+  `config.json`'s contract count stayed at 0 afterward.
+
+- 2026-09-07: **Hauler Profile added (Part 2 of the confirm-gate/grading
+  plan).** New `PROFILE` button next to `SET SCAN AREA`, opens
+  `_HaulerProfilePopup` (same `Qt.Popup` shell as `_ReviewPopup`): five
+  fields ΓÇö Ship (free text, no reliable static ship-data source exists to
+  validate against, and this doubles as the compatibility-DB key in Part
+  3), Goal, Risk Tolerance, Session Time, Region ΓÇö the last four are fixed
+  `QComboBox` choices (`PROFILE_GOAL_CHOICES` etc.) rather than free text,
+  so the later grading logic has a closed set of values to branch on.
+  Saved to `self.settings["hauler_profile"]` on SAVE, set once and edited
+  whenever, never re-asked per scan. New regression check
+  `profile_popup_saves_all_five_fields` ΓÇö actually constructs and saves
+  the real popup (not just the save handler), same lesson as the Part 1
+  crash: a check that skips widget construction can't catch a
+  construction bug.
+
+  Verified live: launched the app, clicked PROFILE via UI Automation,
+  screenshotted the popup directly (all 5 fields render with real
+  theme/fonts), set the ship field via `ValuePattern.SetValue` (worked,
+  persisted "Hull C" to `config.json` correctly) and clicked SAVE.
+  The four `QComboBox` selections did **not** visibly change via UI
+  Automation's `ExpandCollapsePattern`/`SelectionItemPattern` ΓÇö this
+  matches a pre-existing, already-documented tooling limitation in this
+  environment (Trade Route Optimizer's terminal/system combos hit the
+  identical issue in an earlier session: "3 different automation methods
+  all failed identically"), not a new bug. The actual save mechanism
+  (`currentText()` on each combo ΓåÆ `self.settings["hauler_profile"]`) is
+  proven correct by the regression check above, which drives the combos
+  directly via `setCurrentText()` (the real underlying Qt API, not a
+  simulated click) and confirms all 5 fields round-trip correctly.
+
+- 2026-09-07: **Compatibility feedback DB + contract grading shipped
+  (Part 3, final part of the confirm-gate/grading plan).** No reliable
+  static source exists for which real locations physically support which
+  ships (established earlier this session ΓÇö an AI-generated compatibility
+  table was checked against real sources and found partly fabricated), so
+  per user direction this doesn't guess: `self.settings["ship_location_
+  ratings"]` is a plain `{"<ship>::<endpoint>:<id>": "good"|"bad"}` dict,
+  starts empty, and grows only from the user's own GOOD/BAD answers shown
+  inline on `_ReviewPopup` for any pickup/dropoff it hasn't seen yet for
+  the profile's current ship ΓÇö never re-asked once answered.
+
+  `_grade_contract()` (new): reward/SCU, marginal route cost (two
+  `_plan_route()` calls ΓÇö with and without the candidate ΓÇö reusing the
+  existing 2-opt planner rather than new distance math), and profile-
+  driven nudges (cross-system vs. Region preference, Pyro vs. Risk
+  Tolerance) feed a 0ΓÇô100 point score mapped to a letter grade
+  (`GRADE_THRESHOLDS`). Two things cap the grade at `GRADE_CAP_ON_WARNING`
+  regardless of how well everything else scores: a known-BAD ship/
+  location match, or the candidate's commodity already being hauled in
+  another queued contract (via the existing `_freight_manifest()`,
+  reused). Per explicit user direction, a cap **never blocks ACCEPT** ΓÇö
+  it only warns, visibly. No Hauler Profile set yet ΓåÆ `(None, "Set your
+  PROFILE for a grade.", False)`, never a guessed grade.
+
+  **Caught two real bugs building this, both found only by actually
+  looking at a live screenshot with real fonts loaded ΓÇö logic-only
+  regression checks couldn't have caught either:**
+  1. `_show_profile_popup()` used `self.settings.get("hauler_profile",
+     {})` ΓÇö that default only applies when the key is *absent*, not when
+     it's present with value `None` (which config.json legitimately had,
+     from an earlier cleanup step this same session). Crashed on first
+     live click. Fixed with the same `or {}` pattern `_grade_contract()`
+     already used for the same field; new regression case
+     `profile_popup_handles_none_profile` covers exactly this.
+  2. The capped grade rendered in the *same cyan color as an uncapped
+     one* whenever the cap still landed in a normal-looking letter band
+     (e.g. B, since `GRADE_CAP_ON_WARNING` sits inside the B range) ΓÇö
+     defeating the entire point of the feature: a hard-no needs to be
+     visually unmissable, not just mentioned in small print. Fixed by
+     having `_grade_contract()` return `capped` as its own boolean
+     (`(grade, reason, capped)`, not inferred from the letter), and
+     `_ReviewPopup` colors the grade line amber whenever `capped` is
+     true, regardless of letter. Also found in the same pass: the `ΓÜá`
+     glyph embedded in the BAD-location reason string rendered as a tofu
+     box ΓÇö it's on a label styled with the Orbitron display font, which
+     doesn't cover that character (the mono font used elsewhere in the
+     app does). Dropped the glyph from the text; the amber color (fixed
+     above) now carries the warning instead.
+
+  Verified live end-to-end, offscreen with the app's real bundled fonts
+  loaded (`host/main.py`'s `load_fonts()` pattern, replicated in an
+  isolated-temp-config script ΓÇö a full windowed launch can't produce a
+  real parseable contract without an actual game screen behind the
+  capture region, confirmed by trying it first and getting "No usable
+  text could be OCR'd"): set a Hull C profile, scanned a real fixture
+  contract, confirmed the S-grade + two unrated-location prompts render
+  correctly with real fonts; rated one location BAD for Hull C, rescanned
+  the same contract, confirmed the grade dropped from S to B, rendered
+  amber, named the specific bad location in the reason text, and only
+  asked about the *other*, still-unrated location ΓÇö not the one already
+  answered. This is the literal Hull C-at-an-incompatible-station scenario
+  from the start of this session's conversation, working end-to-end.
+  25/25 regression checks pass; real `config.json` confirmed untouched
+  by any of this (hash-verified, same discipline as Parts 1ΓÇô2).
+
+- 2026-09-07: **Debug log extended to cover the confirm-gate/grading
+  feature** ΓÇö per user request, so a live-testing report is actually
+  diagnosable from the log instead of relying on a description after the
+  fact. The `pending_review` entry `_log_scan_debug()` writes at scan time
+  now also carries `grade`/`grade_reason`/`grade_capped`. A new
+  `_log_review_outcome()` appends a second entry (`review_accepted` or
+  `review_rejected`, keyed by `contract_id`) when ACCEPT/REJECT is
+  actually clicked ΓÇö the scan-time entry can't know the outcome yet, since
+  that happens later, asynchronously, once the user has actually looked at
+  the popup. That second entry also carries which locations were shown
+  for a compatibility rating (`compatibility_prompts_shown`) and which
+  ones actually got rated during that popup (`compatibility_ratings_given`,
+  `[{"location": ..., "rating": "good"|"bad"}, ...]`) ΓÇö so "why did it ask
+  me about X again" or "did my BAD rating actually save" are answerable
+  from the log alone.
+
+  Grade is computed once in `refresh()` (not recomputed separately for
+  the popup vs. the log) and threaded through as a `(grade, reason,
+  capped)` tuple, so the popup and the log entry can never disagree about
+  what was actually shown ΓÇö `_show_review_popup()`'s signature changed to
+  take this precomputed tuple instead of calling `_grade_contract()`
+  itself.
+
+  **Found a real test-hygiene bug while wiring this up, same category as
+  the config.json one from Parts 1ΓÇô2 but for the debug log instead**:
+  `_append_debug_log()` writes to `paths.app_root() / DEBUG_LOG_FILENAME`
+  unconditionally ΓÇö it doesn't go through `Config` at all, so the
+  isolated temp-`Config` pattern `run_ui_state_checks()` already used
+  didn't isolate it. Running the test suite was silently appending fake
+  `review_accepted`/`review_rejected` entries into the real
+  `logistics_hub_debug.jsonl` on every run. Lower stakes than the
+  config.json case (this file is explicitly disposable ΓÇö the user has
+  already asked to delete it once this session with no concern raised),
+  but still not clean. Fixed by monkeypatching
+  `mod._append_debug_log = debug_log_entries.append` in
+  `run_ui_state_checks()` ΓÇö an in-memory list instead of the real file ΓÇö
+  and adding `review_outcome_logs_grade_and_ratings`, a new regression
+  check that reads back from that in-memory list to confirm the logged
+  fields are actually correct, not just that nothing crashed.
+
+  Verified live: ran the real production code path end-to-end offscreen
+  (real fonts, real fixture contract, a real prior BAD rating for Hull C
+  at one location) with the actual debug log enabled, inspected the two
+  resulting real JSONL entries by hand, confirmed both carry the correct
+  grade/reason/capped and the second correctly lists the still-unrated
+  location with an empty ratings-given list (nothing was rated during
+  that particular run) ΓÇö then deleted the disposable log file. 26/26
+  regression checks pass; `config.json` confirmed untouched throughout
+  (hash-verified before/after).
+
+- 2026-09-07: **Two real bugs found from the user's first live testing
+  session, both fixed.** Debug log review (see the two entries above,
+  timestamped 15:13ΓÇô15:17) confirmed compatibility ratings *were* saving
+  correctly, but the user reported: (1) clicking Γ£à/Γ¥î didn't visibly
+  confirm anything happened, and (2) leaving the review popup open and
+  clicking elsewhere (e.g. this chat) made it silently vanish ΓÇö explaining
+  the 4 scans before one was actually accepted, since each earlier popup
+  had closed unseen.
+  1. **Root cause of (2): `_ReviewPopup`/`_HaulerProfilePopup` used the
+     `Qt.Popup` window flag**, which auto-closes on any outside click or
+     focus loss ΓÇö fine for the old duplicate-confirm popup (answered
+     immediately) but wrong for a decision that might need the user to
+     look elsewhere first. Switched both to a real `Qt.Window |
+     FramelessWindowHint | WindowStaysOnTopHint` window ΓÇö only ACCEPT/
+     REJECT (or SAVE) closes it now.
+  2. **That fix introduced a new bug, caught by the regression suite
+     before it shipped**: a plain `Qt.Window` with no parent has no
+     implicit reference keeping it alive (`Qt.Popup` apparently did, via
+     Qt's internal active-popup tracking) ΓÇö the popup was garbage-
+     collected by Python immediately after the showing method returned,
+     before a user could ever see it.
+     `profile_popup_handles_none_profile`/`profile_popup_saves_all_five_
+     fields` failed immediately after the window-flag change, exactly as
+     designed to catch this. Fixed by holding an explicit
+     `self._review_popup`/`self._profile_popup` reference, cleared in
+     each outcome handler (ACCEPT/REJECT/SAVE).
+  3. **Fix for (1): the chosen Γ£à/Γ¥î button now gets a colored 2px border
+     (cyan for good, amber for bad) instead of just greying out
+     identically to the other one**, which gave no visual indication
+     either button had registered.
+
+  Verified: 26/26 regression checks still pass after both fixes; live-
+  verified offscreen (real fonts) that the popup survives a simulated
+  Python GC pass (the exact failure mode of bug 2) and that the clicked
+  button renders visibly distinct from its sibling (screenshot-confirmed).
+  Real `config.json`/debug log both confirmed unaffected by any of this
+  testing.
+
+- 2026-09-07: **Grading switched from a 5-letter scale to a raw 0-100%
+  score, and cargo-capacity overflow now actually affects it.** User
+  caught a real gap from live testing: a contract needing ~4x their real
+  cargo capacity (612 SCU combined vs. a 512 SCU ship) still scored a
+  "B" ΓÇö `_grade_contract()` had never once checked `cargo_capacity_scu`/
+  `_peak_cargo_scu()` at all. Root cause: capacity checking already
+  existed as its own feature (the card's summary-line warning, built in
+  an earlier part of this session) and was never wired into grading when
+  grading was added later ΓÇö an oversight, not a scoring judgment call.
+
+  Two changes:
+  1. **Percentage instead of letter** ΓÇö per user preference, stated
+     directly: "I would prefer a % based grade scale from 0-100%." The
+     internal 0-100 point score already existed under the hood
+     (`GRADE_THRESHOLDS` just bucketed it into 5 bands); now shown
+     directly as `N%` instead. `GRADE_THRESHOLDS` removed ΓÇö nothing
+     buckets the score into letters anymore.
+  2. **Combined peak cargo vs. capacity now checked**, and treated as its
+     own, *stricter* hard-cap than the existing duplicate-freight/bad-
+     location cap (`GRADE_CAP_ON_WARNING`, 55): new `CAPACITY_OVERFLOW_CAP`
+     (20). Rationale, per discussion with the user: duplicate freight and
+     an unconfirmed location are both things you *can* still physically
+     complete (annoying or risky, not impossible); exceeding your actual
+     cargo hold means you cannot complete the run as queued at all ΓÇö a
+     harder constraint deserves a harder ceiling, not the same one.
+     Checks `existing_contracts + [candidate]` together (the realistic
+     "can I run this given what's already queued" question, not the
+     candidate in isolation ΓÇö confirmed this framing with the user first),
+     reusing the same candidate route already being planned for the
+     detour-cost check rather than planning it twice. `_peak_cargo_scu()`
+     gained an optional `route_order` param (defaults to `self._route_order`,
+     the existing card-summary behavior) so it can walk a hypothetical
+     not-yet-accepted route too. Multiple simultaneous triggers now take
+     the *strictest* applicable cap (`cap_ceiling = min(...)` across all
+     of them), not just the first one found.
+
+  Verified: new regression check `grade_capped_harder_on_cargo_capacity_
+  overflow` (27 total checks now, all pass). Live-verified against the
+  literal scenario that surfaced this ΓÇö two real fixture contracts
+  combining to 612 SCU against a 512 SCU capacity ΓÇö scored 20% (capped,
+  amber), reason correctly leads with "612 SCU peak exceeds 512 SCU
+  capacity by 100," screenshot-confirmed in the real popup. `config.json`
+  confirmed untouched (hash-verified) throughout.
+
+- 2026-09-07: **CARGO CAPACITY moved from its own row on the card into the
+  Hauler Profile popup, directly beneath SHIP** ΓÇö per user request. A hold
+  size only means anything in the context of a specific ship, so it reads
+  better living next to the field it actually describes than as an
+  unrelated standalone row on the card face. Same settings key
+  (`cargo_capacity_scu`, top-level, not nested under `hauler_profile`) ΓÇö
+  only the UI location changed, not the data model, so grading and the
+  card's existing summary-line warning both keep working unmodified.
+  `_HaulerProfilePopup` now takes `capacity` as its own constructor arg
+  (alongside `profile`) and `_save()`/`on_save` pass it through as a
+  second value; `_on_profile_saved()` writes both settings keys and
+  re-renders so a changed capacity shows up in the card summary
+  immediately. Card's old standalone `CARGO CAPACITY` row and
+  `_on_capacity_changed()` removed entirely. Regression check
+  `profile_popup_saves_all_five_fields` extended to also set/verify the
+  capacity field through the real popup widget. 27/27 checks pass;
+  verified live (offscreen, real fonts) that the field renders correctly
+  positioned and `config.json` stayed untouched (hash-verified).
+
+- 2026-09-07: **aUEC/SCU grading thresholds made user-editable ΓÇö the
+  hardcoded 500/200/80 numbers were checked against this project's own 10
+  real captured contract fixtures and found miscalibrated low** (real
+  range observed: ~520-4,300 aUEC/SCU; every real fixture scored "good"
+  or better under the old scale, the "ok"/"low" bands never fired in
+  practice). Rather than guess a second, equally unverified replacement
+  scale, per user direction this is now the user's own call: a new
+  **GRADING SCALE** table in the Hauler Profile popup (three fields ΓÇö
+  GREAT ΓëÑ / GOOD ΓëÑ / OK ΓëÑ, defaulting to the original 500/200/80 via
+  `DEFAULT_GRADING_THRESHOLDS`), saved to
+  `self.settings["grading_thresholds"]` through the same SAVE button as
+  the rest of the profile.
+
+  **Applies without a restart, by construction, not by any special
+  wiring**: `_grade_contract()` already reads every setting fresh on each
+  call (same as `hauler_profile`/`cargo_capacity_scu`) rather than caching
+  anything ΓÇö saving a new threshold just changes what the *next* scan's
+  `self.settings.get("grading_thresholds")` read returns. New regression
+  check `grading_thresholds_apply_without_restart` calls `_grade_contract()`
+  twice on the same contract in the same module instance, before and
+  after mutating the setting, and confirms the aUEC/SCU label actually
+  changes ("great" ΓåÆ "low" once the thresholds are pushed far past the
+  contract's real number) with no reload of any kind in between.
+
+  Verified live: opened the real popup, confirmed the table renders with
+  the correct defaults; edited the three fields and clicked the real SAVE
+  button, then called `_grade_contract()` again on the same real fixture
+  contract in the same running module instance ΓÇö 522 aUEC/SCU scored 90%
+  ("great") before, 65% ("ok") immediately after, no restart. 28/28
+  regression checks pass; `config.json` confirmed untouched (hash-verified).
+
+- 2026-09-07: **New COMPLETE button, distinct from CLEAR.** User had been
+  using CLEAR to finish a batch of contracts, which left no record at
+  all. New `_complete_contracts()` logs every contract currently queued
+  to a new `logistics_hub_completed.jsonl` (reward, cargo, resolved
+  pickup/dropoff locations, and the grade it scored when accepted), then
+  clears the queue the same way CLEAR does. CLEAR itself is unchanged and
+  still the discard-without-a-trace action (wrong scan, duplicate,
+  mistake) ΓÇö kept deliberately separate so the completed log only ever
+  contains contracts the user is explicitly saying they delivered, never
+  polluted by scans that were never actually finished. Whole-queue
+  (not per-contract) per user's explicit choice when asked.
+
+  To make the grade available at completion time (not just transiently
+  during the review popup), `_on_review_accept()` now stashes
+  `grade_at_accept`/`grade_reason_at_accept` directly onto the contract
+  dict before it's added to the queue ΓÇö persists with the contract itself
+  through `config.json`, so it survives even a relaunch, not just the
+  current session.
+
+  `_append_debug_log()` refactored into a generic `_append_jsonl(filename,
+  entry)` (both logs are the same append-only JSON-lines pattern, just
+  different files/purposes) ΓÇö `_append_debug_log` is now a one-line
+  wrapper over it.
+
+  New regression check `complete_contracts_logs_then_clears`; the existing
+  test-isolation collector in `run_ui_state_checks()` was widened from
+  patching only `_append_debug_log` to patching the lower-level
+  `_append_jsonl` (so `_complete_contracts()`'s direct call is covered
+  too, not just debug-log calls) ΓÇö same "never let a test touch a real
+  log file" discipline as the config.json fix earlier this session.
+  29/29 checks pass. Verified live end-to-end (real fixture contract,
+  real accept path, real file write, not a collector): the resulting
+  `logistics_hub_completed.jsonl` entry had the correct reward, resolved
+  location names, full commodity breakdown, and the grade/reason exactly
+  as shown at accept time ΓÇö then deleted (disposable verification file,
+  same as other live checks this session). `config.json` confirmed
+  untouched throughout.
+
+- **2026-09-08 ΓÇö Game.log verification added on top of OCR (not instead
+  of it) ΓÇö new branch `logistics-hub-gamelog-verify`.** User found
+  github.com/SubliminalsTV-Projects/sc-overlay, which reads hauling
+  contract data (accept, tonnage, commodity, destination, payout) straight
+  out of Star Citizen's own `Game.log`. Investigated: their
+  `missions-parser.ts`/`hauling.ts` are real, well-documented (479+ real
+  logs' worth of observed line shapes) and the exact same signals were
+  confirmed live in this project's own current Game.log (a real Covalex
+  hauling contract, `CreateMarker`/`Contract Accepted`/`Deliver` lines all
+  present and matching their documented shapes).
+
+  Considered a full pivot away from OCR. Rejected: the log only has data
+  *after* in-game ACCEPT ΓÇö no pre-accept board browse, unlike OCR ΓÇö and
+  per-box manifests for SCU commodity hauls (Covalex/RedWind/GoblinG)
+  aren't logged at all, only total tonnage. OCR stays required for both.
+
+  Scope landed on, per user direction: **OCR remains the only trigger and
+  primary data source; Game.log is a one-shot verification pass run when
+  ACCEPT is clicked** (not at scan time ΓÇö the log has nothing to check
+  against before the in-game accept happens), correcting whatever it can
+  confirm. Log wins when it reports something (destination name,
+  commodity, tonnage via the `Deliver <have>/<need> <unit> of <commodity>
+  to <destination>` line); OCR's own extraction is left untouched for
+  everything else (reward ΓÇö never in the log until the later, unrelated
+  `MissionEnded`/payout lines this pass doesn't touch ΓÇö and per-box
+  detail). No live tracking, no payout confirmation ΓÇö that's the much
+  larger surface sc-overlay covers and is explicitly out of scope here.
+
+  Implementation: new `modules/logistics_hub/gamelog_verify.py` ΓÇö pure
+  functions, no Qt/host dependency, so testable with synthetic log text.
+  `find_recent_haul_events()` tails the last 500KB of Game.log (never the
+  whole file ΓÇö sessions run to hundreds of MB), regex-parses
+  `Contract Accepted`/`Deliver` lines within a 180s window of "now",
+  groups by `MissionId`. `verify_contract()` matches one event to the
+  OCR-built contract by normalized name-overlap scoring on
+  origin/destination text (never an exact string match ΓÇö OCR's resolved
+  UEX display name and the log's raw in-game text are not guaranteed to
+  read identically), then corrects a matched drop-off's `commodities` to
+  the log's own commodity/tonnage. Imported into `module.py` via the same
+  `importlib.util.spec_from_file_location` file-path mechanism
+  `host/module_loader.py` uses for `module.py` itself ΓÇö a plain `from
+  modules.logistics_hub import gamelog_verify` would break once packaged,
+  since `modules/` is deliberately not an importable package in the
+  frozen build (see module_loader.py's own docstring).
+
+  Wired into `_on_review_accept()` (verification runs, result logged to
+  the debug log alongside the existing grade/rating outcome entry, then
+  `_add_contract()` proceeds exactly as before) ΓÇö REJECT is untouched, no
+  point verifying a contract that's about to be discarded. Never raises
+  or blocks ACCEPT: a missing/unreadable log, no match, or an internal
+  exception all resolve to `{"matched": False, ...}` and the OCR contract
+  goes through unmodified.
+
+  New settings key `game_log_path` (falls back to the common install path
+  via `default_game_log_path()` when unset) with a GAME.LOG PATH field +
+  BROWSE button added to the Hauler Profile popup ΓÇö the natural home for
+  a "set once" field, same as CARGO CAPACITY and the GRADING SCALE.
+
+  New regression check group `run_gamelog_verify_checks()` (4 checks) ΓÇö
+  synthetic Game.log text modeled on the real captured line shapes,
+  covering: window filtering (a stale line outside the 180s window is
+  correctly excluded), a real match-and-correct case (OCR typo'd/missing
+  commodity+quantity corrected from the log), a genuine no-match case
+  (unrelated contract), and a missing-file case (clean empty result, no
+  exception). Existing UI-state checks (`run_ui_state_checks()`) updated
+  to point `game_log_path` at a deliberately nonexistent file ΓÇö otherwise
+  `_on_review_accept()`'s new verification step would fall through to
+  `default_game_log_path()` and read the *real* Game.log during a
+  regression run, which exists and is live on this dev machine. Read-only
+  (not the config/debug-log write hazard from earlier test-hygiene fixes
+  this session), but still real-machine state a test must never depend
+  on. 33/33 total checks pass.
+
+  Not yet done: live end-to-end verification (accept a real in-game
+  contract, scan it, confirm the debug log's `gamelog_verify` entry and
+  any correction against what actually happened) ΓÇö code-reviewed and
+  unit-tested against synthetic data only so far.
+
+- **2026-09-08 ΓÇö Game.log verify diagnostics, after the first live test
+  raised a real expectation gap.** User ran the first real scan on this
+  branch and got an "amber not-auto-resolved" location message, expecting
+  Game.log to have prevented it. Root cause: that message
+  (`f"{text!r} ({hint}) could be: {options} ΓÇö not auto-resolved"`,
+  `_build_contract()`) fires on an OCR candidate matching *multiple*
+  distinct UEX locations ΓÇö it happens at **scan time**, before the review
+  popup, well before Game.log verification (which only runs later, at
+  ACCEPT). `verify_contract()` was never going to touch this: it only
+  corrects a dropoff's commodity/tonnage, and only for a dropoff OCR
+  *already* resolved to one real location. Multi-candidate disambiguation
+  is a different, unimplemented capability ΓÇö worth a future look (the
+  log's origin/destination text could plausibly pick the right candidate
+  among several UEX matches), not done here.
+
+  Fixed the actual ask ΓÇö no way to tell *why* Game.log did or didn't help
+  from the debug log before this. `verify_contract()` now always returns
+  `reason` (`matched_with_corrections` / `matched_no_corrections_needed`
+  / `no_log_events_in_window` / `no_name_overlap_with_any_candidate`) and
+  `candidates_considered` (every log event scored, its title/mission_id/
+  score, highest first ΓÇö not just the winner), plus the exact normalized
+  names it tried to match against (`dropoff_names_tried`/
+  `pickup_names_tried`), even on a match. `_verify_against_gamelog()` in
+  module.py adds its own always-present layer on top:
+  `log_path`/`log_path_source` (settings vs. default lookup)/
+  `log_file_exists`/`events_in_window`. The full dict lands in the debug
+  log's `gamelog_verify` field on every ACCEPT, matched or not.
+
+  Card status line after ACCEPT now also says outright when Game.log
+  wasn't found or found nothing to match ("Game.log not found, not
+  verified." / "Game.log: no matching contract found, not verified.")
+  instead of only ever mentioning it on a hit ΓÇö a silent skip is exactly
+  what produced this confusion.
+
+  5 new/tightened regression checks (candidates_considered/reason
+  asserted on both the match and no-match gamelog_verify cases, a new
+  no-events case, a new `_verify_against_gamelog` module-level check for
+  the missing-log-file diagnostic fields, and the existing
+  `review_outcome_logs_grade_and_ratings` check now also asserts the
+  debug log entry carries `gamelog_verify.reason`). 35/35 total checks
+  pass.
+
+  Also: real `logistics_hub_debug.jsonl` from the user's one live test
+  session inspected directly ΓÇö both real ACCEPTs logged
+  `gamelog_verify: {"matched": false, ...}` (pre-diagnostics format, no
+  `reason` yet), so Game.log verification hasn't actually helped even
+  once yet in practice; why is still unknown pending a fresh test with
+  these diagnostics in place. Also visible in that same log, unrelated to
+  Game.log: the "Teasa Spaceport" ambiguous-candidate case (New Deal
+  Lorville vs. Kel-To Lorville, still unresolved) and the same contract
+  scanned twice assigning pickup/dropoff roles inconsistently between the
+  two scans ΓÇö both real, unfixed issues worth their own look.
+
+- **2026-09-08 ΓÇö CLEAR LOG button added to the card.** Wiping
+  `logistics_hub_debug.jsonl` between test scans meant closing the app
+  and deleting the file by hand. New `_clear_debug_log()` (module.py),
+  wired to a CLEAR LOG button next to PROFILE ΓÇö truncates only
+  `DEBUG_LOG_FILENAME`, never `COMPLETED_LOG_FILENAME` or the contract
+  queue. New regression check `clear_debug_log_wipes_only_the_debug_log`,
+  monkeypatching `host.paths.app_root` for the one call (this method
+  writes via `paths.app_root()` directly, not through the already-patched
+  `_append_jsonl`, so it needed its own test-isolation seam). 36/36 total
+  checks pass. Also manually cleared the real `logistics_hub_debug.jsonl`
+  once by hand before this button existed, per user request, so their
+  next test starts clean.
+
+- **2026-09-08 ΓÇö Verify window widened 180s ΓåÆ 1800s, plus a permanent
+  tracking signal for tuning it further.** First real live test (see
+  above) came back `events_in_window: 0` ΓÇö the real in-game accept was
+  ~70 minutes before the app's ACCEPT click (board framed, reviewed,
+  decided ΓÇö ordinary play, not an edge case), and 180s never had a
+  chance. Raised `DEFAULT_WINDOW_SECONDS` to 1800 (30 min). This doesn't
+  trade accuracy for coverage the way it might elsewhere: matching still
+  requires real origin/destination name overlap
+  (`verify_contract`'s scoring), not just recency, so a wider window only
+  grows the candidate pool scored, not the odds of a false match.
+
+  Per user direction, this needs to keep being data, not another one-off
+  guess: new `gamelog_verify.nearest_haul_event_gap_seconds()` ΓÇö finds
+  the closest Contract Accepted/Deliver line to "now" ignoring any window
+  at all ΓÇö logged into every `gamelog_verify` debug entry alongside the
+  window size actually used (`window_seconds`), win or lose. Over time
+  `logistics_hub_debug.jsonl` builds a real distribution of actual
+  accept-to-app-accept gaps, which is what the *next* window decision
+  should be sized from instead of guessing again. 38/38 total checks
+  pass (2 new: window-boundary fixture moved from -600s to -2500s to stay
+  a genuine out-of-window case at the new 1800s size; new
+  `gamelog_nearest_event_gap_ignores_window` check).
+
+- **2026-09-08 ΓÇö Verify window made config-editable, and the miss on the
+  second test explained.** Two things from the user after the window
+  widening above: (1) they realized the second test's real miss was
+  likely their own workflow, not the window ΓÇö they scanned+accepted in
+  the app but forgot to accept in-game at all, so there was nothing in
+  Game.log to find regardless of window size; (2) a fixed window will
+  eventually collide with overlapping contracts (two hauls accepted
+  close together), so it needs to be tunable without a code
+  change/rebuild every time.
+
+  `_verify_against_gamelog()` now reads `window_seconds` from
+  `self.settings.get("game_log_verify_window_seconds",
+  gamelog_verify.DEFAULT_WINDOW_SECONDS)` ΓÇö i.e. straight from
+  `config.json`'s `modules.logistics_hub.game_log_verify_window_seconds`
+  key (that block *is* `self.settings`, confirmed against the real
+  config.json). Editing that key and relaunching changes the window with
+  no code change. `DEFAULT_WINDOW_SECONDS` (1800) stays the fallback when
+  the key isn't present. New regression check
+  `verify_against_gamelog_respects_config_window_override` ΓÇö a real temp
+  Game.log with one event at -1000s, proving the default window includes
+  it and a config override of 500s excludes it, through the actual
+  `_verify_against_gamelog()` call path (not just `gamelog_verify.py`'s
+  own functions in isolation). 39/39 total checks pass.
+
+  No UI added for this ΓÇö it's a tuning knob for iterating on the
+  window size, not a normal per-user setting, and adding a UI field
+  would suggest otherwise. Edit `config.json` directly if it needs
+  changing.
+
+- **2026-09-08 ΓÇö Accept reminder added: a click-to-dismiss blinking
+  banner, no game-input automation.** Discussed and rejected an auto-
+  click "ACCEPT OFFER" idea first (see this same date's conversation
+  history) ΓÇö real account/ban risk (synthetic input is flagged by
+  Windows itself via LLMHF_INJECTED, and any anti-cheat/monitoring
+  checking for it is checking for exactly that), not worth it for a
+  quality-of-life feature. Landed on the much safer alternative the user
+  proposed instead: a reminder, not an action.
+
+  New `accept_reminder_seconds` setting (Hauler Profile popup, 0 = off,
+  default `DEFAULT_ACCEPT_REMINDER_SECONDS = 30` ΓÇö a placeholder, same
+  as the verify window, expected to need tuning against real
+  `nearest_haul_event_gap_seconds` data). On ACCEPT, if Game.log didn't
+  verify immediately, `_schedule_accept_reminder()` queues a one-shot
+  `QTimer.singleShot` for that many seconds. When it fires,
+  `_recheck_accept_reminder()` re-runs `_verify_against_gamelog()` against
+  the *current* state of Game.log (a second, later chance ΓÇö most real
+  accepts won't verify instantly since the log line can lag or the
+  in-game accept genuinely hasn't happened yet): a late match silently
+  applies any correction (exactly like the original check) with no
+  banner; still unmatched shows `_reminder_banner`, a blinking (500ms via
+  `_reminder_blink_timer`, amber/void swap) `QPushButton` ΓÇö a button, not
+  a label, so any click dismisses it, not just a precise one. Expands
+  and raises the card if collapsed (`card.set_collapsed(False)` +
+  `raise_()`) so it can't hide behind a collapsed card. Every recheck
+  (not just misses) logs its own `accept_reminder_recheck` debug entry,
+  same tracking-first spirit as the verify-window diagnostics.
+
+  Deliberately does NOT duplicate into the Tracker popout ΓÇö the card
+  itself is always present regardless of whether the popout is open, so
+  one banner location is enough without doubling the maintenance surface.
+
+  New regression checks: `schedule_accept_reminder_skips_when_not_needed`
+  (already-matched/no-id/disabled all correctly skip scheduling, verified
+  by monkeypatching `QTimer.singleShot` to a capturing stub rather than
+  waiting on a real delay), and three `_recheck_accept_reminder` cases
+  (contract already gone from the queue, still unmatched shows the
+  banner, late match is silent) using `isHidden()` rather than
+  `isVisible()` to check banner state ΓÇö `isVisible()` depends on the
+  whole ancestor widget chain being shown, which this test harness's
+  CardContainer never is (no `app.exec()`), while `isHidden()` reflects
+  only this widget's own explicit shown/hidden state, which is what
+  these checks actually care about. 45/45 total checks pass.
+
+  This was explicitly split from the tabbed-card-layout redesign
+  requested in the same message ΓÇö two independent changes, easier to
+  test/review separately; the tab redesign is a separate commit
+  immediately after this one.
+
+- **2026-09-08 ΓÇö Card redesigned with a tabbed action layout.** Second of
+  two builds split from the same user request (see the accept-reminder
+  entry above). Five workflow buttons (SCAN CONTRACT/COPY ROUTE/
+  REPROCESS/COMPLETE/CLEAR) and three setup buttons (SET SCAN AREA/
+  PROFILE/CLEAR LOG) had accumulated across sessions into two flat rows
+  that had gotten genuinely noisy. Grouped into a `QTabWidget` with two
+  tabs ΓÇö **SCAN** (the workflow row + status label, default/selected tab)
+  and **SETUP** (the setup row + region status label) ΓÇö same buttons,
+  same handlers, no behavior changes, purely a layout reorganization.
+  LOCATION picker stays outside the tabs (always-visible context, not a
+  "noisy button"); CONTRACTS/FREIGHT MANIFEST/ROUTE sections below are
+  completely untouched. The accept-reminder banner (built in the prior
+  commit) also stays outside the tabs on purpose ΓÇö it needs to be visible
+  regardless of which tab is active.
+
+  `action_tabs.currentChanged` is wired to `card.apply_size()` ΓÇö a tab
+  switch changes the visible content's size the same way collapse/error
+  transitions already do, and needed the same explicit resize nudge (see
+  `Card.apply_size()`'s own docstring) or the card would size itself for
+  whichever tab happened to be active at creation.
+
+  New regression check `action_tabs_group_buttons_with_scan_default`
+  confirms the actual `QTabWidget` structure (tab labels, SCAN selected
+  by default, SCAN CONTRACT living inside the SCAN tab, the reminder
+  banner NOT nested inside either tab). 46/46 total checks pass.
+
+  Verified visually, not just via the regression suite: rendered the
+  real card standalone (offscreen, with `host/main.py`'s actual
+  `load_fonts()` so text isn't tofu boxes ΓÇö same discipline as prior
+  popup verification this project has needed before) and screenshotted
+  both tabs. Confirmed clean side-by-side grouping, correct default tab,
+  and no regressions to CONTRACTS/FREIGHT MANIFEST/ROUTE below. Hit and
+  worked around one render-order quirk in the offscreen QPA platform
+  itself (the very first `grab()` after a resize comes back at the old,
+  pre-layout size regardless of which tab ΓÇö a throwaway warm-up grab
+  first fixes it) ΓÇö a test-script artifact, not a real app bug; not
+  worth writing up further since it doesn't affect the actual running app
+  (which paints continuously, not via one-shot `grab()` calls).
+
+- **2026-09-08 ΓÇö Accept reminder now mirrors onto the Tracker popout.**
+  Real gap found by the user: the reminder banner only lived on the main
+  card, so scanning + accepting, popping out the Tracker, then stowing
+  mobiOverlay's main window (a real, fast workflow) made the reminder
+  permanently invisible ΓÇö the exact scenario the reminder exists for.
+
+  `_show_accept_reminder()`/`_toggle_reminder_blink()`/
+  `_dismiss_accept_reminder()` now operate on `_reminder_banners()` (the
+  card's banner, plus the popout's own if the Tracker is open) instead of
+  a single fixed widget ΓÇö clicking either one dismisses both, since
+  they're the same reminder. New `_reminder_text` instance var holds the
+  active reminder's text (`None` when nothing's active) so a Tracker
+  opened *after* a reminder already fired still shows it immediately
+  (`_open_route_popout` checks this on creation), not just reminders that
+  fire while it's already open.
+
+  The popout's banner is inserted into its OUTER layout (right after the
+  header, via `popout.layout().insertWidget(1, ...)`), deliberately NOT
+  into `_route_popout_layout` (the route-rows content layout) ΓÇö that one
+  is fully cleared and rebuilt by `_populate_route_rows()` on every
+  render, which would silently delete a banner living there.
+
+  3 new regression checks: a reminder already active appears on a popout
+  opened afterward, dismissing from either banner clears both, and a
+  reminder firing while the popout is already open reaches both. 49/49
+  total checks pass. Verified visually ΓÇö rendered the popout with an
+  active reminder and confirmed it renders correctly.
+
+- **2026-09-08 ΓÇö Fixed the real cause of two consecutive live-test
+  misses: the fixed 500KB tail-read, not the time window.** User
+  completed a full real cycle (accept in-game + in-app, deliver, complete
+  in-game + in-app) twice; both `gamelog_verify` debug entries showed no
+  match despite the already-widened 1800s window. Root cause found by
+  measuring this project's own real `Game.log`: 4.1MB spanning ~4h43m,
+  averaging **~14.5KB/min** ΓÇö a fixed 500KB tail read reliably covers only
+  **~34 minutes** of that on average, well short of even the 1800s window
+  it was nominally serving, and considerably less during busier stretches
+  (combat, loading, heavy network chatter can spike well above the
+  average rate). The time window and the byte-read budget were two
+  independent limits, and the byte budget was silently the tighter one.
+
+  `_tail_lines()`'s `max_bytes` is no longer fixed ΓÇö `find_recent_haul_events()`
+  now computes it via `_estimate_tail_bytes(window_seconds)`:
+  `ESTIMATED_BYTES_PER_MINUTE = 100_000` (~7x the observed real average,
+  a safety margin for busy periods), floored at `MIN_TAIL_BYTES` (500KB,
+  the old fixed value) and capped at `MAX_TAIL_BYTES` (20MB) so a very
+  large configured window can't force reading an unreasonable chunk of a
+  multi-hundred-MB log. `nearest_haul_event_gap_seconds()` (which
+  deliberately ignores the window entirely, by design) now always reads
+  at the `MAX_TAIL_BYTES` ceiling rather than the old fixed 500KB, giving
+  it the best real shot at finding something genuinely distant.
+
+  2 new regression checks: `_estimate_tail_bytes()`'s floor/scale/ceiling
+  behavior, and a real reproduction of the bug itself ΓÇö an event ~25
+  minutes old followed by >500KB of filler (simulating real gameplay log
+  volume) is found with the new window-scaled budget and confirmed
+  invisible under the old fixed 500KB one, in the same test. 51/51 total
+  checks pass.
+
+  Also noted from this same real test data (not yet acted on): the first
+  of the two real accepts *did* find a Contract-Accepted line in-window
+  (108s gap) ΓÇö but for an unrelated contract ("Seraphim Station >
+  Baijini Point", score 0), correctly rejected rather than
+  cross-contaminating. Worth a second look once this fix is live to see
+  whether it was a genuinely different, separately-accepted contract or
+  a sign of something else ΓÇö can't tell from one data point.
+
+- **2026-09-08 ΓÇö Fixed the "Covalex Orison" phantom-dropoff bug, confirmed
+  with real evidence from tonight's live test.** "Covalex Shipping" (the
+  mission-giver company's own name, present in every Covalex contract's
+  flavor text) was substring-matching a real UEX location literally named
+  "Covalex Orison", producing a phantom dropoff with no real cargo data
+  ("cargo unknown") ΓÇö and, worse, blocking Game.log's commodity/tonnage
+  correction from ever attaching, since Game.log's own destination text
+  can never mention a company name. Confirmed as a repeat offender across
+  two separate real sessions (2026-09-07 and 2026-09-08).
+
+  Added `"covalex shipping"` (the exact real offending phrase) and
+  `"covalex shippina"` (the same real phrase via a common OCR letter
+  typo, added pre-emptively ΓÇö only ever observed failing to match
+  harmlessly so far, but it's the identical underlying noise source) to
+  `_PHRASE_STOPWORDS` ΓÇö the same established, narrow, evidence-driven
+  exclusion mechanism already used for "PICK UP"/"DROP OFF" false
+  substring matches. Confirmed with tonight's exact real captured OCR
+  text: the real dropoff, "HDPC-Cassillo", isn't in the cached UEX
+  location data at all (confirmed by grepping `locations_cache.json` ΓÇö
+  genuinely absent, not a naming mismatch this project can fix), so with
+  the phantom Covalex Orison match removed, it now correctly falls back
+  to an honest "HDPC-Cassillo" unresolved raw entry ΓÇö **with its correct
+  commodities attached** (22 SCU Pressurized Ice, 302 SCU Processed
+  Food), since commodity extraction can now anchor to the real
+  own-line-hinted dropoff phrase instead of losing to the false match.
+  A real, honestly-labeled unresolved location beats a wrong one shown as
+  if it were real.
+
+  New `run_covalex_orison_check()` ΓÇö not a FIXTURES entry, since that
+  format's comparison silently drops any dropoff/pickup with no resolved
+  terminal (exactly this fix's correct outcome) ΓÇö using tonight's exact
+  real captured raw OCR text. 3 checks: the phantom dropoff never
+  reappears, the real pickup (Everus Harbor) still resolves with correct
+  cargo, and the correct dropoff commodities survive once honestly
+  unresolved. 54/54 total checks pass.
+
+- **The ACCEPT-timing race (Game.log verify's immediate check missing a
+  contract accepted within ~1-2 seconds of the app's own ACCEPT click) is
+  already handled ΓÇö confirmed working for real tonight, not just in
+  theory.** This was the exact scenario `_schedule_accept_reminder()`/
+  `_recheck_accept_reminder()` (see the accept-reminder entry above) was
+  built for: the immediate check at ACCEPT missed (log line not written
+  yet, `events_in_window: 0`), but the delayed recheck 11 seconds later
+  found and matched it (`matched: true`, real mission ID). No further
+  change needed here ΓÇö the existing two-stage design (immediate check,
+  then a later recheck if it missed) already covers exactly this race by
+  construction; a race this size (seconds) is comfortably inside even the
+  original 30s default reminder delay, let alone a longer one.
+
+- **2026-09-08 ΓÇö Fixed real cross-contract mismatching in Game.log
+  verification, found by reviewing the last 3 accepted missions from a
+  real session.** Two real, distinct bugs in the same review:
+
+  1. Two different real accepts sharing a pickup station (Baijini Point,
+     from routine repeat hauling) both matched the SAME real Game.log
+     mission_id ΓÇö one legitimately (full origin+destination overlap,
+     score 4), the other only by pickup-name coincidence.
+  2. A contract whose real dropoff was "Lively Pathway Station" matched a
+     real mission whose actual destination was "Everus Harbor" ΓÇö a
+     completely different place ΓÇö purely on shared pickup text (score 2,
+     accepted as a match with the old `score > 0` bar).
+
+  Neither corrupted data this time only because neither had a correction
+  to apply ΓÇö a near miss, not proof the bug was harmless.
+
+  Two fixes in `gamelog_verify.py`/`module.py`:
+
+  1. **`MIN_MATCH_SCORE = 4`** ΓÇö a match now requires BOTH origin and
+     destination overlap (2+2), not just one. A pickup-only or dropoff-
+     only match is rejected outright (`reason:
+     "best_candidate_below_match_threshold"`) rather than accepted as
+     weak-but-good-enough.
+  2. **`exclude_mission_ids`** ΓÇö `verify_contract()` now takes a set of
+     mission ids to exclude before scoring at all (so an excluded event
+     can't win a tie or pollute `candidates_considered`).
+     `_verify_against_gamelog()` builds this set from every OTHER
+     contract currently in the queue's own `contract["gamelog_mission_id"]`
+     (new field, set on a successful match) ΓÇö so the same real accept can
+     never be attached to two different scanned contracts, which #1 alone
+     doesn't prevent (two genuinely full-score matches to the same real
+     mission is exactly what happened in the first bug above).
+
+  6 new regression checks: rejecting a pickup-only partial match,
+  excluding a claimed mission id (down to zero remaining candidates, and
+  separately, correctly falling through to a second real candidate when
+  one exists), and two module-level integration checks proving
+  `_verify_against_gamelog()` itself builds the exclude set from queued
+  contracts and records its own claim on a match ΓÇö not just
+  `gamelog_verify.py`'s functions in isolation. 60/60 total checks pass.
+
+## 2026-09-08 ΓÇö Salvage module shelved; mobiNotes scoped instead
+
+Explored a salvage-focused module (parallel to Logistics Hub's hauling
+focus). Ranked 10 candidate ideas down to 3, then checked each against
+the live UEX API directly (not just documentation, which was itself
+incomplete/unreliable for these endpoints):
+
+- No dedicated salvage endpoints exist at all.
+- RMC (Recycled Material Composite) does not appear as a commodity in
+  `commodities` at all ΓÇö confirmed via a live query, not just docs.
+- `refineries_yields` is ore-only (Iron, Gold, Quantainium, Bexalite,
+  Corundum, etc. ΓÇö mining outputs) ΓÇö confirmed via a live query. No
+  salvage-material processing/yield data exists to build a "yield
+  calculator" from.
+- Trade-route and buy/rent-price-finder variants were also rejected on
+  reflection: salvage is a one-way sell (no round-trip loop to
+  optimize), and ship buy/rent is a rare one-time decision, not something
+  worth a persistent overlay card.
+
+**Shelved ΓÇö not a UEX data gap that can be worked around, salvage
+mechanics simply aren't exposed by the API.** Revisit only if UEX adds
+salvage-specific endpoints.
+
+Pivoted instead to **mobiNotes** ΓÇö a lightweight, no-API notes/organization
+module (tagged, paged, searchable). Researched three open-source note
+apps for ideas (ReText, QOwnNotes, Zim Desktop Wiki) ΓÇö all three are
+GPL-licensed, so decided to borrow **ideas, not code**, to avoid pulling
+copyleft obligations into this module. Designed a data model meant to
+support incremental extension without a rewrite: a `meta: {}` field per
+note reserved for future fields (location tagging via the existing
+`LocationService`, cross-module reference links) and a `schema_version`
+root field for future format migrations. Full scope written to
+`docs/modules/mobi-notes.md`. Not built yet.
+
+- **2026-09-08 ΓÇö mobiNotes built: `NotesStore` (`modules/mobi_notes/store.py`)
+  + card UI (`modules/mobi_notes/module.py`), architected and scaffolded
+  autonomously per user direction.** Page switcher implemented as a
+  `QComboBox` (with a `+ New Page...` sentinel that prompts for a name)
+  rather than a tab strip ΓÇö scales to any number of pages without layout
+  work; can become real tabs later if that turns out to matter. Tag
+  filter is a second combo seeded from `STARTER_TAGS` plus every tag
+  actually in use. Search box filters title/body/tags live via
+  `NotesStore.search_text`. Pinned notes sort to the top of the list,
+  then most-recently-modified first. `refresh()` is a confirmed no-op ΓÇö
+  there's no remote data, same shape as Crosshair.
+  Hit and fixed one real bug immediately: the module's first draft used
+  `from .store import NotesStore` ΓÇö a normal relative import ΓÇö which
+  throws `ImportError: attempted relative import with no known parent
+  package` at runtime, because `module_loader.py` loads every
+  `module.py` via `importlib.util.spec_from_file_location` (a file-path
+  import, not a real package member ΓÇö see the Packaging decision above).
+  Fixed with the same file-path-import pattern `logistics_hub/module.py`
+  already uses to reach its own `gamelog_verify.py` sibling ΓÇö copy the
+  pattern instead of reinventing it, this project already had the answer.
+  Storage lives at `app_root()/mobinotes_data.json`, external to
+  `modules/` for the same reason `config.json` is (see Packaging
+  decision) ΓÇö added to `.gitignore` alongside the other per-install data
+  files.
+
+- **2026-09-08 ΓÇö Copy/paste treated as a first-class mobiNotes feature,
+  not an afterthought ΓÇö added per direct user request mid-scope, not
+  in the original mobi-notes.md scoping doc.** Three mechanisms, in
+  order of how much code each needed:
+  1. The editor's body field is a real `QTextEdit`, title/tags are
+     `QLineEdit` ΓÇö native Ctrl+A/Ctrl+C/Ctrl+V/Ctrl+X already work with
+     zero extra code. Worth stating explicitly because it would have
+     been easy to reach for a custom-painted text widget elsewhere in
+     this app's HUD styling and lose that for free.
+  2. **COPY NOTE** button and each list row's small Γºë icon button both
+     format a note (title, `[tags]`, blank line, body) as plain text
+     and push it onto the real system clipboard via
+     `QGuiApplication.clipboard()`.
+  3. **PASTE AS NEW** reads the clipboard, uses its first line (capped
+     60 chars) as the title and the full text as the body, creates a
+     note on the current page in one click ΓÇö the common case being
+     "copy a chunk of Discord/Spectrum text, turn it into a note"
+     without retyping anything.
+  Verified against the real OS clipboard, not a mock: a separate
+  PowerShell process set clipboard content via
+  `System.Windows.Forms.Clipboard`, a real UI Automation `InvokePattern`
+  click fired PASTE AS NEW, and the resulting note in
+  `mobinotes_data.json` matched the injected text exactly. Same pattern
+  in reverse for COPY NOTE (click it, then read the clipboard back from
+  a separate process). This is the same "verify with the exact runtime
+  mechanism, not an isolated stand-in" lesson this project has hit
+  before (see the PySide6/Qt6 enum-mismatch entries above) applied to
+  the OS clipboard instead of Qt's event system.
+
+- **2026-09-08 ΓÇö mobiNotes verified end-to-end live, not just unit-style
+  checks.** Full app launch confirmed all 6 modules (including the new
+  one) discover cleanly with no contract/duplicate-id errors. A real
+  note was typed into the actual running card via UI Automation
+  (`ValuePattern.SetValue` on the real `QLineEdit`/`QTextEdit` controls,
+  `InvokePattern.Invoke()` on the real SAVE button) and confirmed on
+  disk in `mobinotes_data.json` with the multi-line body and
+  comma-parsed tags intact ΓÇö then re-screenshotted (`PrintWindow`, this
+  project's standard technique, run from source so the target PID is
+  the real window's own process, no PyInstaller-onefile child-process
+  indirection to work around) to confirm the list view, editor, and
+  second saved note all rendered correctly. Test note data removed from
+  `mobinotes_data.json` afterward ΓÇö it was verification data, not a
+  real user note.
+
+- **2026-09-08 ΓÇö mobiNotes bug fix: a newly-created empty page vanished
+  immediately, found by the user on first real use.** User tried
+  creating a "Salvaging" page twice and it never showed up in the list.
+  Root cause: `store.pages()` only returns pages that already have at
+  least one note on them (by design ΓÇö pages are a note field, not a
+  stored entity); a page just created via `+ New Page...` has neither,
+  so the very next picker rebuild (which reads `store.pages()`) silently
+  dropped it and fell back to whatever page was first alphabetically ΓÇö
+  before the user ever got a chance to save a note onto it. Fixed with a
+  `custom_pages` list in the module's own persisted settings
+  (`modules/mobi_notes/module.py`), unioned with `store.pages()`
+  everywhere the page picker is built, so a page stays visible from the
+  moment it's created regardless of whether it has notes yet. Caught
+  and fixed at code-review time (traced from the user's description,
+  not yet re-verified live at the moment of the fix ΓÇö the live launch to
+  confirm it was deliberately deferred because the user was actively
+  playing Star Citizen at the time; see the entry below for how that
+  was actually confirmed, headless).
+
+- **2026-09-08 ΓÇö Added rename-page and delete-page actions, plus removed
+  the 5 built-in default pages entirely ΓÇö all three driven directly by
+  live user feedback in the same session, none from the original
+  mobi-notes.md scoping doc.**
+  - **Delete page** (Γ£ò button next to the page dropdown): user asked
+    "is there a way to delete a page" after noticing DELETE only existed
+    for individual notes. Confirmed the intended behavior first (delete
+    the page's notes along with it, vs. blocking until empty) rather
+    than guessing ΓÇö user chose "delete the notes too," matching the
+    existing single-note DELETE's confirm-then-destroy pattern.
+  - **Rename page** (Γ£Ä button): natural follow-up once delete existed ΓÇö
+    added `NotesStore.rename_page(old, new)`, a bulk field update over
+    every note on `old` (bumps each note's `modified` timestamp), plus
+    UI wiring to keep `custom_pages` in sync with the new name.
+  - **Removed all 5 default pages** (Trade/Fleet/Org/Builds/Missions ΓÇö
+    these were just the example list from the original scoping doc,
+    never meant to be permanent fixtures): user's own words, "get rid of
+    that 'always there' for the 5 pages. The first thing we should have
+    to do is create our first page." `NotesStore.pages()` no longer
+    unions in any hardcoded list ΓÇö it returns only pages that genuinely
+    have notes. `module.py` now tracks a real "zero pages" state: the
+    card's whole main UI (search/list/editor/page-management row) sits
+    inside a `_content_widget` that starts hidden, with a separate
+    `_empty_state` widget ("No pages yet. Create one to start taking
+    notes." + a **+ CREATE FIRST PAGE** button wired to the same
+    `_prompt_new_page` the `+ New Page...` combo entry uses) shown
+    instead until at least one page exists (via `custom_pages` or a real
+    note) ΓÇö checked once right after `create_card` and again after every
+    page create/rename/delete via a new `_update_empty_state()` helper.
+    Deleting the last remaining page correctly returns to this same
+    empty state rather than reintroducing a fallback default.
+  - **Verified entirely headless**, deliberately ΓÇö the user was actively
+    playing Star Citizen through this exchange and asked not to have the
+    game interrupted by a real launch (see the earlier hard lesson about
+    never repositioning/launching windows onto the gaming display,
+    documented in memory and in this file's environment notes). Used
+    `QT_QPA_PLATFORM=offscreen` (no window ever painted to a real
+    display) to drive the actual `MobiNotesModule` instance ΓÇö not a
+    reimplementation ΓÇö through the full lifecycle: fresh install shows
+    the empty state with `current_page` still `None` and only the
+    `+ New Page...` sentinel in the combo; creating "Salvaging" (via a
+    mocked `QInputDialog.getText`, since a real modal can't be driven
+    headlessly) flips to the normal content view with the new page
+    selected; saving a note lands on it; renaming to "General" (mocked
+    dialog again) moves the note and leaves the old name with zero
+    notes; deleting the page (mocked `QMessageBox.question` returning
+    Yes) removes the note and returns to the empty state with zero
+    pages. One tooling snag hit along the way: `QWidget.isVisible()`
+    reads ancestor visibility, not just the widget's own `setVisible()`
+    call ΓÇö same underlying gotcha as the 2026-09-03 Stow/Deploy tray
+    bug ΓÇö so the empty-state/content-widget visibility assertions read
+    as permanently `False` until the fake card's top-level widget was
+    actually `.show()`-n (still fully offscreen, never touching a real
+    display or the game).
+
+## 2026-09-08 ΓÇö mobiThrottle built: ThrottleWatch ported as a native module
+
+ThrottleWatch (a separate, already-shipping standalone SC overlay by the
+same author ΓÇö `throttle_watch.py`, Tkinter) becomes mobiOverlay's 7th
+module, per direct user request. Architected first, in
+docs/modules/mobi-throttle.md, before writing any code ΓÇö a deliberate
+rewrite, not a copy/paste port, since a lot of ThrottleWatch's complexity
+exists only to work around Tkinter limitations Qt doesn't have.
+
+**What Qt let us delete outright**, not just relocate:
+- The two-window transparent-color-key trick + Win32 `SetWindowRgn`/
+  `CreateRoundRectRgn` panel-shaping (`RECT`, `_apply_window_shape`) ΓÇö
+  existed only because Tkinter has no real per-pixel alpha compositing on
+  Windows. `Qt.WA_TranslucentBackground` on a single `QWidget` gives real
+  alpha directly; one `paintEvent` now draws the background panel AND the
+  ticks/track/knob, matching the same recipe (Source composition +
+  explicit transparent clear) `host/main_window.py`'s own paintEvent
+  already uses.
+- ThrottleWatch's duplicated `draw_track`/`draw_track_h`,
+  `draw_ticks`/`draw_ticks_h` method pairs for vertical vs. horizontal ΓÇö
+  collapsed into one drawing path with an along/cross coordinate swap
+  (`to_xy`), since the layout math is identical either way and only the
+  axis mapping differs.
+- The separate Settings `Toplevel` window, ThrottleWatch's own tray icon,
+  and its "Open Settings" hotkey ΓÇö all folded into/replaced by the card,
+  since a module lives inside mobiOverlay's own window and hotkey system
+  rather than being its own standalone app.
+- Manual `SetProcessDpiAwareness` ΓÇö Qt6 is per-monitor-DPI-aware by
+  default.
+
+**What ported over almost verbatim** because it was never Tk-specific to
+begin with: the tick/track/knob layout math (`TRACK_MARGIN`, `TICK_COUNT`,
+`panel_radius_for`'s corner-clearance logic), the deadzone-to-amber
+`value_to_color`/`lerp_color` gradient, `list_joysticks`/`find_joystick`
+(pure pygame calls) ΓÇö though `find_joystick` dropped ThrottleWatch's
+hardcoded `DEVICE_NAME_HINT` ("VKBsim Gladiator EVO L") for a generic
+first-device-with-axes fallback, since mobiOverlay is meant to run on
+someone else's rig eventually, not just this machine's throttle.
+
+**Hotkeys reused, not reimplemented.** `host/hotkey.py`'s `GlobalHotkey`
+is already a proven port of ThrottleWatch's own `HotkeyState`/reconcile-
+watchdog design (ported earlier for the host's Stow/Deploy hotkey) ΓÇö the
+module just instantiates two of its own instances (bar toggle, position
+toggle). Confirmed two independent low-level `keyboard.hook()` installs
+in the same process don't conflict.
+
+**One real host addition, not just a module-local change:**
+`ModuleBase.shutdown()`, a new optional hook every module can implement,
+called for every loaded module from a new `app.aboutToQuit` connection in
+`host/main.py`. Reason: `host/main_window.py`'s `relaunch()` already had
+to explicitly call `self._hotkey.shutdown()` before spawning the new
+process (2026-09-04 fix ΓÇö Windows only reclaims a `WH_KEYBOARD_LL` hook
+when the owning *process* dies, not when a Python object is destroyed, so
+skipping this could let the old and new instance both hold a live hook
+for the same combo briefly). mobiThrottle introduces two *more* such
+hooks; without a generic module-shutdown hook, Relaunch would have had
+that exact bug again, just scoped to a module instead of the host. Fixed
+once, generically, for every future module that opens a similar
+process-wide resource instead of patching this one call site again.
+
+**Verified live against the real running app**, not just headlessly:
+- Headless smoke test first (`QT_QPA_PLATFORM=offscreen`): instantiated
+  the module, built its card, exercised `refresh()`'s error path (no
+  device configured with a bogus GUID ΓåÆ correctly raises, caught by the
+  host's error boundary), grabbed the bar widget's pixmap in both
+  orientations, called `shutdown()` ΓÇö all clean.
+- Then launched the actual packaged entry point (`python host/main.py`)
+  alongside all 6 other modules ΓÇö no errors in the log, real
+  auto-detected device (a genuinely connected VKB throttle) showed as
+  Connected in the card.
+- Screenshotted both the card and the floating bar via `PrintWindow`
+  (same convention as every other module's live verification ΓÇö see the
+  Environment/process notes in docs/PROGRESS.md; never repositioned a
+  window onto the primary/gaming monitor to do this). Bar rendered
+  correctly: rounded translucent panel, ticks with corner clearance,
+  center line, knob.
+- Sent the real global toggle hotkey (`keyboard.send('ctrl+alt+o')`) and
+  confirmed via `GetWindowRect`/`IsWindowVisible` that the bar's actual
+  Win32 window visibility changed, then confirmed the new state persisted
+  to `config.json`. Sent the position-toggle hotkey with no positions
+  saved yet and confirmed it safely no-ops (no crash, no log error).
+- Found and fixed a real bug this way: the bar's hardcoded (200, 200)
+  default landed on the primary monitor, which is this machine's active
+  gaming display ΓÇö the exact mistake `host/main_window.py`'s own
+  `_default_launch_position()` exists to avoid for the main window. Now
+  reuses that identical non-primary-monitor-selection logic
+  (`_default_bar_position()`), applied only when no position has ever
+  been saved for the bar.
+
+**Not yet verified ΓÇö needs a hand on the actual hardware, not just fed
+synthetic values:** the knob tracking a real throttle movement live, and
+Home Chirp's audible beep actually firing on a real center crossing. The
+poll ΓåÆ paint pipeline itself is proven correct (headless synthetic-value
+test above); what's unverified is only the last link to real human input,
+which no amount of automation can substitute for.
+
+## 2026-09-08 ΓÇö mobiThrottle: tiny spinbox arrows replaced with a stepper
+
+First real user feedback on mobiThrottle, after testing it live with the
+real throttle: "working well," with one usability complaint ΓÇö "hard to
+click on the buttons/arrows... that increment or decrement counts on
+fields." The card's Axis, Hold time, and Home Chirp count/cooldown fields
+were stock `QSpinBox`/`QDoubleSpinBox`, whose native up/down arrows are
+only a few px tall (visibly shorter than half the field's own height) ΓÇö
+an easy miss, especially at the compact width these fields sit in inside
+a card.
+
+Fixed by replacing all four with a new `_Stepper(QWidget)`: a value label
+flanked by explicit `[ΓêÆ]`/`[+]` `QPushButton`s at a fixed 26├ù24px, themed
+the same as Crosshair's existing nudge buttons (same precedent ΓÇö that
+module already solved "give the user a big enough click target for a
+small increment/decrement action" for its offset nudging). Exposes
+`value()`/`setValue()`/`valueChanged` so call sites needed almost no
+changes ΓÇö same method names as the QSpinBox API it replaces.
+
+One coercion gotcha caught during verification: `_Stepper.valueChanged`
+is declared `Signal(float)` (so one class handles both int and
+float-with-decimals fields), but Qt's signal marshaling coerces a
+Python `int` to `float` in transit even when the value is a whole
+number. The two settings that must stay integers (`home_chirp_count`,
+`position_hold_ms`) now cast with an explicit `int(value)` in their
+`_on_*_changed` handlers ΓÇö without it, `config.json` silently drifted to
+storing `2.0`/`50.0` instead of `2`/`50` for those fields.
+
+Verified headlessly: incrementing/decrementing, clamping at both the
+configured min and max (chirp count 1-10, hold-ms 0-5000, etc.), and
+confirming the final `config.json` values land as the correct Python
+type (`int`, `int`, `float` for cooldown) after driving the buttons
+programmatically.
+
+**Process-hygiene lesson from this pass, worth remembering for the next
+live-verification round on any module:** while re-testing this fix
+against the real running app, a second `python host/main.py` instance
+was launched for screenshotting *without first checking whether the
+user's own instance was already running* ΓÇö it was, mid-session, with
+settings the user had already hand-tuned (axis index, opacity, chirp
+count/cooldown). A `keyboard.send('f3')` sent to test that second
+instance's deploy/stow behavior is a real OS-level keyboard event with
+no notion of "which process should receive this" ΓÇö a low-level
+`keyboard.hook()` in *every* running instance sees it, so it went to the
+user's live instance too. No lasting harm this time (config and window
+state were both confirmed intact afterward), but the risk is real:
+check `Get-CimInstance Win32_Process -Filter "Name='python.exe'"` (or
+equivalent) for an already-running instance before launching a second
+one to verify a fix, and prefer the headless smoke-test path (which
+already covers hotkey/logic correctness without touching a real keyboard
+hook) over sending an actual global hotkey once a live user instance
+might be running.
+
+## 2026-09-08 ΓÇö mobiThrottle: click-through toggle
+
+Direct user request after playing with the bar live: "I occasionally
+click and drag the bar by accident while playing and would like a toggle
+that makes it so it is completely click through while toggled."
+
+Added a "Click-through (disable drag/resize)" checkbox to the card, right
+under the SHOW/HIDE BAR button. Enabling it calls a new
+`_ThrottleBar.set_click_through()`, which sets
+`Qt.WA_TransparentForMouseEvents` on the bar widget ΓÇö the exact mechanism
+`modules/crosshair/module.py`'s `_CrosshairOverlay` already uses so its
+reticle never intercepts an aim click. With the attribute set, every
+mouse event on the bar's screen area passes straight through to whatever
+is underneath (the game) instead of reaching `mousePressEvent`/
+`mouseMoveEvent`/`mouseReleaseEvent` at all ΓÇö so drag-to-move and
+right-drag-to-resize are structurally impossible while it's on, not just
+suppressed by a flag check.
+
+`set_click_through()` also clears any in-progress `_drag_offset`/
+`_resize_start` state when called, so toggling click-through mid-drag
+(via the checkbox, reachable at any time) can't leave a stale drag
+anchor that would otherwise jump the bar the next time click-through is
+switched back off and a fresh drag begins.
+
+New setting `click_through` (default `False`, so drag/resize behave
+exactly as before out of the box) ΓÇö persists via the same
+`self.settings`/`config.set_module_settings()` path as everything else.
+No hotkey for this one; it's a deliberate, occasional toggle (arm it
+before undocking to fly, presumably), not something reached for
+mid-combat the way Stow/Deploy is.
+
+Verified headlessly: default state is click-through off (both the
+checkbox and the underlying Qt attribute), toggling the checkbox flips
+`WA_TransparentForMouseEvents` and `config.json`'s `click_through` in
+both directions correctly. Not yet confirmed with a real mouse against
+the real running game ΓÇö same category as the axis-tracking/Home-Chirp
+checks still pending a hands-on pass, and per the process-hygiene note
+above, deliberately not verified by spawning a second live instance or
+sending synthetic mouse events against the user's already-running one.
+
+**Follow-up (2026-09-08, same day): user reported click-through doesn't
+actually work** ("Everything else works as expected with it"). Root
+cause: `WA_TransparentForMouseEvents` is a Qt *widget attribute*, and
+Qt's Windows platform plugin only reliably pushes that attribute down
+into the native window's real `WS_EX_TRANSPARENT` extended style at
+window-*creation* time ΓÇö toggling it later via `setAttribute()` on an
+already-shown top-level widget doesn't consistently re-push the change
+into the live native window on this Qt/Windows combination, so the
+click-through checkbox silently no-op'd in practice even though the
+Qt-side attribute and the persisted setting were both flipping correctly
+(confirmed by the headless test above ΓÇö the bug was invisible to that
+test precisely because it only checks the Qt-side attribute, not the
+real OS-level window style).
+
+Fixed with the same category of fix this app already uses elsewhere for
+window behavior Qt doesn't expose reliably (see host/hotkey.py's
+`GetAsyncKeyState` watchdog, or ThrottleWatch's own
+`SetWindowRgn`/`CreateRoundRectRgn` panel-shaping this module's
+architecture doc describes replacing): `_ThrottleBar.set_click_through()`
+now reads/writes the `WS_EX_TRANSPARENT` bit directly via
+`GetWindowLongW`/`SetWindowLongW` on the widget's real `HWND`
+(`int(self.winId())`), which Windows checks live on every hit-test ΓÇö
+no window-creation-time dependency, no caching to fight. The Qt
+attribute is still set alongside it (harmless, keeps Qt's own internal
+bookkeeping consistent) but the actual click-through behavior no longer
+depends on it taking effect.
+
+Attempted to verify this the same way as the rest of mobiThrottle's live
+checks ΓÇö a standalone test widget plus `WindowFromPoint` to prove a
+screen coordinate's hit-test target genuinely changes when the bit
+flips, without touching the user's already-running instance ΓÇö but Star
+Citizen's own window (`CryENGINE`), running fullscreen-exclusive on the
+primary monitor at the time, dominated `WindowFromPoint` results across
+*both* monitors regardless of where the test widget was placed or
+whether the bit was set, making that harness unreliable while the game
+is running. The underlying mechanism (`WS_EX_TRANSPARENT`) is the
+standard, decades-proven Win32 technique for click-through overlays ΓÇö
+correct by construction ΓÇö but this specific instance of it is only
+confirmed by the user's own next real-mouse test after relaunching, not
+by an automated check.
+
+- **2026-09-08 ΓÇö New module: Multi-Commodity Finder, direct user request.**
+  User: reducing stops matters more than squeezing the best price on any one
+  commodity ΓÇö wanted the ability to cross-reference several commodities at
+  once and find terminals that trade multiple of them, even at a worse price
+  each. No UEX endpoint does this kind of cross-referencing (confirmed by
+  inspection ΓÇö `commodities_prices` is per-commodity, same endpoint every
+  other module already uses), so it's a client-side grouping of
+  per-commodity price rows by `id_terminal`, ranked by `(coverage_count,
+  total_value)` rather than pure price ΓÇö coverage wins first, total value is
+  only the tiebreak. Reused Commodity Prices' exact gating rules (BUY side
+  requires `scu_buy > 0`, no `scu_sell` gate on SELL ΓÇö see 2026-09-05 entry)
+  since it's the same underlying data and the same "quoted price with 0
+  real stock isn't real" problem applies. Supports both directions per user
+  answer: SELL (find a terminal that buys several of your hauled
+  commodities at once) and BUY (find a terminal that sells several raw
+  materials at once before a refining/hauling run). New module chosen over
+  extending Commodity Prices, per user preference, since it's a genuinely
+  different question (cross-commodity/per-terminal) from Commodity Prices'
+  per-commodity/cross-terminal scope.
+  Verified against live UEX data, not stubs, all headless
+  (`QT_QPA_PLATFORM=offscreen`, no window painted ΓÇö same convention
+  mobiNotes used for a similar reason): module contract loads cleanly
+  alongside all 7 existing modules with no duplicate-id issues; a real
+  3-commodity scan (Laranite/Gold/Agricium) found multiple terminals
+  covering all 3, correctly ranked by total value among ties; a 4-commodity
+  BUY-mode scan mixing a common commodity with a rare one (Osoian Hides)
+  produced the key proof this ranking actually does what it's for: a
+  terminal covering 2/5 checked commodities outranked one covering only 1/5
+  despite that 1/5 terminal being worth roughly 8x more in raw total value ΓÇö
+  coverage genuinely wins over price, not just in theory; the Pyro system
+  filter correctly narrowed live results afterward. Not yet human-tested in
+  the actual running app. See docs/modules/multi-commodity-finder.md.
+
+- **2026-09-08 ΓÇö Terminal facility flags (refinery, cargo center, loading
+  dock, etc.) added to the shared `host/locations.py`, not hand-rolled in
+  Multi-Commodity Finder alone.** User asked whether UEX's data includes
+  what a location actually has, then explicitly asked whether it's worth
+  wiring in at the shared level now versus only in the one module that
+  needs it today, anticipating other modules wanting it later. Confirmed
+  live: every `terminals` row already carries `is_refinery`,
+  `is_cargo_center`, `is_habitation`, `is_medical`, `is_food`,
+  `is_shop_fps`, `is_shop_vehicle`, `is_refuel`, `is_repair`,
+  `is_jump_point`, `has_loading_dock`, `has_docking_port`,
+  `has_freight_elevator` as plain 0/1 flags ΓÇö no new endpoint, no added API
+  cost, since `all_locations()` already fetches these rows for every
+  module that uses the shared service. Added `LocationService.FACILITY_FLAGS`
+  (raw flag -> clean display name) and `LocationService.facilities(terminal)`
+  (returns the matching clean-name set) as the single shared mapping,
+  mirroring why `display_name()`/`friendly_label()` already live here
+  instead of duplicated per module (see the Phase 1-4 location-service
+  entries above). Wired an optional facility filter into Multi-Commodity
+  Finder as the first consumer (`facility_filter` setting, "Any Facility"
+  default). Verified live: real terminal data does carry both Refinery and
+  Loading Dock flags for real Stanton/Terminus/Pyro terminals, and filtering
+  by "Loading Dock" correctly narrowed a real 8-terminal result set down to
+  5 genuine matches. Next module that wants facility-aware results (e.g.
+  Refinery Finder cross-checking capacity against `is_refinery`, or a future
+  route planner) can call the same helper for free.
+
+- **2026-09-08 ΓÇö Two fixes to Multi-Commodity Finder's COPY button, both
+  found within a day of shipping it.** (1) User reported the copied text
+  said "Mode: BUY" while the app's mode combo was actually set to SELL ΓÇö
+  `_format_for_clipboard()`'s mode label had index 0/1 backwards relative
+  to every other place in the module reading the same combo (the
+  `_on_mode_changed`/`_render_results` gating logic was correct the whole
+  time ΓÇö only the printed label in the copy text was wrong, so results
+  data itself was never affected). Fixed and reverified against a real
+  scan. (2) User: the commodity search box's filter text shouldn't be in
+  the copied summary ΓÇö it's a UI narrowing aid over the checkable list, not
+  part of the actual query, so including it was noise for something meant
+  to be shared. Removed it from `_format_for_clipboard()` and the button's
+  tooltip; kept `Commodities (N): ...` (the actual checked list) as the
+  real content.
+  **Process note, not a code bug**: verifying fix (1) surfaced that this
+  session's earlier headless verification of the COPY feature had used the
+  user's real `config.json` (via the default `Config()`/`CONFIG_PATH`)
+  instead of an isolated test file, leaving stray settings (a facility
+  filter, extra checked commodities) bleeding into what the user saw when
+  they next opened the app ΓÇö cleared those back to empty and switched to
+  monkeypatching `host.config.CONFIG_PATH` to a scratch file for this kind
+  of headless module testing going forward. Same class of mistake
+  PROGRESS.md already flagged once before (Logistics Hub's confirm-gate
+  testing writing into the real debug log) ΓÇö worth remembering as a
+  standing rule, not a one-off.
+
+- **2026-09-08 ΓÇö Missing-commodity wording made mode-aware ("doesn't buy
+  from you" / "doesn't sell to you"), replacing the ambiguous "not
+  available here."** User flagged real confusion: under SELL mode
+  (terminal buys from you), seeing "Construction Materials: not available
+  here" reads naturally as "out of stock," not its actual meaning ΓÇö this
+  terminal doesn't purchase that commodity at all. The direction (buy vs.
+  sell) was never in the missing-line text at all, only implied by context
+  the reader had to hold in their head separately. New shared
+  `_missing_text(name, is_buy_mode)` used by both the on-card result rows
+  and the COPY clipboard summary, so the two can't drift out of sync with
+  each other. Verified live (isolated test config): a SELL-mode scan
+  correctly prints "doesn't buy from you" for every uncovered commodity,
+  and re-running the same scan in BUY mode correctly flips every instance
+  to "doesn't sell to you."
+
+- **2026-09-20 ΓÇö Full-product PyInstaller build with easyocr/torch/torchvision.**
+  Phase 1 of public release: the packaged exe now bundles the complete OCR
+  stack (easyocr, torch, torchvision, Pillow, numpy, opencv, scipy, skimage)
+  so Logistics Hub works out of the box without a separate Python install.
+  Key gotchas:
+  - **UPX disabled**: Compressing torch binaries with UPX causes runtime
+    crashes and barely reduces size. Set `upx=False` in the spec.
+  - **collect_all() for torch**: PyInstaller's default analysis misses many
+    torch/torchvision native libraries. Using `collect_all('torch')` and
+    `collect_all('torchvision')` captures everything.
+  - **CPU-only torch in CI**: Installing torch via the PyPI `cpu` index
+    (`--index-url https://download.pytorch.org/whl/cpu`) saves ~2GB of
+    CUDA libs that aren't needed. Resulting exe is ~600-900MB.
+  - **CI disk space**: Added a step to free disk in the workflow; torch
+    install + PyInstaller temp files can exceed 10GB transiently.
+  - **First-scan latency**: easyocr initializes lazily on first use (already
+    the case pre-bundle), so first Logistics Hub scan still takes 10-30s.
+    Language models (~100MB) are downloaded to `~/.EasyOCR/` on first-ever
+    run, not bundled ΓÇö this is easyocr's standard behavior.
+  `modules/` still ships external (plain .py next to the exe) per existing
+  architecture ΓÇö only the host and its heavy deps are frozen into the exe.
+
+- **2026-09-20 ΓÇö pygame-ce collection added after smoke-test failure.**
+  mobiThrottle was missing from the frozen build ΓÇö `discover_modules` skipped
+  it because `import pygame` failed. pygame-ce bundles SDL2 DLLs that
+  PyInstaller doesn't pick up by default. Added `collect_all('pygame')` to
+  the spec (same pattern as torch/easyocr). Caught during Mitch's local
+  smoke test before public release.
+
+- **2026-09-20 ΓÇö Safety hardening after real incident: WH_KEYBOARD_LL hook
+  blocked Star Citizen keyboard input.** Incident: mobiOverlay v0.1.0
+  (packaged exe, first real new-user test) was left running while Mitch
+  played Star Citizen. The global keyboard hook (`host/hotkey.py` via the
+  `keyboard` library) left SC able to mouse-look but unable to WASD/move.
+  Force-killing SC was attempted first but the real problem was the
+  overlay's hook ΓÇö a WH_KEYBOARD_LL hook that isn't unhooked before its
+  owning process dies (or hangs, or is killed improperly) can block
+  keyboard input system-wide until Windows' ~5-second timeout fires.
+  Running two instances doubles that risk. Three fixes shipped together:
+
+  1. **Single-instance guard** (`host/single_instance.py`): a lockfile
+     with an exclusive write lock prevents running two mobiOverlay
+     processes at once. Covers both the frozen exe and `python host/main.py`.
+     A second instance shows a clear dialog ("mobiOverlay is already
+     running") and exits immediately. The lock is process-lifetime ΓÇö no
+     cleanup code needed, crash/kill releases it automatically.
+
+  2. **Bulletproof hotkey teardown**: the hook was already released in
+     `GlobalHotkey.shutdown()`, called from `MainWindow.closeEvent()` and
+     `MainWindow.relaunch()`. Added `atexit.register(shutdown)` as a
+     belt-and-suspenders safety net for cases where neither runs (crash,
+     SIGKILL, slow interpreter teardown due to easyocr/torch's native
+     thread pools). Module-owned hotkeys (mobiThrottle's two
+     `GlobalHotkey` instances) are released via `ModuleBase.shutdown()`,
+     already wired to `app.aboutToQuit`.
+
+  3. **Lazy hook install**: the global keyboard hook is now installed
+     only when `set_hotkey()` is first called with a non-empty combo, not
+     unconditionally in `GlobalHotkey.__init__()`. A user running with no
+     global hotkey configured never even has a WH_KEYBOARD_LL hook
+     installed, eliminating any risk of that hook blocking game input.
+     The reconcile watchdog timer also starts lazily now.
+
+  **Residual risk**: WH_KEYBOARD_LL hooks are inherently dangerous around
+  exclusive-fullscreen games. Even with these fixes, if the mobiOverlay
+  process hangs hard (infinite loop, debugger attached, etc.) while the
+  hook is installed and a hotkey is armed, keystroke delivery will stall
+  until Windows' timeout fires or the process is killed. The single-
+  instance guard and lazy install reduce the surface area; the atexit
+  handler and module-shutdown path ensure cleanup on every normal exit;
+  but a truly unresponsive process with a live hook is a Windows-level
+  hazard no user-mode code can fully prevent. Users should quit
+  mobiOverlay before troubleshooting SC input issues, and never leave it
+  running unattended with SC for extended periods.
+
+- **2026-09-20 ΓÇö Switched to TRUE single-file exe: modules bundled inside.**
+  CEO wanted one double-clickable `mobiOverlay.exe` with no separate
+  `modules/` folder required. Changed approach:
+  - `mobioverlay.spec`: Added `Tree('modules', prefix='modules')` to bundle
+    the entire modules tree (all 8 modules) as data, extracted to
+    `sys._MEIPASS/modules` at runtime.
+  - `host/paths.py`: Added `modules_root()` ΓÇö returns `sys._MEIPASS/modules`
+    when frozen, `modules/` when running from source. `app_root()` unchanged
+    (still returns the exe folder, where config/data must persist).
+  - `host/module_loader.py`: Uses `modules_root()` instead of `app_root() /
+    "modules"` for discovery.
+  - `release.yml`/`BUILD.md`/`README.md`: Simplified ΓÇö no more "copy modules
+    next to exe" step for end users.
+  **Development workflow unchanged**: modules are still plain .py in the repo,
+  edited in place; the frozen build just bundles them at build time.
+  **Data files still persist next to exe**: config.json, notes data, cache
+  files ΓÇö anything that must survive between launches ΓÇö still use `app_root()`.
+
+- **2026-09-20 ΓÇö System tray icon added for overlay recovery.**
+  `host/single_instance.py` already told users to "check your system tray"
+  when a second instance tried to start, but no tray icon actually existed.
+  Added `QSystemTrayIcon` to provide a recovery path when users forget the
+  Stow/Deploy hotkey or lose track of the stowed pill.
+
+  **Why tray, not taskbar:** The main window uses `Qt.Tool` (alongside
+  `Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint`) specifically to exclude
+  it from the Windows taskbar ΓÇö an overlay shouldn't occupy a taskbar slot.
+  That's intentional. The system tray (notification area) is the correct
+  alternative affordance: always accessible, doesn't fight the overlay design.
+
+  **Implementation:**
+  - `_SystemTray` class in `host/main_window.py`, created at startup only if
+    `QSystemTrayIcon.isSystemTrayAvailable()` returns true.
+  - Menu: Show (deploys if stowed, raises if deployed), Stow, Quit.
+  - Double-click or activation ΓåÆ deploy/show (same as Show menu item).
+  - Quit runs the same clean-shutdown path as closing the window (saves
+    geometry, releases hotkey hook, releases tray icon).
+  - Menu state updates when app stows/deploys (Show enabled when stowed,
+    Stow enabled when deployed).
+  - Tray icon: `host/assets/icons/mobioverlay.png` (64├ù64 RGBA), a cyan "m"
+    on dark background matching the HUD theme, generated programmatically
+    with Pillow at build time and bundled in the PyInstaller spec.
+  - Minimize button tooltip updated to mention the tray icon as a third way
+    back (alongside clicking the pill and using the hotkey).
+
+- **2026-09-20 ΓÇö mobiThrottle home chirp: switched from winsound.Beep to
+  pygame.mixer.Sound.**
+  **Root cause**: `winsound.Beep()` uses the legacy Windows PC speaker (or
+  its emulated software fallback), not the system's audio output device.
+  When a game like Star Citizen owns WASAPI exclusive-mode audio or even
+  just when the legacy beep is disabled/muted (common on modern Windows),
+  `winsound.Beep()` either blocks briefly and produces nothing, or raises
+  a `RuntimeError` ΓÇö both swallowed silently in the daemon thread, so no
+  chirp is audible even though the edge-detection logic fires correctly.
+  **Fix**: Generate a short sine-wave WAV in memory (1400 Hz, 45 ms, same
+  frequency/duration as before) and play it via `pygame.mixer.Sound()`.
+  pygame.mixer uses SDL_mixer under the hood, which routes through WASAPI
+  shared-mode on Windows ΓÇö this keeps working even when a game has
+  exclusive audio focus, same reason system notifications still play
+  during gameplay. The mixer is initialized lazily on first chirp
+  (frequency 22050 Hz, mono, small 512-sample buffer for low latency);
+  multi-beep sequences use `QTimer.singleShot` scheduling (non-blocking,
+  Qt-event-loop integrated) instead of a daemon thread with `time.sleep`.
+  **Fallback**: If mixer init fails (missing audio device, driver issue),
+  `_init_chirp_sound()` returns False and the chirp degrades silently ΓÇö
+  bar tracking/flashing continues unaffected, only audio is lost.
+  **No config changes**: `home_chirp_enabled`, `home_chirp_count`,
+  `home_chirp_cooldown` all work unchanged; edge-detection logic
+  (deadzone, reverse, startup-at-home) untouched.
+
+- **2026-09-20 ΓÇö Fixed: Stow/Deploy hotkey appeared to fully hide the
+  overlay instead of showing a visible pill.**
+  **Root cause**: When `pill_geometry` was empty (first stow, or config
+  cleared), the pill inherited the deployed window's top-left coordinates
+  after resize. If the deployed window sat near the right edge of a
+  monitor (common when positioning an overlay on a secondary display at
+  x=2660), the now-tiny pill (~150├ù60px) kept that same top-left and
+  landed mostly or entirely off-screen ΓÇö users saw it "vanish" rather
+  than stow to a visible pill.
+  **Fix**: New `_ensure_pill_on_screen()` helper in `host/main_window.py`,
+  called from `stow_app()` only when no saved `pill_geometry` exists.
+  Clamps the pill position to stay fully within the screen bounds (with
+  a 20px margin), using `QGuiApplication.screenAt()` to find the correct
+  monitor. The computed position is saved as the new `pill_geometry` so
+  subsequent stows reopen there without re-computing.
+  **Click-through unchanged**: `pill_click_through` setting and
+  `_apply_native_click_through()` (WS_EX_TRANSPARENT via Win32) work
+  exactly as before ΓÇö when enabled, the pill is visible but unclickable,
   redeploy via hotkey only.
 
+- **2026-09-20 ΓÇö Pill invisible in multi-monitor gap: fixed.**
+  **Root cause**: User's dual-monitor setup has a 512px horizontal gap
+  (screen0 ends at x=2048, screen1 starts at x=2560). The saved
+  `pill_geometry: {x:2660, y:100}` was applied directly via `move()` without
+  validation. Qt's `screenAt(QPoint(2660, 100))` returns None for coordinates
+  in a gap, and nothing prevented the pill from landing there ΓÇö completely
+  invisible, and with `pill_click_through: true` also undraggable.
+  **Fix**: New `_ensure_on_screen()` helper validates proposed pill position:
+  1. Check `QGuiApplication.screenAt(proposed_pos)` ΓÇö if a real screen, use it
+  2. If None (gap), fall back to the screen containing the pre-stow window's
+     position (so the pill stays near where the user was working)
+  3. If that's also invalid, fall back to primary
+  4. Clamp final position to that screen's `availableGeometry()` with a 10px
+     margin, accounting for pill width/height
+  Called from `stow_app()` before moving the window. This ensures the pill
+  always lands on a visible, usable area of a real monitor.
+  **UX note**: Settings panel description for "PILL CLICK-THROUGH" clarified:
+  "ON = pill passes all clicks through to the game (cannot drag or click it).
+  Redeploy via hotkey or system tray only. OFF = pill is draggable and
+  clickable." Already defaults to OFF for new installs (existing behavior),
+  so first-time stow is movable out of the box.
+
