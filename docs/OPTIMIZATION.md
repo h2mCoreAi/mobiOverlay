@@ -6,6 +6,18 @@ expected benefit, effort/risk, and project-rule compliance.
 
 ---
 
+## Implementation Status
+
+| Item | Status | Commit |
+|------|--------|--------|
+| Q1 | ✅ Implemented | Share single LocationService across modules |
+| Q2 | ✅ Implemented | Deduplicate commodities list fetch |
+| Q3 | ✅ Implemented | Connection pooling on UexApiClient |
+| Q4 | ✅ Implemented | Cache refineries_methods once per session |
+| M1 | ✅ Implemented | Lazy-load easyocr/PyTorch on first OCR use |
+
+---
+
 ## Executive Summary
 
 The codebase is well-architected with clear module boundaries and documented
@@ -21,7 +33,7 @@ decisions. The most impactful optimizations center on:
 
 ## Quick Wins (Low effort, immediate benefit)
 
-### Q1. Share a single LocationService instance across all modules
+### Q1. Share a single LocationService instance across all modules ✅ IMPLEMENTED
 
 **Problem**: Every module instantiates its own `LocationService`:
 - `commodity_prices/module.py:69` — `self._locations = LocationService(api_client)`
@@ -45,7 +57,7 @@ as `api_client`), instantiate once in `host/main.py`, pass to all modules.
 
 ---
 
-### Q2. Deduplicate commodities API call at startup
+### Q2. Deduplicate commodities API call at startup ✅ IMPLEMENTED
 
 **Problem**: Multiple modules fetch the full commodities list independently:
 - `commodity_prices/module.py:178-179` — `self.api.get("commodities")`
@@ -67,7 +79,7 @@ a parallel `CommoditiesService` in `host/`.
 
 ---
 
-### Q3. Add connection pooling/keep-alive to UexApiClient
+### Q3. Add connection pooling/keep-alive to UexApiClient ✅ IMPLEMENTED
 
 **Problem**: `host/api_client.py` uses `requests.Session()` but creates new TCP
 connections for each request due to default session behavior and lack of explicit
@@ -97,7 +109,7 @@ self._session.mount('https://', HTTPAdapter(pool_connections=10, pool_maxsize=10
 
 ---
 
-### Q4. Cache refineries_methods (static reference data)
+### Q4. Cache refineries_methods (static reference data) ✅ IMPLEMENTED
 
 **Problem**: `refinery_finder/module.py:174` calls `refineries_methods` on every
 `refresh()`, but this is reference data that never changes during a session:
@@ -145,7 +157,7 @@ intervals instead of 1 per 120ms).
 
 ## Medium Effort (Noticeable improvement, some refactoring)
 
-### M1. Lazy-load easyocr/PyTorch on first OCR use
+### M1. Lazy-load easyocr/PyTorch on first OCR use ✅ IMPLEMENTED
 
 **Problem**: `logistics_hub/module.py:107-109` imports easyocr at module load time:
 
