@@ -53,7 +53,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-# File-path import, not `from modules.logistics_hub import gamelog_verify` —
+# File-path imports, not `from modules.logistics_hub import ...` —
 # `modules/` is not guaranteed to be an importable package once frozen (see
 # host/module_loader.py's own docstring: modules ship external to the exe,
 # not on sys.path as a package). Same mechanism the host uses to load this
@@ -65,7 +65,14 @@ _gamelog_verify_spec = importlib.util.spec_from_file_location(
 gamelog_verify = importlib.util.module_from_spec(_gamelog_verify_spec)
 _gamelog_verify_spec.loader.exec_module(gamelog_verify)
 
-from PySide6.QtCore import Qt, QRect, QRectF, QPoint, QTimer, Signal
+_ocr_spec = importlib.util.spec_from_file_location(
+    "mobioverlay_logistics_hub_ocr",
+    os.path.join(os.path.dirname(__file__), "ocr.py"),
+)
+ocr_module = importlib.util.module_from_spec(_ocr_spec)
+_ocr_spec.loader.exec_module(ocr_module)
+
+from PySide6.QtCore import Qt, QRect, QRectF, QPoint, QTimer, Signal, QObject, QThread
 from PySide6.QtGui import (
     QGuiApplication,
     QImage,
@@ -133,6 +140,62 @@ def _ensure_ocr_loaded() -> bool:
         _ocr_load_error = str(e)
         logger.warning("OCR dependencies not available: %s", e)
         return False
+
+
+class OcrWorker(QObject):
+    """Background worker that runs OCR off the Qt main thread.
+
+    Emits `finished` with raw OCR text on success, or `error` with
+    an error message on failure. The heavy easyocr/PyTorch inference
+    runs in a QThread so the UI stays responsive during the 1-3s scan.
+    """
+    finished = Signal(str)  # raw_text
+    error = Signal(str)  # error message
+    status = Signal(str)  # progress updates
+
+    def __init__(self, pil_rgb, reader):
+        """
+        Args:
+            pil_rgb: PIL Image in RGB mode (already captured from screen)
+            reader: Initialized easyocr.Reader instance (or None to create one)
+        """
+        super().__init__()
+        self._pil_rgb = pil_rgb
+        self._reader = reader
+        self._created_reader = False
+
+    def run(self):
+        """Run OCR on the provided image. Call from QThread."""
+        try:
+            if not _ensure_ocr_loaded():
+                self.error.emit(
+                    f"easyocr/Pillow not available: {_ocr_load_error or 'unknown error'}\n"
+                    "Run: pip install -r modules/logistics_hub/requirements.txt"
+                )
+                return
+
+            Image = _ocr_modules["Image"]
+            ImageOps = _ocr_modules["ImageOps"]
+            easyocr = _ocr_modules["easyocr"]
+            np = _ocr_modules["np"]
+
+            if self._reader is None:
+                self.status.emit("Loading OCR engine...")
+                self._reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+                self._created_reader = True
+
+            self.status.emit("Scanning...")
+            gray = ocr_module.preprocess_image(self._pil_rgb, ImageOps, Image)
+            raw_text = ocr_module.run_ocr(self._reader, gray, np)
+            self.finished.emit(raw_text)
+        except Exception as e:
+            logger.exception("OCR worker error")
+            self.error.emit(str(e))
+
+    def get_reader(self):
+        """Return the reader if we created one (for caching by caller)."""
+        return self._reader if self._created_reader else None
+
 
 COPY_ROUTE_CONFIRM_MS = 1500  # how long the COPY ROUTE button shows "COPIED" before reverting
 
@@ -218,10 +281,9 @@ DEFAULT_ACCEPT_REMINDER_SECONDS = 30
 # hallucination artifacts, like a reward-icon glyph misread as a stray
 # symbol, which synthetic text can't reproduce); needs a real scan to
 # actually confirm, same as the earlier column-ordering change.
-OCR_ALLOWLIST = (
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    " .,:;'\"-/()[]*_%&!?"
-)
+# Now extracted to ocr.py for background-thread use — kept here for
+# backwards compatibility with any code that references it directly.
+OCR_ALLOWLIST = ocr_module.OCR_ALLOWLIST
 
 # Real UEX distance (LocationService.distance(), see host/locations.py) is
 # the primary travel cost between two resolved locations now — genuine
@@ -249,54 +311,11 @@ def _virtual_desktop_rect() -> QRect | None:
     return rect
 
 
+# Delegation to the extracted OCR module — kept here for backwards
+# compatibility with any code that references it directly.
 def _order_ocr_boxes(results: list, image_width: int) -> list[str]:
-    """Reorder EasyOCR's `detail=1` results (each `(bbox, text, confidence)`,
-    `bbox` a 4-point quadrilateral) into genuine left-to-right,
-    top-to-bottom reading order, instead of trusting whatever order
-    EasyOCR's own internal sort happened to return.
-
-    The in-game contract panel is consistently two columns (mission
-    narrative text next to a separate PICK UP/DROP OFF list) — this is
-    documented as the root cause behind the large majority of parsing
-    bugs fixed this session (split location names, orphaned words, role
-    misattribution): every one of them was really a downstream symptom of
-    reading both columns interleaved by vertical position instead of one
-    column at a time. This fixes it at the source: split into at most two
-    columns by the single largest horizontal gap between text boxes (only
-    if that gap is wide enough to plausibly be a real column boundary,
-    not just normal text spacing), sort each column top-to-bottom, then
-    read the left column in full before the right one.
-
-    A capture with no genuine column split (the common case for a
-    single-pickup/single-dropoff contract, or any capture that isn't two
-    columns at all) finds no wide-enough gap and degrades to one column,
-    sorted purely top-to-bottom — never worse than the old behavior.
-    """
-    boxes = []
-    for bbox, text, _confidence in results:
-        xs = [p[0] for p in bbox]
-        ys = [p[1] for p in bbox]
-        boxes.append({"text": text, "x_min": min(xs), "y_center": sum(ys) / len(ys)})
-
-    if len(boxes) < 2:
-        return [b["text"] for b in boxes]
-
-    ordered = sorted(boxes, key=lambda b: b["x_min"])
-    gaps = [(ordered[i + 1]["x_min"] - ordered[i]["x_min"], i) for i in range(len(ordered) - 1)]
-    biggest_gap, split_idx = max(gaps)
-
-    # A real column boundary is a large fraction of the capture's own
-    # width, not a fixed pixel count — capture regions vary a lot in size
-    # (a tight single-contract crop vs. a wide multi-column one).
-    if biggest_gap < max(50, image_width * 0.15):
-        columns = [ordered]
-    else:
-        columns = [ordered[: split_idx + 1], ordered[split_idx + 1 :]]
-
-    lines: list[str] = []
-    for column in columns:
-        lines.extend(b["text"] for b in sorted(column, key=lambda b: b["y_center"]))
-    return lines
+    """Reorder EasyOCR's `detail=1` results into reading order. Delegated to ocr.py."""
+    return ocr_module.order_ocr_boxes(results, image_width)
 
 
 _PICKUP_COMMODITY_RE = re.compile(r"\bcollect\s+(.+?)\s+from\s+(.+)", re.I)
@@ -1487,6 +1506,9 @@ class LogisticsHubModule(ModuleBase):
         self._route_popout_layout: QVBoxLayout | None = None
         self._route_popout_opacity_slider: QSlider | None = None
         self._reader = None
+        # Background OCR thread state (M2 optimization)
+        self._ocr_thread: QThread | None = None
+        self._ocr_worker: OcrWorker | None = None
         # Shared Core service now provided by host (host/locations.py) —
         # self.locations is set in ModuleBase.__init__. Keep a private
         # alias for compatibility with existing code that uses
@@ -2264,36 +2286,17 @@ class LogisticsHubModule(ModuleBase):
         self._copy_route_revert_timer = None
 
     def _safe_scan(self):
-        # OCR (first call loads an easyocr model — can take several seconds
-        # — plus every call after that runs real inference) and the UEX API
-        # calls in refresh() are both fully synchronous on the GUI thread
-        # (see host/main.py's module-contract note on this); there's no
-        # progress signal to hook into without a threading redesign, which
-        # is out of scope here. The honest, cheap fix: flip the button into
-        # an obvious busy state and force Qt to actually paint it *before*
-        # the blocking call starts, so a first-time user doesn't mistake a
-        # long pause for a hang.
-        btn = getattr(self, "_scan_btn", None)
-        if btn is not None:
-            btn.setEnabled(False)
-            btn.setText("SCANNING…")
-        QApplication.processEvents()
-        try:
-            self.refresh()
-        except Exception as exc:
-            self._set_status(f"Error: {exc}")
-        finally:
-            if btn is not None:
-                btn.setText("SCAN CONTRACT")
-                btn.setEnabled(True)
+        """Start an OCR scan in a background thread so UI stays responsive.
 
-    # ------------------------------------------------------------------
-    # ModuleBase refresh
-    # ------------------------------------------------------------------
-    def refresh(self):
-        """Capture the selected region, OCR it into one new contract, append
-        it to the persisted contract list, resolve locations against UEX
-        data, and replan the combined route across every contract."""
+        Screen capture and QPixmap→PIL conversion happen on the main thread
+        (QPixmap isn't thread-safe), then the heavy easyocr/PyTorch inference
+        runs in a QThread. Results come back via signals.
+        """
+        # Prevent starting a second scan while one is in progress
+        if getattr(self, "_ocr_thread", None) is not None:
+            self._set_status("Scan already in progress...")
+            return
+
         if not self._started:
             self._started = True
             self._set_status("Ready — click SCAN CONTRACT to capture one.")
@@ -2305,17 +2308,109 @@ class LogisticsHubModule(ModuleBase):
             self._clear_error_state()
             return
 
-        # Lazy-load OCR engine on first scan (takes ~2-3s for PyTorch init)
-        self._set_status("Loading OCR engine..." if self._reader is None else "Scanning...")
-        QApplication.processEvents()  # show the status before blocking on import
+        btn = getattr(self, "_scan_btn", None)
+        if btn is not None:
+            btn.setEnabled(False)
+            btn.setText("LOADING OCR…" if self._reader is None else "SCANNING…")
+
+        # Capture screen immediately (fast, must be on main thread)
+        try:
+            pix = self._grab_region(region)
+            pil_rgb = self._pixmap_to_pil(pix)
+        except Exception as exc:
+            self._set_status(f"Error capturing screen: {exc}")
+            if btn is not None:
+                btn.setText("SCAN CONTRACT")
+                btn.setEnabled(True)
+            return
+
+        # Start background OCR thread
+        self._ocr_thread = QThread()
+        self._ocr_worker = OcrWorker(pil_rgb, self._reader)
+        self._ocr_worker.moveToThread(self._ocr_thread)
+
+        self._ocr_worker.status.connect(self._on_ocr_status)
+        self._ocr_worker.finished.connect(self._on_ocr_finished)
+        self._ocr_worker.error.connect(self._on_ocr_error)
+        self._ocr_thread.started.connect(self._ocr_worker.run)
+        self._ocr_thread.finished.connect(self._on_ocr_thread_done)
+
+        self._ocr_thread.start()
+
+    def _pixmap_to_pil(self, pixmap):
+        """Convert QPixmap to PIL RGB image. Must run on main thread."""
         if not _ensure_ocr_loaded():
             raise RuntimeError(
                 f"easyocr/Pillow not available: {_ocr_load_error or 'unknown error'}\n"
                 "Run: pip install -r modules/logistics_hub/requirements.txt"
             )
+        Image = _ocr_modules["Image"]
 
-        pix = self._grab_region(region)
-        raw_text = self._ocr(pix)
+        qimg = pixmap.toImage().convertToFormat(QImage.Format_RGBA8888)
+        buf = bytes(qimg.bits())
+        pil_rgba = Image.frombuffer(
+            "RGBA", (qimg.width(), qimg.height()), buf, "raw", "RGBA", 0, 1
+        )
+        return pil_rgba.convert("RGB")
+
+    def _on_ocr_status(self, status: str):
+        """Handle status updates from OCR worker."""
+        self._set_status(status)
+        btn = getattr(self, "_scan_btn", None)
+        if btn is not None:
+            btn.setText(status.upper() if len(status) < 15 else "SCANNING…")
+
+    def _on_ocr_finished(self, raw_text: str):
+        """Handle successful OCR completion."""
+        # Cache the reader if worker created one
+        if self._ocr_worker:
+            new_reader = self._ocr_worker.get_reader()
+            if new_reader is not None:
+                self._reader = new_reader
+
+        # Clean up thread
+        self._cleanup_ocr_thread()
+
+        # Process the OCR result
+        try:
+            self._process_ocr_result(raw_text)
+        except Exception as exc:
+            self._set_status(f"Error: {exc}")
+            logger.exception("Error processing OCR result")
+        finally:
+            self._restore_scan_button()
+
+    def _on_ocr_error(self, error_msg: str):
+        """Handle OCR worker error."""
+        self._cleanup_ocr_thread()
+        self._set_status(f"OCR Error: {error_msg}")
+        self._restore_scan_button()
+
+    def _on_ocr_thread_done(self):
+        """Handle OCR thread completion (cleanup if not already done)."""
+        pass
+
+    def _cleanup_ocr_thread(self):
+        """Clean up OCR thread and worker."""
+        if self._ocr_thread is not None:
+            self._ocr_thread.quit()
+            self._ocr_thread.wait()
+            self._ocr_thread = None
+        self._ocr_worker = None
+
+    def _restore_scan_button(self):
+        """Restore scan button to normal state."""
+        btn = getattr(self, "_scan_btn", None)
+        if btn is not None:
+            btn.setText("SCAN CONTRACT")
+            btn.setEnabled(True)
+
+    def _process_ocr_result(self, raw_text: str):
+        """Process OCR text into a contract and show review popup.
+
+        This contains the logic that was previously in refresh() after
+        the OCR call — now called from the background thread's callback.
+        """
         logger.info("logistics_hub OCR raw text:\n%s", raw_text)
 
         debug_trace: list[dict] = []
@@ -2325,18 +2420,9 @@ class LogisticsHubModule(ModuleBase):
 
         candidates = _candidate_phrases(raw_text)
 
-        # Every scan now pauses for a review popup — added 2026-09-07 per
-        # user direction, replacing the old "auto-add unless duplicate"
-        # behavior. Route/manifest are unchanged until ACCEPT is clicked,
-        # so there's nothing new to compare yet — an empty dict, not None,
-        # keeps _log_scan_debug's entry shape consistent either way.
         contracts = self.settings.setdefault("contracts", [])
         self._pending_scan = contract
         duplicate = any(self._is_likely_duplicate(c, contract) for c in contracts)
-        # Computed once here (not inside _show_review_popup) so the popup
-        # and the debug log entry below always agree on the same grade —
-        # _grade_contract() calls _plan_route() twice, not worth doing
-        # again just to log it.
         self._pending_grade = self._grade_contract(contract, contracts)
         self._show_review_popup(contract, duplicate, self._pending_grade)
         self._set_status("Review the scan — ACCEPT or REJECT.")
@@ -2344,6 +2430,18 @@ class LogisticsHubModule(ModuleBase):
             raw_text, candidates, contract, "pending_review", debug_trace, {},
             grade=self._pending_grade,
         )
+
+    # ------------------------------------------------------------------
+    # ModuleBase refresh
+    # ------------------------------------------------------------------
+    def refresh(self):
+        """Start an OCR scan via _safe_scan() — see that method's docstring.
+
+        This is the ModuleBase contract entry point. Background OCR runs in
+        a QThread so the UI stays responsive during the 1-3s inference time.
+        Results are delivered via signals to _on_ocr_finished().
+        """
+        self._safe_scan()
 
     def _log_scan_debug(
         self, raw_text: str, candidates: list[tuple[str, str, int]], contract: dict, note: str,
