@@ -3651,21 +3651,30 @@ by an automated check.
 - **2026-09-20 — M2: Background OCR for Logistics Hub.**
   **Problem**: Logistics Hub's SCAN CONTRACT froze the entire UI for 1-3s
   during EasyOCR/PyTorch inference, making the overlay appear unresponsive.
-  **Fix**: Moved OCR work to a background `QThread`. Screen capture and
-  QPixmap→PIL conversion stay on the main thread (QPixmap isn't thread-safe),
-  then the heavy inference runs in `OcrWorker.run()`. Results come back via
-  Qt signals (`finished`, `error`, `status`) to callbacks on the main thread.
+  **Initial fix (crashed)**: Moved OCR to a `QThread` with `OcrWorker`. This
+  caused a hard crash (Qt6Core.dll STATUS_STACK_BUFFER_OVERRUN) when
+  `easyocr.Reader()` was constructed inside the QThread — PyTorch/OpenMP
+  initialization inside a QThread conflicts with Qt's threading model on
+  Windows. Additional issues: calling `QThread.quit()/wait()` from signal
+  slots was fragile, and `QImage.bits()` returned a view that could become
+  invalid before the background thread used it.
+  **Working fix**: Use a plain `threading.Thread` instead of QThread:
+    1. **easyocr.Reader created on main thread only** — first scan may briefly
+       block (~2.8s) but avoids the crash entirely. Shows "Loading OCR…" status.
+    2. **Inference runs in a daemon `threading.Thread`** — only the stateless
+       `readtext()` call, which is safe from any thread.
+    3. **`_OcrSignalBridge` (QObject on main thread)** marshals results back
+       via Qt signals with queued connections.
+    4. **`_pixmap_to_pil()` now uses `bytearray(qimg.bits())`** — makes a full
+       copy of image bytes before the QImage goes out of scope.
   **Structure**: Extracted pure OCR helpers (`order_ocr_boxes`, `preprocess_image`,
   `run_ocr`) to `modules/logistics_hub/ocr.py` — a minimal slice to keep the
   worker clean. The rest of `logistics_hub/module.py` delegates to `ocr_module`
   instead of duplicating code. This is NOT the full L1 decomposition (deferred);
   only what M2 needs is extracted.
-  **First-scan UX**: The initial `import easyocr` still takes ~2.8s (lazy-loaded
-  on first use, per M1 already implemented), but the UI now shows "Loading OCR…"
-  status and remains interactive — the user can collapse/move cards while waiting.
-  **Thread safety**: EasyOCR's `Reader.readtext()` is stateless inference over
-  numpy arrays, safe to call from any thread. The shared `self._reader` is only
-  accessed from the main thread (passed to worker, cached back from worker).
+  **First-scan UX**: The initial Reader creation blocks briefly on the main
+  thread (unavoidable to prevent the crash), but subsequent scans run inference
+  in the background with full UI responsiveness.
   **No behavior change**: Contract parsing, review popup, grading — all unchanged.
   Only the threading model for the OCR call itself changed.
 

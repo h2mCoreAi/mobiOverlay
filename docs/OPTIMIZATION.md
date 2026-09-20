@@ -191,24 +191,33 @@ guard with a "loading OCR engine..." status message.
 **Problem**: OCR ran synchronously on the Qt main thread, blocking the entire
 UI for 1-3 seconds during each scan.
 
-**Solution implemented**: Added `OcrWorker` class in `modules/logistics_hub/module.py`
-that runs EasyOCR inference in a `QThread`. Screen capture and QPixmap→PIL conversion
-stay on the main thread (QPixmap isn't thread-safe), then heavy inference runs in
-the worker. Results come back via Qt signals (`finished`, `error`, `status`).
+**Solution implemented**: Uses a plain `threading.Thread` (NOT QThread) for
+inference, with a `_OcrSignalBridge` QObject to marshal results back to the
+main thread via Qt signals.
 
-As part of this change, pure OCR helpers were extracted to `modules/logistics_hub/ocr.py`:
+**Critical design constraint**: `easyocr.Reader()` MUST be created on the main
+thread. Creating it inside a QThread crashes Qt6Core.dll on Windows due to
+PyTorch/OpenMP initialization conflicts with Qt's threading model. The first
+scan blocks briefly (~2.8s) while loading the Reader; subsequent scans run
+inference in the background with full UI responsiveness.
+
+Pure OCR helpers extracted to `modules/logistics_hub/ocr.py`:
 - `order_ocr_boxes()` — column-aware reading order
 - `preprocess_image()` — grayscale, upscale, autocontrast
 - `run_ocr()` — EasyOCR inference wrapper
 
 This is a thin slice (only what M2 needs), not the full L1 decomposition.
 
-**Benefit**: UI stays responsive during scans. User can collapse cards, move
-the overlay, etc. while OCR runs. Status updates ("Loading OCR…", "Scanning…")
-show progress.
+**Additional fix**: `_pixmap_to_pil()` now uses `bytearray(qimg.bits())` to
+make a full copy of image bytes before the QImage goes out of scope —
+`QImage.bits()` returns a view that becomes invalid after garbage collection.
 
-**Risk**: Thread safety confirmed — EasyOCR's `Reader.readtext()` is stateless
-inference over numpy arrays, safe from any thread.
+**Benefit**: UI stays responsive during scans (after first-scan Reader load).
+User can collapse cards, move the overlay, etc. while OCR runs.
+
+**Risk**: Thread safety confirmed — `Reader.readtext()` is stateless inference
+over numpy arrays, safe from any thread. Only Reader construction is unsafe
+in non-main threads.
 
 **Project rules**: ✓ No API logic changes.
 

@@ -49,6 +49,7 @@ import importlib.util
 import json
 import os
 import re
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -72,7 +73,7 @@ _ocr_spec = importlib.util.spec_from_file_location(
 ocr_module = importlib.util.module_from_spec(_ocr_spec)
 _ocr_spec.loader.exec_module(ocr_module)
 
-from PySide6.QtCore import Qt, QRect, QRectF, QPoint, QTimer, Signal, QObject, QThread
+from PySide6.QtCore import Qt, QRect, QRectF, QPoint, QTimer, Signal, QObject
 from PySide6.QtGui import (
     QGuiApplication,
     QImage,
@@ -142,59 +143,17 @@ def _ensure_ocr_loaded() -> bool:
         return False
 
 
-class OcrWorker(QObject):
-    """Background worker that runs OCR off the Qt main thread.
+class _OcrSignalBridge(QObject):
+    """Signal bridge for marshaling OCR results from a background thread
+    back to the Qt main thread.
 
-    Emits `finished` with raw OCR text on success, or `error` with
-    an error message on failure. The heavy easyocr/PyTorch inference
-    runs in a QThread so the UI stays responsive during the 1-3s scan.
+    Unlike QThread, this uses a plain threading.Thread for the actual work,
+    which avoids the Qt6Core.dll crash that occurs when easyocr/PyTorch/OpenMP
+    initializes inside a QThread on Windows. The Reader is created on the
+    main thread; only the stateless inference runs in the background.
     """
     finished = Signal(str)  # raw_text
     error = Signal(str)  # error message
-    status = Signal(str)  # progress updates
-
-    def __init__(self, pil_rgb, reader):
-        """
-        Args:
-            pil_rgb: PIL Image in RGB mode (already captured from screen)
-            reader: Initialized easyocr.Reader instance (or None to create one)
-        """
-        super().__init__()
-        self._pil_rgb = pil_rgb
-        self._reader = reader
-        self._created_reader = False
-
-    def run(self):
-        """Run OCR on the provided image. Call from QThread."""
-        try:
-            if not _ensure_ocr_loaded():
-                self.error.emit(
-                    f"easyocr/Pillow not available: {_ocr_load_error or 'unknown error'}\n"
-                    "Run: pip install -r modules/logistics_hub/requirements.txt"
-                )
-                return
-
-            Image = _ocr_modules["Image"]
-            ImageOps = _ocr_modules["ImageOps"]
-            easyocr = _ocr_modules["easyocr"]
-            np = _ocr_modules["np"]
-
-            if self._reader is None:
-                self.status.emit("Loading OCR engine...")
-                self._reader = easyocr.Reader(["en"], gpu=False, verbose=False)
-                self._created_reader = True
-
-            self.status.emit("Scanning...")
-            gray = ocr_module.preprocess_image(self._pil_rgb, ImageOps, Image)
-            raw_text = ocr_module.run_ocr(self._reader, gray, np)
-            self.finished.emit(raw_text)
-        except Exception as e:
-            logger.exception("OCR worker error")
-            self.error.emit(str(e))
-
-    def get_reader(self):
-        """Return the reader if we created one (for caching by caller)."""
-        return self._reader if self._created_reader else None
 
 
 COPY_ROUTE_CONFIRM_MS = 1500  # how long the COPY ROUTE button shows "COPIED" before reverting
@@ -1506,9 +1465,9 @@ class LogisticsHubModule(ModuleBase):
         self._route_popout_layout: QVBoxLayout | None = None
         self._route_popout_opacity_slider: QSlider | None = None
         self._reader = None
-        # Background OCR thread state (M2 optimization)
-        self._ocr_thread: QThread | None = None
-        self._ocr_worker: OcrWorker | None = None
+        # Background OCR state (M2 optimization)
+        self._ocr_running = False
+        self._ocr_signal_bridge: _OcrSignalBridge | None = None
         # Shared Core service now provided by host (host/locations.py) —
         # self.locations is set in ModuleBase.__init__. Keep a private
         # alias for compatibility with existing code that uses
@@ -2286,14 +2245,22 @@ class LogisticsHubModule(ModuleBase):
         self._copy_route_revert_timer = None
 
     def _safe_scan(self):
-        """Start an OCR scan in a background thread so UI stays responsive.
+        """Start an OCR scan with inference in a background thread.
 
-        Screen capture and QPixmap→PIL conversion happen on the main thread
-        (QPixmap isn't thread-safe), then the heavy easyocr/PyTorch inference
-        runs in a QThread. Results come back via signals.
+        IMPORTANT: easyocr.Reader must be created on the MAIN THREAD.
+        Creating it inside a QThread crashes Qt6Core.dll on Windows due to
+        PyTorch/OpenMP initialization conflicts. We use a plain threading.Thread
+        for inference only, with a QObject signal bridge to marshal results
+        back to the main thread.
+
+        Flow:
+        1. Screen capture + QPixmap→PIL on main thread
+        2. Load easyocr.Reader on main thread (first scan only, may briefly block)
+        3. Preprocess + inference in background threading.Thread
+        4. Results marshaled back via _OcrSignalBridge signals
         """
         # Prevent starting a second scan while one is in progress
-        if getattr(self, "_ocr_thread", None) is not None:
+        if getattr(self, "_ocr_running", False):
             self._set_status("Scan already in progress...")
             return
 
@@ -2311,34 +2278,80 @@ class LogisticsHubModule(ModuleBase):
         btn = getattr(self, "_scan_btn", None)
         if btn is not None:
             btn.setEnabled(False)
-            btn.setText("LOADING OCR…" if self._reader is None else "SCANNING…")
 
-        # Capture screen immediately (fast, must be on main thread)
+        # Load OCR dependencies on main thread
+        if not _ensure_ocr_loaded():
+            self._set_status(
+                f"easyocr/Pillow not available: {_ocr_load_error or 'unknown error'}"
+            )
+            self._restore_scan_button()
+            return
+
+        # Load easyocr.Reader on MAIN THREAD (first scan only)
+        # This avoids the Qt6Core.dll crash from PyTorch/OpenMP init in QThread
+        if self._reader is None:
+            if btn is not None:
+                btn.setText("LOADING OCR…")
+            self._set_status("Loading OCR engine (first scan)...")
+            QApplication.processEvents()  # Show status before blocking
+            try:
+                easyocr = _ocr_modules["easyocr"]
+                self._reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+            except Exception as exc:
+                self._set_status(f"Failed to load OCR engine: {exc}")
+                logger.exception("Failed to load easyocr.Reader")
+                self._restore_scan_button()
+                return
+
+        if btn is not None:
+            btn.setText("SCANNING…")
+        self._set_status("Capturing screen...")
+
+        # Capture screen immediately (must be on main thread)
         try:
             pix = self._grab_region(region)
             pil_rgb = self._pixmap_to_pil(pix)
         except Exception as exc:
             self._set_status(f"Error capturing screen: {exc}")
-            if btn is not None:
-                btn.setText("SCAN CONTRACT")
-                btn.setEnabled(True)
+            self._restore_scan_button()
             return
 
-        # Start background OCR thread
-        self._ocr_thread = QThread()
-        self._ocr_worker = OcrWorker(pil_rgb, self._reader)
-        self._ocr_worker.moveToThread(self._ocr_thread)
+        # Start background inference thread (plain threading.Thread, not QThread)
+        self._ocr_running = True
+        self._set_status("Scanning...")
 
-        self._ocr_worker.status.connect(self._on_ocr_status)
-        self._ocr_worker.finished.connect(self._on_ocr_finished)
-        self._ocr_worker.error.connect(self._on_ocr_error)
-        self._ocr_thread.started.connect(self._ocr_worker.run)
-        self._ocr_thread.finished.connect(self._on_ocr_thread_done)
+        # Signal bridge lives on main thread, receives results via queued signals
+        self._ocr_signal_bridge = _OcrSignalBridge()
+        self._ocr_signal_bridge.finished.connect(self._on_ocr_finished)
+        self._ocr_signal_bridge.error.connect(self._on_ocr_error)
 
-        self._ocr_thread.start()
+        # Capture references for the worker thread
+        reader = self._reader
+        signal_bridge = self._ocr_signal_bridge
+
+        def ocr_worker():
+            try:
+                Image = _ocr_modules["Image"]
+                ImageOps = _ocr_modules["ImageOps"]
+                np = _ocr_modules["np"]
+
+                gray = ocr_module.preprocess_image(pil_rgb, ImageOps, Image)
+                raw_text = ocr_module.run_ocr(reader, gray, np)
+                signal_bridge.finished.emit(raw_text)
+            except Exception as e:
+                logger.exception("OCR worker error")
+                signal_bridge.error.emit(str(e))
+
+        thread = threading.Thread(target=ocr_worker, daemon=True)
+        thread.start()
 
     def _pixmap_to_pil(self, pixmap):
-        """Convert QPixmap to PIL RGB image. Must run on main thread."""
+        """Convert QPixmap to PIL RGB image. Must run on main thread.
+
+        IMPORTANT: Makes a full copy of image bytes before QImage goes out
+        of scope — QImage.bits() returns a view that becomes invalid once
+        the QImage is garbage collected.
+        """
         if not _ensure_ocr_loaded():
             raise RuntimeError(
                 f"easyocr/Pillow not available: {_ocr_load_error or 'unknown error'}\n"
@@ -2347,31 +2360,22 @@ class LogisticsHubModule(ModuleBase):
         Image = _ocr_modules["Image"]
 
         qimg = pixmap.toImage().convertToFormat(QImage.Format_RGBA8888)
-        buf = bytes(qimg.bits())
+        # CRITICAL: copy bytes immediately — qimg.bits() is a view into qimg's
+        # internal buffer, which becomes invalid when qimg is garbage collected.
+        # Using bytes() or bytearray() creates an independent copy.
+        width, height = qimg.width(), qimg.height()
+        buf = bytearray(qimg.bits())  # Full copy, not a view
+
         pil_rgba = Image.frombuffer(
-            "RGBA", (qimg.width(), qimg.height()), buf, "raw", "RGBA", 0, 1
+            "RGBA", (width, height), bytes(buf), "raw", "RGBA", 0, 1
         )
         return pil_rgba.convert("RGB")
 
-    def _on_ocr_status(self, status: str):
-        """Handle status updates from OCR worker."""
-        self._set_status(status)
-        btn = getattr(self, "_scan_btn", None)
-        if btn is not None:
-            btn.setText(status.upper() if len(status) < 15 else "SCANNING…")
-
     def _on_ocr_finished(self, raw_text: str):
-        """Handle successful OCR completion."""
-        # Cache the reader if worker created one
-        if self._ocr_worker:
-            new_reader = self._ocr_worker.get_reader()
-            if new_reader is not None:
-                self._reader = new_reader
+        """Handle successful OCR completion (called on main thread via signal)."""
+        self._ocr_running = False
+        self._ocr_signal_bridge = None
 
-        # Clean up thread
-        self._cleanup_ocr_thread()
-
-        # Process the OCR result
         try:
             self._process_ocr_result(raw_text)
         except Exception as exc:
@@ -2381,22 +2385,11 @@ class LogisticsHubModule(ModuleBase):
             self._restore_scan_button()
 
     def _on_ocr_error(self, error_msg: str):
-        """Handle OCR worker error."""
-        self._cleanup_ocr_thread()
+        """Handle OCR worker error (called on main thread via signal)."""
+        self._ocr_running = False
+        self._ocr_signal_bridge = None
         self._set_status(f"OCR Error: {error_msg}")
         self._restore_scan_button()
-
-    def _on_ocr_thread_done(self):
-        """Handle OCR thread completion (cleanup if not already done)."""
-        pass
-
-    def _cleanup_ocr_thread(self):
-        """Clean up OCR thread and worker."""
-        if self._ocr_thread is not None:
-            self._ocr_thread.quit()
-            self._ocr_thread.wait()
-            self._ocr_thread = None
-        self._ocr_worker = None
 
     def _restore_scan_button(self):
         """Restore scan button to normal state."""
