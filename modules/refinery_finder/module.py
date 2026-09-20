@@ -59,7 +59,7 @@ class RefineryFinderModule(ModuleBase):
         super().__init__(api_client, config, locations)
         self.settings.setdefault("system_filter", ALL_SYSTEMS)
         self._raw_commodities: list[dict] = []  # [{id, name}] where is_raw == 1
-        self._methods: list[dict] = []
+        self._methods: list[dict] | None = None  # cached once per session, see _ensure_methods()
         self._last_yield_rows: list[dict] = []
         self._capacity_by_terminal: dict[int, int] = {}
         self.request_refresh = None  # injected by host after wrapping refresh()
@@ -146,6 +146,18 @@ class RefineryFinderModule(ModuleBase):
     # ------------------------------------------------------------------
     # ModuleBase refresh
     # ------------------------------------------------------------------
+    def _ensure_methods(self):
+        """Fetch refineries_methods once per session and cache it. Methods
+        are static reference data (refining method names, yield/cost/speed
+        ratings) that don't change during a session — no need to re-fetch
+        on every refresh."""
+        if self._methods is not None:
+            return
+        try:
+            self._methods = self.api.get("refineries_methods")
+        except Exception:
+            self._methods = []
+
     def refresh(self):
         name = self.combo.currentText()
         if not name:
@@ -162,7 +174,7 @@ class RefineryFinderModule(ModuleBase):
             for row in capacities
             if row.get("id_terminal") is not None and row.get("value") is not None
         }
-        self._methods = self.api.get("refineries_methods")
+        self._ensure_methods()
         self._render_methods()
         self._render_results()
 
@@ -266,7 +278,7 @@ class RefineryFinderModule(ModuleBase):
     # ------------------------------------------------------------------
     def _render_methods(self):
         self._clear_layout(self._methods_layout)
-        methods = sorted(self._methods, key=lambda m: m.get("name", ""))
+        methods = sorted(self._methods or [], key=lambda m: m.get("name", ""))
         if not methods:
             self._methods_layout.addWidget(self._info_label("Methods data not loaded yet."))
             return
