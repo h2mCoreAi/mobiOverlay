@@ -1447,8 +1447,8 @@ class LogisticsHubModule(ModuleBase):
         f'<span style="color:{theme.ACCENT_CYAN};">Logistics</span>'
     )
 
-    def __init__(self, api_client, config):
-        super().__init__(api_client, config)
+    def __init__(self, api_client, config, locations):
+        super().__init__(api_client, config, locations)
         # This module is on-demand only (SCAN CONTRACT) — the host's generic
         # periodic-refresh timer would otherwise call refresh() every
         # DEFAULT_REFRESH_SECONDS and re-OCR whatever's on screen at that
@@ -1468,11 +1468,11 @@ class LogisticsHubModule(ModuleBase):
         self._route_popout_layout: QVBoxLayout | None = None
         self._route_popout_opacity_slider: QSlider | None = None
         self._reader = None
-        # Shared Core service (host/locations.py) — one place resolving/
-        # caching UEX location data for every module, not this module's
-        # own copy. See docs/DECISIONS.md, 2026-09-04, for why this lives
-        # in Core rather than as a "location module" other modules depend on.
-        self._locations = LocationService(api_client)
+        # Shared Core service now provided by host (host/locations.py) —
+        # self.locations is set in ModuleBase.__init__. Keep a private
+        # alias for compatibility with existing code that uses
+        # self._locations throughout this module.
+        self._locations = self.locations
         self._location_choices: dict[str, dict] = {}  # display name -> terminal row, for the picker
         self._pending_scan: dict | None = None  # scanned, awaiting ACCEPT/REJECT in the review popup
         # Debug-log context for the currently-open review popup — set in

@@ -20,6 +20,7 @@ import time
 
 from host.api_client import UexApiClient
 from host.config import Config
+from host.locations import LocationService
 from host.module_base import ModuleBase
 from host.paths import app_root
 
@@ -28,7 +29,7 @@ logger = logging.getLogger("mobioverlay.module_loader")
 MODULES_ROOT = app_root() / "modules"
 
 
-def discover_modules(api_client: UexApiClient, config: Config, on_module_loading=None) -> list[ModuleBase]:
+def discover_modules(api_client: UexApiClient, config: Config, locations: LocationService, on_module_loading=None) -> list[ModuleBase]:
     """`on_module_loading`, if given, is called with each folder name right
     before that module's file is imported/executed — lets a caller (main.py's
     splash screen) show which module is loading, since a slow one (e.g.
@@ -59,7 +60,7 @@ def discover_modules(api_client: UexApiClient, config: Config, on_module_loading
             if module_class is None:
                 logger.error("modules/%s/module.py has no MODULE_CLASS", name)
                 continue
-            instance = module_class(api_client, config)
+            instance = module_class(api_client, config, locations)
             _validate_module_contract(name, instance)
 
             module_id = instance.module_id

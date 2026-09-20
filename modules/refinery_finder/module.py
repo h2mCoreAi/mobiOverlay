@@ -55,8 +55,8 @@ class RefineryFinderModule(ModuleBase):
         f'<span style="color:{theme.ACCENT_CYAN};">Refinery</span>'
     )
 
-    def __init__(self, api_client, config):
-        super().__init__(api_client, config)
+    def __init__(self, api_client, config, locations):
+        super().__init__(api_client, config, locations)
         self.settings.setdefault("system_filter", ALL_SYSTEMS)
         self._raw_commodities: list[dict] = []  # [{id, name}] where is_raw == 1
         self._methods: list[dict] = []

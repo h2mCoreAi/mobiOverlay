@@ -97,8 +97,8 @@ class MobiNotesModule(ModuleBase):
         f'<span style="color:{theme.ACCENT_CYAN};">Notes</span>'
     )
 
-    def __init__(self, api_client, config):
-        super().__init__(api_client, config)
+    def __init__(self, api_client, config, locations):
+        super().__init__(api_client, config, locations)
         self.store = NotesStore()
         # No default pages — a fresh install has none at all; the first
         # thing the card does is force creating one (see create_card's

@@ -19,6 +19,8 @@ from host.api_client import UexRateLimitError
 from host.locations import LocationService
 from host.module_base import ModuleBase
 
+# LocationService is still imported for class-level access to FACILITY_FLAGS
+
 ALL_SYSTEMS = "All Systems"
 ANY_FACILITY = "Any Facility"
 SCAN_STEP_INTERVAL_MS = 120  # ~8 requests/sec, same throttle every scan-style module uses
@@ -74,9 +76,8 @@ class MultiCommodityFinderModule(ModuleBase):
         f'<span style="color:{theme.ACCENT_CYAN};">Consolidate</span>'
     )
 
-    def __init__(self, api_client, config):
-        super().__init__(api_client, config)
-        self._locations = LocationService(api_client)
+    def __init__(self, api_client, config, locations):
+        super().__init__(api_client, config, locations)
         self._commodities: list[str] = []
         self._terminal_names: dict[int, str] = {}
         self._terminal_facilities: dict[int, set[str]] = {}
@@ -393,14 +394,14 @@ class MultiCommodityFinderModule(ModuleBase):
 
     def _populate_terminal_names(self):
         rows = [
-            row for row in self._locations.all_locations()
+            row for row in self.locations.all_locations()
             if row.get("_endpoint") == "terminals" and row.get("type") == "commodity"
         ]
         self._terminal_names = {
-            row["id"]: self._locations.display_name(row) for row in rows if row.get("id")
+            row["id"]: self.locations.display_name(row) for row in rows if row.get("id")
         }
         self._terminal_facilities = {
-            row["id"]: self._locations.facilities(row) for row in rows if row.get("id")
+            row["id"]: self.locations.facilities(row) for row in rows if row.get("id")
         }
 
     def _repopulate_system_filter(self):

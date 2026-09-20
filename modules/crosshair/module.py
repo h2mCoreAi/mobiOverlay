@@ -110,8 +110,8 @@ class CrosshairModule(ModuleBase):
         f'<span style="color:{theme.ACCENT_CYAN};">Aim</span>'
     )
 
-    def __init__(self, api_client, config):
-        super().__init__(api_client, config)
+    def __init__(self, api_client, config, locations):
+        super().__init__(api_client, config, locations)
         self._overlay = _CrosshairOverlay()
         self.request_refresh = None  # injected by host after wrapping refresh()
 
