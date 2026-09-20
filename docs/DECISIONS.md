@@ -3648,3 +3648,43 @@ by an automated check.
   `home_chirp_cooldown` all work unchanged; edge-detection logic
   (deadzone, reverse, startup-at-home) untouched.
 
+- **2026-09-20 — M2: Background OCR for Logistics Hub.**
+  **Problem**: Logistics Hub's SCAN CONTRACT froze the entire UI for 1-3s
+  during EasyOCR/PyTorch inference, making the overlay appear unresponsive.
+  **Fix**: Moved OCR work to a background `QThread`. Screen capture and
+  QPixmap→PIL conversion stay on the main thread (QPixmap isn't thread-safe),
+  then the heavy inference runs in `OcrWorker.run()`. Results come back via
+  Qt signals (`finished`, `error`, `status`) to callbacks on the main thread.
+  **Structure**: Extracted pure OCR helpers (`order_ocr_boxes`, `preprocess_image`,
+  `run_ocr`) to `modules/logistics_hub/ocr.py` — a minimal slice to keep the
+  worker clean. The rest of `logistics_hub/module.py` delegates to `ocr_module`
+  instead of duplicating code. This is NOT the full L1 decomposition (deferred);
+  only what M2 needs is extracted.
+  **First-scan UX**: The initial `import easyocr` still takes ~2.8s (lazy-loaded
+  on first use, per M1 already implemented), but the UI now shows "Loading OCR…"
+  status and remains interactive — the user can collapse/move cards while waiting.
+  **Thread safety**: EasyOCR's `Reader.readtext()` is stateless inference over
+  numpy arrays, safe to call from any thread. The shared `self._reader` is only
+  accessed from the main thread (passed to worker, cached back from worker).
+  **No behavior change**: Contract parsing, review popup, grading — all unchanged.
+  Only the threading model for the OCR call itself changed.
+
+- **2026-09-20 — M5: UexApiClient request deduplication.**
+  **Problem**: Multiple modules refreshing at once (startup, or user clicking
+  several Refresh buttons) could fire duplicate identical GET requests to UEX,
+  wasting rate-limit budget (120/min). No in-flight sharing or short-TTL cache
+  existed.
+  **Fix**: Added two deduplication mechanisms to `UexApiClient.get()`:
+    1. **In-flight sharing**: Concurrent calls for the same endpoint+params
+       share a single `Future`. Only one actual HTTP request fires; other
+       callers block on `future.result()`.
+    2. **Short-TTL cache**: Completed results are reused for 2 seconds
+       (`DEDUPE_TTL_SECONDS`), so rapid sequential calls don't each hit the
+       network.
+  **Key design**: Cache key is `f"{endpoint}|{sorted_params}"`. Errors are
+  cached too (re-raised to waiting callers), so a transient failure doesn't
+  trigger a retry storm. Lock is held only briefly around dict lookups — the
+  actual network call runs outside the lock.
+  **No behavior change**: Successful unique calls work exactly as before. Only
+  redundant calls within the 2s window are deduplicated.
+
