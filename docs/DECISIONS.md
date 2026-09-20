@@ -3524,3 +3524,10 @@ by an automated check.
     run, not bundled — this is easyocr's standard behavior.
   `modules/` still ships external (plain .py next to the exe) per existing
   architecture — only the host and its heavy deps are frozen into the exe.
+
+- **2026-09-20 — pygame-ce collection added after smoke-test failure.**
+  mobiThrottle was missing from the frozen build — `discover_modules` skipped
+  it because `import pygame` failed. pygame-ce bundles SDL2 DLLs that
+  PyInstaller doesn't pick up by default. Added `collect_all('pygame')` to
+  the spec (same pattern as torch/easyocr). Caught during Mitch's local
+  smoke test before public release.
