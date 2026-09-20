@@ -5,11 +5,13 @@ import ctypes
 import subprocess
 from ctypes import wintypes
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt, QPoint, QRectF, QTimer
-from PySide6.QtGui import QGuiApplication, QColor, QPainter, QPainterPath
+from PySide6.QtGui import QGuiApplication, QColor, QPainter, QPainterPath, QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QSlider, QSizeGrip, QSizePolicy, QLineEdit
+    QSlider, QSizeGrip, QSizePolicy, QLineEdit, QSystemTrayIcon, QMenu
 )
 
 from host import theme
@@ -24,6 +26,8 @@ ctypes.windll.user32.GetWindowLongW.restype = ctypes.c_long
 ctypes.windll.user32.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
 ctypes.windll.user32.SetWindowLongW.restype = ctypes.c_long
 ctypes.windll.user32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
+
+TRAY_ICON_PATH = Path(__file__).resolve().parent / "assets" / "icons" / "mobioverlay.png"
 
 
 def _build_stylesheet() -> str:
@@ -446,6 +450,78 @@ class _SettingsPanel(QWidget):
         layout.addWidget(pill_row)
 
 
+class _SystemTray:
+    """System tray icon for restoring the overlay when users forget the hotkey
+    or lose the stowed pill. Created only if QSystemTrayIcon.isSystemTrayAvailable().
+
+    The main window uses Qt.Tool, which excludes it from the Windows taskbar
+    intentionally (overlay design). This tray icon provides the recovery
+    affordance alongside the hotkey and stowed pill.
+    """
+
+    def __init__(self, main_window: "MainWindow"):
+        self._win = main_window
+        self._tray: QSystemTrayIcon | None = None
+
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+
+        if not TRAY_ICON_PATH.exists():
+            return
+
+        self._tray = QSystemTrayIcon(main_window)
+        self._tray.setIcon(QIcon(str(TRAY_ICON_PATH)))
+        self._tray.setToolTip("mobiOverlay")
+
+        menu = QMenu()
+        self._show_action = menu.addAction("Show", self._on_show)
+        self._stow_action = menu.addAction("Stow", self._on_stow)
+        menu.addSeparator()
+        menu.addAction("Quit", self._on_quit)
+        self._tray.setContextMenu(menu)
+
+        self._tray.activated.connect(self._on_activated)
+        self._tray.show()
+
+    def _on_show(self):
+        """Deploy the overlay (unstow if stowed, or just bring to front)."""
+        if self._win.is_app_stowed():
+            self._win.deploy_app()
+        else:
+            self._win.raise_()
+            self._win.activateWindow()
+            self._win._take_foreground_focus()
+
+    def _on_stow(self):
+        """Stow the overlay to the pill."""
+        if not self._win.is_app_stowed():
+            self._win.stow_app()
+
+    def _on_quit(self):
+        """Clean shutdown — runs hotkey teardown and aboutToQuit paths."""
+        self._win.close()
+        QApplication.instance().quit()
+
+    def _on_activated(self, reason: QSystemTrayIcon.ActivationReason):
+        """Double-click or single-click (platform varies) deploys the overlay."""
+        if reason in (QSystemTrayIcon.ActivationReason.DoubleClick,
+                      QSystemTrayIcon.ActivationReason.Trigger):
+            self._on_show()
+
+    def update_menu_state(self, is_stowed: bool):
+        """Update menu item enabled states based on current app state."""
+        if self._tray is None:
+            return
+        self._show_action.setEnabled(is_stowed)
+        self._stow_action.setEnabled(not is_stowed)
+
+    def shutdown(self):
+        """Clean up the tray icon on app exit."""
+        if self._tray is not None:
+            self._tray.hide()
+            self._tray = None
+
+
 class _TitleBar(QWidget):
     def __init__(self, main_window: "MainWindow"):
         super().__init__()
@@ -505,7 +581,7 @@ class _TitleBar(QWidget):
         self.minimize_btn = QPushButton("▬")
         self.minimize_btn.setObjectName("cardIconBtn")
         self.minimize_btn.setFixedSize(20, 20)
-        self.minimize_btn.setToolTip("Stow mobiOverlay to a small button — click it (or the hotkey) to bring it back")
+        self.minimize_btn.setToolTip("Stow mobiOverlay to a small button — click it, the hotkey, or the system tray icon to bring it back")
         self.minimize_btn.clicked.connect(self._win.stow_app)
         layout.addWidget(self.minimize_btn)
 
@@ -637,6 +713,11 @@ class MainWindow(QWidget):
         if saved_combo:
             self._hotkey.set_hotkey(saved_combo, self.toggle_app_stow)
 
+        # System tray icon — recovery affordance for when users forget the
+        # hotkey or lose the stowed pill. Qt.Tool excludes this window from
+        # the taskbar intentionally; the tray provides the alternative.
+        self._tray = _SystemTray(self)
+
     def toggle_collapse_all(self):
         self._all_collapsed = not self._all_collapsed
         self.card_container.set_all_collapsed(self._all_collapsed)
@@ -714,6 +795,7 @@ class MainWindow(QWidget):
         if self._pill_geometry:
             self.move(*self._pill_geometry)
         self._apply_native_click_through(self._pill_click_through)
+        self._tray.update_menu_state(is_stowed=True)
         self.config.save()
 
     def deploy_app(self):
@@ -734,6 +816,7 @@ class MainWindow(QWidget):
             self.move(x, y)
             self.resize(w, h)
         self.save_current_position()
+        self._tray.update_menu_state(is_stowed=False)
         self._take_foreground_focus()
 
     def _take_foreground_focus(self):
@@ -930,4 +1013,5 @@ class MainWindow(QWidget):
         # see `GlobalHotkey.shutdown()`. Safe to call even if `relaunch()`
         # already called it (idempotent).
         self._hotkey.shutdown()
+        self._tray.shutdown()
         super().closeEvent(event)
