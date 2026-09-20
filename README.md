@@ -56,6 +56,11 @@ a ~100MB language model (cached in `~/.EasyOCR/` afterward).
 Cards snap to a grid when dragged, and layout persists to `config.json` next
 to the exe.
 
+> **Troubleshooting SC input:** If Star Citizen stops responding to keyboard
+> input (WASD, menus, etc.), quit mobiOverlay first — the global hotkey uses a
+> low-level keyboard hook that can interfere with exclusive-fullscreen games.
+> Don't run two copies of mobiOverlay at once.
+
 ## Files
 
 ```
