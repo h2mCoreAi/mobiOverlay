@@ -452,6 +452,31 @@ class LocationService:
         best = self.best_fuzzy_match(text)
         return best if best and best[1] >= cutoff else None
 
+    def resolve_fuzzy_for_hauling(
+        self, text: str, cutoff: float = 0.85
+    ) -> tuple[dict, float] | None:
+        """Fuzzy resolution with Admin terminal promotion for hauling.
+
+        Same as `resolve_fuzzy()`, but if the best match is a structural
+        record (space_station/outpost/city), automatically promotes it to
+        the corresponding Admin terminal. This ensures fuzzy-matched
+        locations used in hauling contracts get the correct terminal ID
+        for distance/route calculations.
+
+        Example: OCR "CRU-LI Ambitious Dream Station" (typo) fuzzy-matches
+        "CRU-L1 Ambitious Dream Station" (space_station), which is then
+        promoted to "Admin - CRU-L1" (terminals) for hauling."""
+        best = self.resolve_fuzzy(text, cutoff)
+        if not best:
+            return None
+        loc, score = best
+        # If it's a structural record, try to find the Admin terminal
+        if loc.get("_endpoint") in ("space_stations", "outposts", "cities"):
+            admin = self.find_admin_terminal_for_station(loc)
+            if admin:
+                return (admin, score)
+        return best
+
     def resolve_for_hauling(self, text: str) -> list[dict]:
         """Hauling-contract-aware resolution: resolves OCR text to terminal
         records suitable for cargo/freight operations.
@@ -570,18 +595,63 @@ class LocationService:
         if not validated:
             return []
 
-        # Sort: prefer Admin terminals (actual commodity kiosks) for hauling,
-        # then by fuzzy match score
-        def sort_key(item):
+        # Deduplicate by physical place: if a structural record AND its Admin
+        # terminal both appear, keep only the Admin terminal. This ensures
+        # "Dream Station" returns [Admin - CRU-L1, Admin - HUR-L2] (2 unique
+        # places), not [Admin - CRU-L1, Admin - HUR-L2, CRU-L1 Ambitious Dream
+        # Station, HUR-L2 Faithful Dream Station] (4 records for 2 places).
+        # The Admin terminal is the authoritative identity for hauling.
+        deduped: list[tuple[dict, float]] = []
+        place_keys_seen: set[str] = set()
+
+        # Sort first so Admin terminals come before their structural records
+        def presort_key(item):
             m, score = item
             name = m.get("name") or ""
             is_admin = name.startswith("Admin - ")
             is_terminal = m.get("_endpoint") == "terminals"
-            # Higher score is better, Admin terminals are preferred
             return (not is_admin, not is_terminal, -score)
 
-        validated.sort(key=sort_key)
-        return [m for m, _score in validated]
+        validated.sort(key=presort_key)
+
+        for m, score in validated:
+            # Compute a "physical place key" that's the same for a terminal
+            # and its structural record — but ONLY for Admin terminals.
+            # Non-Admin terminals (shops like "New Deal", "Kel-To") keep their
+            # own identity even if they share the same city FK, because they're
+            # genuinely different locations. Admin terminals are special because
+            # they represent the "cargo kiosk" at a station/outpost, which is
+            # the canonical identity for hauling contracts.
+            endpoint = m.get("_endpoint")
+            mid = m.get("id")
+            name = m.get("name") or ""
+            is_admin = name.startswith("Admin - ")
+
+            if endpoint == "terminals" and is_admin:
+                # Admin terminals: use FK to deduplicate with structural records
+                for fk_key, struct_ep in [
+                    ("id_space_station", "space_stations"),
+                    ("id_outpost", "outposts"),
+                    ("id_city", "cities"),
+                ]:
+                    fk_val = m.get(fk_key)
+                    if fk_val is not None:
+                        place_key = f"{struct_ep}:{fk_val}"
+                        break
+                else:
+                    place_key = f"terminals:{mid}"
+            elif endpoint == "terminals":
+                # Non-Admin terminals: each is a distinct location
+                place_key = f"terminals:{mid}"
+            else:
+                # Structural record
+                place_key = f"{endpoint}:{mid}"
+
+            if place_key not in place_keys_seen:
+                place_keys_seen.add(place_key)
+                deduped.append((m, score))
+
+        return [m for m, _score in deduped]
 
     def find_admin_terminal_for_station(self, station: dict) -> dict | None:
         """Given a space_station/outpost/city record, find its corresponding

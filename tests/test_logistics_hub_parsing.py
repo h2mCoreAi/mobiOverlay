@@ -88,10 +88,10 @@ FIXTURES = [
         "Thanks in advance for ensuring prompt service,\nChase Hewitt\nJr\n"
         "Logistics Coordinator\nCovalex Shipping\n"
         "'Anything you need, anywhere you need it.\nABANDON\nSHARE\nTRACK\nLong\nget\nand\nfree.",
-        # NOTE: Pickup uses the space_station name because that's what the OCR text
-        # extraction finds. The resolution correctly prefers the Admin terminal,
-        # but the fixture compares against what _build_contract actually produces.
-        {"MIC-L2 Long Forest Station": [("Quartz", "70"), ("Corundum", "22")]},
+        # 2026-09-20: Pickup now correctly resolves to Admin terminal (the actual
+        # commodity kiosk), not the bare space_station name. This matches the
+        # systemic fix to always promote haul stops to their Admin terminals.
+        {"Admin - MIC-L2": [("Quartz", "70"), ("Corundum", "22")]},
         {
             "Admin - Port Tressler": [("Quartz", "37"), ("Corundum", "11")],
             # 2026-09-20: Updated to Admin - Seraphim (terminal 259), the actual
@@ -240,7 +240,8 @@ FIXTURES = [
         "Thanks in advance for ensuring prompt service,\nChase Hewitt\n"
         "Jr. Logistics Coordinator\nCovalex Shipping\n"
         "'Anything you need, anywhere vou need it:\nABANDON\nSHARE\nTRACK\nLong\nthe\nput",
-        {"MIC-L2 Long Forest Station": [("Quartz", "76"), ("Corundum", "24")]},
+        # 2026-09-20: Pickup now correctly resolves to Admin terminal.
+        {"Admin - MIC-L2": [("Quartz", "76"), ("Corundum", "24")]},
         {
             "Admin - Everus Harbor": [("Quartz", "37"), ("Corundum", "13")],
             "Admin - Port Tressler": [("Quartz", "39"), ("Corundum", "11")],
@@ -461,6 +462,34 @@ HAULING_RESOLUTION_FIXTURES = [
         "Port Tressler",
         "Admin - Port Tressler",
         None,
+    ),
+    # 2026-09-20 CEO follow-up: Dream Station / Pathway Station / Fields Station
+    # must return Admin terminals, never bare space_stations records. These were
+    # being left ambiguous because resolve_for_hauling returned both the Admin
+    # terminal AND the space_station record (4 results for "Dream Station").
+    (
+        "dream_station_resolves_to_admin_cru_l1",
+        "Dream Station",
+        "Admin - CRU-L1",
+        "CRU-L1 Ambitious Dream Station",  # Must NOT return bare space_station
+    ),
+    (
+        "pathway_station_resolves_to_admin_arc_l2",
+        "Pathway Station",
+        "Admin - ARC-L2",
+        "ARC-L2 Lively Pathway Station",  # Must NOT return bare space_station
+    ),
+    (
+        "fields_station_resolves_to_admin_cru_l4",
+        "Fields Station",
+        "Admin - CRU-L4",
+        "CRU-L4 Shallow Fields Station",  # Must NOT return bare space_station
+    ),
+    (
+        "ambitious_dream_resolves_to_admin",
+        "Ambitious Dream Station",
+        "Admin - CRU-L1",
+        "CRU-L1 Ambitious Dream Station",  # Must NOT return bare space_station
     ),
 ]
 

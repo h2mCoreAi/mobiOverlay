@@ -3702,6 +3702,39 @@ by an automated check.
     - terminals id 22 = "Admin - CRU-L5" (correct for Beautiful Glen)
     - terminals id 9 = "ArcCorp Mining Area 061" (the wrong match we now reject)
 
+- **2026-09-20 — Admin terminal promotion fix (CEO follow-up).**
+  **Problem (CEO-reported after live PR11 scans):** OCR "Dream Station" resolved
+  to `CRU-L1 Ambitious Dream Station` (space_stations id 7) instead of being
+  promoted to `Admin - CRU-L1` (terminals id 19). Same for "Pathway Station" →
+  should be `Admin - ARC-L2`. Baijini/Everus/Tressler/MIC-L1/CRU-L4 worked fine.
+  **Root cause:** `resolve_for_hauling()` was returning **both** the Admin
+  terminal **and** the space_station record for the same physical place. With
+  4 matches for "Dream Station" (2 Admin + 2 space_stations), the module's
+  disambiguation logic treated it as ambiguous rather than resolved. Also,
+  `resolve_fuzzy()` (used as fallback for OCR typos) returned bare space_station
+  records without promoting them to Admin terminals.
+  **Fix (`host/locations.py`):**
+    - **`_filter_and_prefer_admin()` deduplication**: Now deduplicates by
+      physical place — if both an Admin terminal and its structural record
+      match, only the Admin terminal is returned. Non-Admin terminals (shops
+      like "New Deal", "Kel-To") keep their distinct identity even if they
+      share the same city FK.
+    - **`resolve_fuzzy_for_hauling()`**: New method that wraps `resolve_fuzzy()`
+      and automatically promotes structural records to their Admin terminals.
+  **Module updates (`modules/logistics_hub/module.py`):**
+    - Fuzzy fallback now uses `resolve_fuzzy_for_hauling()` instead of
+      `resolve_fuzzy()` to ensure OCR typos also get Admin terminal promotion.
+  **Tests added (19 total hauling resolution checks):**
+    - `dream_station_resolves_to_admin_cru_l1` — "Dream Station" → Admin - CRU-L1
+    - `pathway_station_resolves_to_admin_arc_l2` — "Pathway Station" → Admin - ARC-L2
+    - `fields_station_resolves_to_admin_cru_l4` — "Fields Station" → Admin - CRU-L4
+    - `ambitious_dream_resolves_to_admin` — full name also promotes
+    - Each also verifies bare space_station record is NOT in results
+  **Design principle (CEO-mandated):** For hauling contracts, always promote
+  stops to the linked Admin commodity terminal using UEX FK. Display can use
+  friendly station names, but stored contract terminal for distance/grade must
+  be the Admin terminal whenever one exists.
+
 - **2026-09-20 — Location picker availability filtering.**
   **Problem (CEO-reported)**: User-facing location pickers (Logistics Hub
   CURRENT LOCATION combo, etc.) showed many junk/unavailable locations like

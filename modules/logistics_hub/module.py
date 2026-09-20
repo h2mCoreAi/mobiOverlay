@@ -3073,7 +3073,10 @@ class LogisticsHubModule(ModuleBase):
                 # unconfirmed via the same amber-warning mechanism as an
                 # ambiguous match, beats a contract missing a stop outright.
                 if hint != "neutral":
-                    fuzzy = self._locations.resolve_fuzzy(text)
+                    # Use resolve_fuzzy_for_hauling to auto-promote structural
+                    # records (space_stations/outposts/cities) to their Admin
+                    # terminals, same as resolve_for_hauling does.
+                    fuzzy = self._locations.resolve_fuzzy_for_hauling(text)
                     if fuzzy is not None:
                         location, score = fuzzy
                         merge_resolved(text, location, hint, priority)
