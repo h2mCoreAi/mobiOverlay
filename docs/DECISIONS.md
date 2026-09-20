@@ -3531,3 +3531,49 @@ by an automated check.
   PyInstaller doesn't pick up by default. Added `collect_all('pygame')` to
   the spec (same pattern as torch/easyocr). Caught during Mitch's local
   smoke test before public release.
+
+- **2026-09-20 — Safety hardening after real incident: WH_KEYBOARD_LL hook
+  blocked Star Citizen keyboard input.** Incident: mobiOverlay v0.1.0
+  (packaged exe, first real new-user test) was left running while Mitch
+  played Star Citizen. The global keyboard hook (`host/hotkey.py` via the
+  `keyboard` library) left SC able to mouse-look but unable to WASD/move.
+  Force-killing SC was attempted first but the real problem was the
+  overlay's hook — a WH_KEYBOARD_LL hook that isn't unhooked before its
+  owning process dies (or hangs, or is killed improperly) can block
+  keyboard input system-wide until Windows' ~5-second timeout fires.
+  Running two instances doubles that risk. Three fixes shipped together:
+
+  1. **Single-instance guard** (`host/single_instance.py`): a lockfile
+     with an exclusive write lock prevents running two mobiOverlay
+     processes at once. Covers both the frozen exe and `python host/main.py`.
+     A second instance shows a clear dialog ("mobiOverlay is already
+     running") and exits immediately. The lock is process-lifetime — no
+     cleanup code needed, crash/kill releases it automatically.
+
+  2. **Bulletproof hotkey teardown**: the hook was already released in
+     `GlobalHotkey.shutdown()`, called from `MainWindow.closeEvent()` and
+     `MainWindow.relaunch()`. Added `atexit.register(shutdown)` as a
+     belt-and-suspenders safety net for cases where neither runs (crash,
+     SIGKILL, slow interpreter teardown due to easyocr/torch's native
+     thread pools). Module-owned hotkeys (mobiThrottle's two
+     `GlobalHotkey` instances) are released via `ModuleBase.shutdown()`,
+     already wired to `app.aboutToQuit`.
+
+  3. **Lazy hook install**: the global keyboard hook is now installed
+     only when `set_hotkey()` is first called with a non-empty combo, not
+     unconditionally in `GlobalHotkey.__init__()`. A user running with no
+     global hotkey configured never even has a WH_KEYBOARD_LL hook
+     installed, eliminating any risk of that hook blocking game input.
+     The reconcile watchdog timer also starts lazily now.
+
+  **Residual risk**: WH_KEYBOARD_LL hooks are inherently dangerous around
+  exclusive-fullscreen games. Even with these fixes, if the mobiOverlay
+  process hangs hard (infinite loop, debugger attached, etc.) while the
+  hook is installed and a hotkey is armed, keystroke delivery will stall
+  until Windows' timeout fires or the process is killed. The single-
+  instance guard and lazy install reduce the surface area; the atexit
+  handler and module-shutdown path ensure cleanup on every normal exit;
+  but a truly unresponsive process with a live hook is a Windows-level
+  hazard no user-mode code can fully prevent. Users should quit
+  mobiOverlay before troubleshooting SC input issues, and never leave it
+  running unattended with SC for extended periods.

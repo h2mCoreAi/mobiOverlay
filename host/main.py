@@ -1,4 +1,5 @@
 """mobiOverlay entry point."""
+import atexit
 import ctypes
 import logging
 import re
@@ -9,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from host.config import Config
+from host.single_instance import SingleInstance, SingleInstanceError
 
 
 def _maybe_allocate_console():
@@ -142,8 +144,44 @@ def _install_excepthook():
     sys.excepthook = _hook
 
 
+def _show_already_running_dialog(message: str):
+    """Show a blocking error dialog when another instance is already running.
+    Must be called before the main QApplication is created, since that's
+    when we detect the conflict. Uses a temporary QApplication just for
+    the dialog, then exits."""
+    from PySide6.QtWidgets import QApplication, QMessageBox
+    temp_app = QApplication(sys.argv)
+    box = QMessageBox()
+    box.setWindowTitle("mobiOverlay")
+    box.setIcon(QMessageBox.Warning)
+    box.setText("mobiOverlay is already running")
+    box.setInformativeText(message)
+    box.setStandardButtons(QMessageBox.Ok)
+    box.exec()
+    temp_app.quit()
+    sys.exit(1)
+
+
+# Global reference kept alive for the process's lifetime — the lock is
+# released when this object is garbage-collected or the process exits.
+_instance_lock: SingleInstance | None = None
+
+
 def main():
+    global _instance_lock
     _install_excepthook()
+
+    # Single-instance guard: only one mobiOverlay can run at a time.
+    # The global keyboard hook can block game input if a second instance
+    # races or the process is killed improperly — see single_instance.py.
+    try:
+        _instance_lock = SingleInstance()
+        _instance_lock.__enter__()
+        atexit.register(_instance_lock.__exit__, None, None, None)
+    except SingleInstanceError as e:
+        _show_already_running_dialog(str(e))
+        return
+
     startup_start = time.monotonic()
     app = QApplication(sys.argv)
     # MainWindow uses Qt.Tool (see main_window.py), which Qt excludes from

@@ -12,7 +12,15 @@ problem because it uses the `keyboard` library's low-level global hook
 keyboard input stream below the window message queue, so it isn't affected
 by which window Windows currently considers focused. This module ports
 that proven approach (see ThrottleWatch's HotkeyState for the original).
+
+SAFETY: A WH_KEYBOARD_LL hook that isn't unhooked before its owning process
+dies can block keyboard input system-wide (including game WASD) until
+Windows' ~5-second timeout fires. This module uses atexit as a belt-and-
+suspenders safety net to ensure the hook is always released, and delays
+installing the hook until a hotkey is actually configured (lazy install)
+so a user running with no hotkey set never even has a hook installed.
 """
+import atexit
 import ctypes
 import threading
 
@@ -129,6 +137,11 @@ class GlobalHotkey(QObject):
     the standard thread-safe way to marshal back onto the GUI thread
     (Qt auto-queues a cross-thread signal to the receiver's thread), the
     same role ThrottleWatch's `self.root.after(0, ...)` plays for Tk.
+
+    LAZY INSTALL: The hook is NOT installed in __init__ — it's installed
+    lazily on the first set_hotkey() call. This means a user running with
+    no global hotkey configured never even has a WH_KEYBOARD_LL hook
+    installed, eliminating any risk of that hook blocking game input.
     """
 
     # Emitted from the keyboard-hook thread; Qt auto-queues delivery to
@@ -140,19 +153,40 @@ class GlobalHotkey(QObject):
         super().__init__()
         self._state = HotkeyState()
         self._callback = None
+        self._hook = None  # Lazy: not installed until set_hotkey()
+        self._atexit_registered = False
         self.triggered.connect(self._dispatch)
 
         self._reconcile_timer = QTimer(self)
         self._reconcile_timer.timeout.connect(self._state.reconcile)
-        self._reconcile_timer.start(1000)
+        # Timer starts stopped; will be started when hook is installed
+        self._reconcile_timer.setInterval(1000)
 
+    def _ensure_hook_installed(self):
+        """Install the global keyboard hook if not already installed.
+        Called lazily from set_hotkey() — the hook is never installed
+        if no hotkey is ever configured."""
+        if self._hook is not None:
+            return True
         try:
             self._hook = keyboard.hook(self._on_key_event, suppress=False)
+            self._reconcile_timer.start()
+            if not self._atexit_registered:
+                atexit.register(self._atexit_shutdown)
+                self._atexit_registered = True
+            return True
         except Exception:
             # No admin rights, or the hook install otherwise failed —
             # the hotkey silently won't fire; the Settings UI still works,
             # it just never gets a callback.
             self._hook = None
+            return False
+
+    def _atexit_shutdown(self):
+        """Safety net: ensure the hook is released even if shutdown() is
+        never explicitly called. A WH_KEYBOARD_LL hook that outlives its
+        process can block game input until Windows times it out (~5s)."""
+        self.shutdown()
 
     def _on_key_event(self, event):
         # Runs on keyboard's dispatch thread. A broad except here matters:
@@ -172,6 +206,10 @@ class GlobalHotkey(QObject):
             self._callback()
 
     def set_hotkey(self, combo: str, callback) -> bool:
+        if not combo:
+            return False
+        if not self._ensure_hook_installed():
+            return False
         self._callback = callback
         self._state.configure(combo, self.triggered.emit)
         return True
