@@ -18,6 +18,10 @@ DEFAULT_CONFIG = {
         "window_geometry": {},
         "pre_stow_geometry": {},
         "pill_geometry": {},
+        # When True, the minimized pill is click-through (WS_EX_TRANSPARENT)
+        # — can't be dragged or clicked at all; redeploy via the Stow/Deploy
+        # hotkey. Never applied while deployed, regardless of this value.
+        "pill_click_through": False,
         "hotkey_combo": "",
         "hotkey_display": "",
         # Debug feature: shows a console window with log output. Only
@@ -30,6 +34,12 @@ DEFAULT_CONFIG = {
     "api": {"uex_token": "", "uex_base_url": "https://api.uexcorp.uk/2.0/"},
     "cards": {},
     "modules": {},
+    # Cross-module state, not namespaced to any one module — Phase 5 of the
+    # location-service plan (docs/DECISIONS.md, 2026-09-04). Logistics Hub's
+    # CURRENT LOCATION picker writes here; other modules read it only as an
+    # initial default for their own system/terminal filters, never as a
+    # forced override of a filter the user already set explicitly.
+    "shared": {"current_location_name": "", "current_location": None},
 }
 
 
@@ -68,6 +78,18 @@ class Config:
 
     def set_module_settings(self, module_id: str, settings: dict) -> None:
         self.data["modules"][module_id] = settings
+        self.save()
+
+    # -- shared cross-module current location (Phase 5) --
+    def shared_location(self) -> dict | None:
+        """The terminal dict last picked as CURRENT LOCATION by whichever
+        module set it (today: Logistics Hub only), or None if nothing has
+        been picked yet this install."""
+        return self.data["shared"].get("current_location")
+
+    def set_shared_location(self, terminal: dict | None, name: str) -> None:
+        self.data["shared"]["current_location"] = terminal
+        self.data["shared"]["current_location_name"] = name
         self.save()
 
     # -- card layout --

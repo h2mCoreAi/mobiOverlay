@@ -8,12 +8,21 @@ the card — it needs to be click-through and centered on the actual
 screen, independent of wherever the mobiOverlay window itself is sitting.
 The card just holds the Show/Hide toggle, nudge buttons, and Reset.
 """
+import ctypes
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication, QColor, QPainter, QPen
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from host import theme
 from host.module_base import ModuleBase
+
+GWL_EXSTYLE = -20
+WS_EX_TRANSPARENT = 0x00000020
+ctypes.windll.user32.GetWindowLongW.restype = ctypes.c_long
+ctypes.windll.user32.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+ctypes.windll.user32.SetWindowLongW.restype = ctypes.c_long
+ctypes.windll.user32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
 
 RETICLE_SIZE = 40  # the overlay widget is a square this many px on a side
 LINE_LENGTH = 14  # each arm of the "+"
@@ -34,6 +43,23 @@ class _CrosshairOverlay(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.setFixedSize(RETICLE_SIZE, RETICLE_SIZE)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Belt-and-suspenders on top of WA_TransparentForMouseEvents above:
+        # set the real WS_EX_TRANSPARENT extended window style directly via
+        # Win32 too (same fix mobiThrottle's bar uses for its own
+        # click-through toggle, modules/mobi_throttle/module.py). Qt's
+        # attribute is documented elsewhere in this project to only
+        # reliably reach the native window at creation time on this
+        # Qt/Windows combo, which is normally satisfied here since it's
+        # set once in __init__ and never toggled — reapplying on every
+        # show() closes the remaining gap (e.g. a fresh native handle
+        # after a hide/show cycle) so this reticle can never end up
+        # silently intercepting an aim click.
+        hwnd = int(self.winId())
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT)
 
     def paintEvent(self, event):
         painter = QPainter(self)

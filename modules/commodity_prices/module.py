@@ -251,7 +251,15 @@ class CommodityPricesModule(ModuleBase):
             combo.clear()
             combo.addItem(ALL_SYSTEMS)
             combo.addItems(systems)
-            saved = self.settings.get(setting_key, ALL_SYSTEMS)
+            # Phase 5 (docs/DECISIONS.md, 2026-09-04): default from Logistics
+            # Hub's shared CURRENT LOCATION only if the user has never
+            # explicitly set this filter — an explicit ALL_SYSTEMS choice is
+            # saved and respected like any other value, never overridden.
+            if setting_key in self.settings:
+                saved = self.settings[setting_key]
+            else:
+                shared = self.config.shared_location()
+                saved = (shared or {}).get("star_system_name") or ALL_SYSTEMS
             combo.setCurrentText(saved if saved in systems else ALL_SYSTEMS)
             combo.blockSignals(False)
 

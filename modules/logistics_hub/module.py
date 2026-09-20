@@ -890,6 +890,28 @@ def _candidate_phrases(raw_text: str) -> list[tuple[str, str, int]]:
     return candidates
 
 
+class _ReminderBanner(QLabel):
+    """A clickable, word-wrapping stand-in for the accept-reminder banner.
+
+    Was a QPushButton — Qt doesn't wrap QPushButton text regardless of
+    stylesheet, which clipped the message in the narrower Tracker popout
+    (see docs/PROGRESS.md, 2026-09-08 known issue). QLabel supports real
+    word-wrap; `mousePressEvent` below preserves the original "any click
+    anywhere on it dismisses" behavior a QPushButton gave for free.
+    """
+
+    def __init__(self, on_click):
+        super().__init__("")
+        self._on_click = on_click
+        self.setWordWrap(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setAlignment(Qt.AlignCenter)
+
+    def mousePressEvent(self, event):
+        self._on_click()
+        super().mousePressEvent(event)
+
+
 class _RegionSelector(QWidget):
     """Full‑screen transparent widget used to drag‑draw a capture rectangle.
 
@@ -1697,13 +1719,12 @@ class LogisticsHubModule(ModuleBase):
         # Added 2026-09-08: if Game.log still hasn't confirmed a contract
         # ACCEPT_REMINDER_SECONDS after ACCEPT, this blinks until physically
         # clicked — a safety net for the easy-to-forget "accept it in-game
-        # too" step, without ever touching game input itself. A QPushButton
-        # (not a QLabel) so any click on it — not just a precise target —
-        # dismisses it; the whole point is that a hurried/annoyed click
-        # still works. See docs/DECISIONS.md.
-        self._reminder_banner = QPushButton("")
+        # too" step, without ever touching game input itself. `_ReminderBanner`
+        # (a QLabel subclass, not QPushButton — see its docstring, 2026-09-09
+        # clipping fix) so any click on it — not just a precise target —
+        # dismisses it, and the text actually wraps in a narrow popout.
+        self._reminder_banner = _ReminderBanner(self._dismiss_accept_reminder)
         self._reminder_banner.setVisible(False)
-        self._reminder_banner.clicked.connect(self._dismiss_accept_reminder)
         self._reminder_blink_timer = QTimer()
         self._reminder_blink_timer.setInterval(500)
         self._reminder_blink_timer.timeout.connect(self._toggle_reminder_blink)
@@ -1964,6 +1985,12 @@ class LogisticsHubModule(ModuleBase):
         self.settings["current_location_name"] = name
         self.settings["current_location"] = terminal
         self._save_settings()
+        # Phase 5 (docs/DECISIONS.md, 2026-09-04): also publish to the
+        # shared, non-module-namespaced slot so other modules (Trade Route
+        # Optimizer, Commodity Prices) can default their own system filters
+        # from wherever the player actually is, without a real inter-module
+        # dependency wiring — they just read Config.shared_location() once.
+        self.config.set_shared_location(terminal, name)
         self._set_status(f"Location set: {name}")
         # Where we start from just changed — replan immediately rather than
         # waiting for the next scan, so the picker feels responsive.
@@ -3786,9 +3813,8 @@ class LogisticsHubModule(ModuleBase):
         # the scroll area), never into `content_layout` itself, since
         # `_populate_route_rows()` clears `content_layout` completely on
         # every render and would delete a banner living there.
-        self._popout_reminder_banner = QPushButton("")
+        self._popout_reminder_banner = _ReminderBanner(self._dismiss_accept_reminder)
         self._popout_reminder_banner.setVisible(False)
-        self._popout_reminder_banner.clicked.connect(self._dismiss_accept_reminder)
         popout.layout().insertWidget(1, self._popout_reminder_banner)
         # A reminder already active when the Tracker is opened (e.g. it
         # fired while the popout was closed) must show up here too, not

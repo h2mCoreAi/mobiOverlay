@@ -837,6 +837,42 @@
   the same accept can't be attached twice. 60/60 checks pass. See
   DECISIONS.md, 2026-09-08.
 
+- **New module: Multi-Commodity Finder** (`modules/multi_commodity_finder/`,
+  the app's 8th module) — direct user request (2026-09-08): reduce stops by
+  finding one terminal that trades several checked commodities at once, even
+  if it isn't the single best price for any of them individually. Checkable
+  commodity list, SELL (terminal buys from you)/BUY (terminal sells to you)
+  mode, optional system filter, SCAN button (same chunked-QTimer/countdown/
+  force-update pattern as Commodity Prices' Retrieve Data). Groups
+  per-commodity `commodities_prices` rows by `id_terminal` client-side (no
+  UEX endpoint does this), ranks terminals by **coverage first, total value
+  second** — same gating rules as Commodity Prices (buy side requires
+  `scu_buy > 0`, no `scu_sell` gate on the sell side). Verified end-to-end
+  against live UEX data (not stubs): a 3-commodity scan (Laranite/Gold/
+  Agricium) correctly found several terminals covering all 3, ranked by
+  total value among equal coverage; a 4-commodity BUY-mode scan mixing a
+  common commodity with a rare one (Osoian Hides) correctly ranked a 2/5
+  coverage terminal above a 1/5 terminal worth 8x more in total value,
+  proving the coverage-first ranking actually works, not just total-value
+  sort; the Pyro system filter correctly narrowed results live. All done
+  headlessly via `QT_QPA_PLATFORM=offscreen` (loaded module contract
+  alongside all 7 existing modules with no duplicate-id/contract issues,
+  built the real card, drove the real scan against the live API). See
+  docs/modules/multi-commodity-finder.md. **Not yet human-tested** in the
+  real running app — headless verification proves the scan/grouping/ranking
+  logic works against live data, but a human hasn't clicked through the
+  actual UI yet.
+
+- **Terminal facility flags (Refinery, Cargo Center, Loading Dock, etc.)
+  added to the shared `host/locations.py`** (`LocationService.facilities()`)
+  rather than hand-rolled in Multi-Commodity Finder alone, since the user
+  flagged this is likely useful to other modules later too. Confirmed live
+  every `terminals` row already carries these as `is_*`/`has_*` 0/1 flags —
+  no new endpoint/API cost. Wired into Multi-Commodity Finder as an optional
+  facility filter, verified live: real Loading Dock/Refinery flags found on
+  real terminals, filter correctly narrowed an 8-terminal result to 5. See
+  docs/modules/multi-commodity-finder.md and DECISIONS.md, 2026-09-08.
+
 ## Next
 
 - **mobiNotes module — built and live-verified (2026-09-08), the app's

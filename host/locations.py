@@ -431,6 +431,45 @@ class LocationService:
         self.ensure_loaded()
         return list(self._locations or [])
 
+    # ------------------------------------------------------------------
+    # Facilities — what a location actually has (refinery, cargo center,
+    # loading dock, etc.), not just prices. Confirmed live (2026-09-08):
+    # every `terminals` row already carries these as `is_*`/`has_*` boolean
+    # flags (0/1) — no separate endpoint needed. Only meaningful for
+    # `terminals`-endpoint rows; the structural endpoints
+    # (space_stations/outposts/cities) don't carry these flags themselves
+    # (a station's terminals do, individually). Centralized here rather
+    # than in one module so any future module can filter/display the same
+    # facility set without re-deriving which raw flags matter and what to
+    # call them — see docs/DECISIONS.md, 2026-09-08.
+    # ------------------------------------------------------------------
+    FACILITY_FLAGS = {
+        "is_refinery": "Refinery",
+        "is_cargo_center": "Cargo Center",
+        "is_habitation": "Habitation",
+        "is_medical": "Medical",
+        "is_food": "Food",
+        "is_shop_fps": "FPS Shop",
+        "is_shop_vehicle": "Vehicle Shop",
+        "is_refuel": "Refuel",
+        "is_repair": "Repair",
+        "is_jump_point": "Jump Point",
+        "has_loading_dock": "Loading Dock",
+        "has_docking_port": "Docking Port",
+        "has_freight_elevator": "Freight Elevator",
+    }
+
+    @classmethod
+    def facilities(cls, terminal: dict) -> set[str]:
+        """Human-readable facility names this terminal record reports
+        having (e.g. {"Refinery", "Loading Dock"}). Empty set for a
+        non-`terminals` row or a terminal with none of the tracked flags —
+        never raises on a missing/falsy flag."""
+        return {
+            label for flag, label in cls.FACILITY_FLAGS.items()
+            if terminal.get(flag)
+        }
+
     def systems(self) -> list[dict]:
         self.ensure_loaded()
         return list(self._systems or [])

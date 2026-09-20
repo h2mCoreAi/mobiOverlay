@@ -254,7 +254,17 @@ class TradeRouteOptimizerModule(ModuleBase):
         self.buy_system_combo.clear()
         self.buy_system_combo.addItem(ALL_SYSTEMS)
         self.buy_system_combo.addItems(names)
-        saved = self.settings.get("buy_system_filter", ALL_SYSTEMS)
+        # Phase 5 (docs/DECISIONS.md, 2026-09-04): if the user has never
+        # explicitly picked a filter here, default it from wherever
+        # Logistics Hub last said the player's CURRENT LOCATION is, rather
+        # than always starting at ALL_SYSTEMS. Only a default — an explicit
+        # ALL_SYSTEMS choice (saved once the combo fires its own signal)
+        # is respected same as any other saved value, never overridden.
+        if "buy_system_filter" in self.settings:
+            saved = self.settings["buy_system_filter"]
+        else:
+            shared = self.config.shared_location()
+            saved = (shared or {}).get("star_system_name") or ALL_SYSTEMS
         self.buy_system_combo.setCurrentText(saved if saved in names else ALL_SYSTEMS)
         self.buy_system_combo.blockSignals(False)
 

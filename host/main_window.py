@@ -18,6 +18,14 @@ from host.card_container import CardContainer
 from host.config import Config
 from host.paths import app_root, relaunch_command
 
+GWL_EXSTYLE = -20
+WS_EX_TRANSPARENT = 0x00000020
+ctypes.windll.user32.GetWindowLongW.restype = ctypes.c_long
+ctypes.windll.user32.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+ctypes.windll.user32.SetWindowLongW.restype = ctypes.c_long
+ctypes.windll.user32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
+
+
 def _build_stylesheet() -> str:
     # A function, not a module-level constant: theme.fpx() must read
     # theme.FONT_SCALE at call time. This module is imported (and a
@@ -407,6 +415,36 @@ class _SettingsPanel(QWidget):
         hotkey_row.control_row.addWidget(clear_btn)
         layout.addWidget(hotkey_row)
 
+        # -- Pill click-through --
+        pill_row = _SettingsRow(
+            "PILL CLICK-THROUGH",
+            "Makes the minimized pill click-through — it can't be dragged "
+            "or clicked at all. Redeploy with the hotkey above.",
+        )
+        current_pill_click_through = main_window.config.data["ui"].get("pill_click_through", False)
+        pill_btn = QPushButton()
+        pill_btn.setCheckable(True)
+        pill_btn.setChecked(current_pill_click_through)
+        pill_btn.setText("ON" if current_pill_click_through else "OFF")
+        pill_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {theme.TEXT_MUTED};
+                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 10px;
+                font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
+            }}
+            QPushButton:checked {{
+                color: {theme.ACCENT_CYAN}; border: 1px solid {theme.BORDER_CYAN};
+            }}
+        """)
+
+        def _on_pill_click_through_toggled(checked: bool):
+            pill_btn.setText("ON" if checked else "OFF")
+            main_window.set_pill_click_through(checked)
+
+        pill_btn.toggled.connect(_on_pill_click_through_toggled)
+        pill_row.control_row.addWidget(pill_btn)
+        layout.addWidget(pill_row)
+
 
 class _TitleBar(QWidget):
     def __init__(self, main_window: "MainWindow"):
@@ -584,6 +622,7 @@ class MainWindow(QWidget):
         self._pill_geometry: tuple[int, int] | None = (
             (pill_geo["x"], pill_geo["y"]) if pill_geo else None
         )
+        self._pill_click_through = config.data["ui"].get("pill_click_through", False)
 
         geo = config.data["ui"].get("window_geometry") or {}
         self.resize(geo.get("width", 680), geo.get("height", 560))
@@ -674,11 +713,17 @@ class MainWindow(QWidget):
         # re-stowed.
         if self._pill_geometry:
             self.move(*self._pill_geometry)
+        self._apply_native_click_through(self._pill_click_through)
         self.config.save()
 
     def deploy_app(self):
         if not self._app_stowed:
             return
+        # Clear click-through before anything else — otherwise a redeploy
+        # triggered by something other than the hotkey (e.g. a future
+        # programmatic call) could leave the now-full-size window unable
+        # to receive any mouse input at all.
+        self._apply_native_click_through(False)
         self.card_container.setVisible(True)
         self._size_grip.setVisible(True)
         self.title_bar.set_stowed_mode(False)
@@ -734,6 +779,35 @@ class MainWindow(QWidget):
 
     def toggle_app_stow(self):
         self.deploy_app() if self._app_stowed else self.stow_app()
+
+    def _apply_native_click_through(self, enabled: bool):
+        """Sets the real WS_EX_TRANSPARENT extended window style directly
+        via Win32, the same fix mobiThrottle's bar uses for its own
+        click-through toggle (see modules/mobi_throttle/module.py,
+        set_click_through) — Qt's WA_TransparentForMouseEvents attribute
+        doesn't reliably re-push into the native window style when
+        toggled on an already-shown top-level widget on this Qt/Windows
+        combo, so the bit is set on the real HWND instead, which Windows
+        checks live on every hit-test.
+
+        Deliberately affects mouse input only, not drag specifically —
+        with the bit set, every mouse event (including a click on the
+        pill's own close button) passes straight through, so the only way
+        back to full mode is the Stow/Deploy hotkey. That's the point:
+        the pill becomes a pure, unclickable HUD element.
+        """
+        hwnd = int(self.winId())
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        style = (style | WS_EX_TRANSPARENT) if enabled else (style & ~WS_EX_TRANSPARENT)
+        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, enabled)
+
+    def set_pill_click_through(self, enabled: bool):
+        self._pill_click_through = enabled
+        self.config.data["ui"]["pill_click_through"] = enabled
+        self.config.save()
+        if self._app_stowed:
+            self._apply_native_click_through(enabled)
 
     def capture_hotkey_combo(self, on_captured, on_error=None):
         return self._hotkey.capture_combo(on_captured, on_error)

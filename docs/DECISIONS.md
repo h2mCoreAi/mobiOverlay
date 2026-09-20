@@ -3402,3 +3402,103 @@ standard, decades-proven Win32 technique for click-through overlays —
 correct by construction — but this specific instance of it is only
 confirmed by the user's own next real-mouse test after relaunching, not
 by an automated check.
+
+- **2026-09-08 — New module: Multi-Commodity Finder, direct user request.**
+  User: reducing stops matters more than squeezing the best price on any one
+  commodity — wanted the ability to cross-reference several commodities at
+  once and find terminals that trade multiple of them, even at a worse price
+  each. No UEX endpoint does this kind of cross-referencing (confirmed by
+  inspection — `commodities_prices` is per-commodity, same endpoint every
+  other module already uses), so it's a client-side grouping of
+  per-commodity price rows by `id_terminal`, ranked by `(coverage_count,
+  total_value)` rather than pure price — coverage wins first, total value is
+  only the tiebreak. Reused Commodity Prices' exact gating rules (BUY side
+  requires `scu_buy > 0`, no `scu_sell` gate on SELL — see 2026-09-05 entry)
+  since it's the same underlying data and the same "quoted price with 0
+  real stock isn't real" problem applies. Supports both directions per user
+  answer: SELL (find a terminal that buys several of your hauled
+  commodities at once) and BUY (find a terminal that sells several raw
+  materials at once before a refining/hauling run). New module chosen over
+  extending Commodity Prices, per user preference, since it's a genuinely
+  different question (cross-commodity/per-terminal) from Commodity Prices'
+  per-commodity/cross-terminal scope.
+  Verified against live UEX data, not stubs, all headless
+  (`QT_QPA_PLATFORM=offscreen`, no window painted — same convention
+  mobiNotes used for a similar reason): module contract loads cleanly
+  alongside all 7 existing modules with no duplicate-id issues; a real
+  3-commodity scan (Laranite/Gold/Agricium) found multiple terminals
+  covering all 3, correctly ranked by total value among ties; a 4-commodity
+  BUY-mode scan mixing a common commodity with a rare one (Osoian Hides)
+  produced the key proof this ranking actually does what it's for: a
+  terminal covering 2/5 checked commodities outranked one covering only 1/5
+  despite that 1/5 terminal being worth roughly 8x more in raw total value —
+  coverage genuinely wins over price, not just in theory; the Pyro system
+  filter correctly narrowed live results afterward. Not yet human-tested in
+  the actual running app. See docs/modules/multi-commodity-finder.md.
+
+- **2026-09-08 — Terminal facility flags (refinery, cargo center, loading
+  dock, etc.) added to the shared `host/locations.py`, not hand-rolled in
+  Multi-Commodity Finder alone.** User asked whether UEX's data includes
+  what a location actually has, then explicitly asked whether it's worth
+  wiring in at the shared level now versus only in the one module that
+  needs it today, anticipating other modules wanting it later. Confirmed
+  live: every `terminals` row already carries `is_refinery`,
+  `is_cargo_center`, `is_habitation`, `is_medical`, `is_food`,
+  `is_shop_fps`, `is_shop_vehicle`, `is_refuel`, `is_repair`,
+  `is_jump_point`, `has_loading_dock`, `has_docking_port`,
+  `has_freight_elevator` as plain 0/1 flags — no new endpoint, no added API
+  cost, since `all_locations()` already fetches these rows for every
+  module that uses the shared service. Added `LocationService.FACILITY_FLAGS`
+  (raw flag -> clean display name) and `LocationService.facilities(terminal)`
+  (returns the matching clean-name set) as the single shared mapping,
+  mirroring why `display_name()`/`friendly_label()` already live here
+  instead of duplicated per module (see the Phase 1-4 location-service
+  entries above). Wired an optional facility filter into Multi-Commodity
+  Finder as the first consumer (`facility_filter` setting, "Any Facility"
+  default). Verified live: real terminal data does carry both Refinery and
+  Loading Dock flags for real Stanton/Terminus/Pyro terminals, and filtering
+  by "Loading Dock" correctly narrowed a real 8-terminal result set down to
+  5 genuine matches. Next module that wants facility-aware results (e.g.
+  Refinery Finder cross-checking capacity against `is_refinery`, or a future
+  route planner) can call the same helper for free.
+
+- **2026-09-08 — Two fixes to Multi-Commodity Finder's COPY button, both
+  found within a day of shipping it.** (1) User reported the copied text
+  said "Mode: BUY" while the app's mode combo was actually set to SELL —
+  `_format_for_clipboard()`'s mode label had index 0/1 backwards relative
+  to every other place in the module reading the same combo (the
+  `_on_mode_changed`/`_render_results` gating logic was correct the whole
+  time — only the printed label in the copy text was wrong, so results
+  data itself was never affected). Fixed and reverified against a real
+  scan. (2) User: the commodity search box's filter text shouldn't be in
+  the copied summary — it's a UI narrowing aid over the checkable list, not
+  part of the actual query, so including it was noise for something meant
+  to be shared. Removed it from `_format_for_clipboard()` and the button's
+  tooltip; kept `Commodities (N): ...` (the actual checked list) as the
+  real content.
+  **Process note, not a code bug**: verifying fix (1) surfaced that this
+  session's earlier headless verification of the COPY feature had used the
+  user's real `config.json` (via the default `Config()`/`CONFIG_PATH`)
+  instead of an isolated test file, leaving stray settings (a facility
+  filter, extra checked commodities) bleeding into what the user saw when
+  they next opened the app — cleared those back to empty and switched to
+  monkeypatching `host.config.CONFIG_PATH` to a scratch file for this kind
+  of headless module testing going forward. Same class of mistake
+  PROGRESS.md already flagged once before (Logistics Hub's confirm-gate
+  testing writing into the real debug log) — worth remembering as a
+  standing rule, not a one-off.
+
+- **2026-09-08 — Missing-commodity wording made mode-aware ("doesn't buy
+  from you" / "doesn't sell to you"), replacing the ambiguous "not
+  available here."** User flagged real confusion: under SELL mode
+  (terminal buys from you), seeing "Construction Materials: not available
+  here" reads naturally as "out of stock," not its actual meaning — this
+  terminal doesn't purchase that commodity at all. The direction (buy vs.
+  sell) was never in the missing-line text at all, only implied by context
+  the reader had to hold in their head separately. New shared
+  `_missing_text(name, is_buy_mode)` used by both the on-card result rows
+  and the COPY clipboard summary, so the two can't drift out of sync with
+  each other. Verified live (isolated test config): a SELL-mode scan
+  correctly prints "doesn't buy from you" for every uncovered commodity,
+  and re-running the same scan in BUY mode correctly flips every instance
+  to "doesn't sell to you."
