@@ -2,6 +2,7 @@
 module managing its own HTTP session.
 """
 import requests
+from requests.adapters import HTTPAdapter
 
 
 class UexApiError(Exception):
@@ -20,6 +21,13 @@ class UexApiClient:
         self.base_url = base_url.rstrip("/") + "/"
         self.token = token
         self._session = requests.Session()
+        # Connection pooling: reuse TCP connections across requests,
+        # avoiding TLS handshake overhead (~50-100ms) on subsequent calls.
+        # pool_connections: number of connection pools to cache
+        # pool_maxsize: max connections to save in the pool per host
+        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10)
+        self._session.mount('https://', adapter)
+        self._session.mount('http://', adapter)
 
     def get(self, endpoint: str, params: dict | None = None) -> list[dict]:
         headers = {}

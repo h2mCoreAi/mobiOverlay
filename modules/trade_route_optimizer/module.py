@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
 
 from host import theme
 from host.api_client import UexRateLimitError
-from host.locations import LocationService
 from host.module_base import ModuleBase
 
 TOP_N_ROUTES = 5
@@ -79,9 +78,8 @@ class TradeRouteOptimizerModule(ModuleBase):
         f'<span style="color:{theme.ACCENT_CYAN};">Trade</span>'
     )
 
-    def __init__(self, api_client, config):
-        super().__init__(api_client, config)
-        self._locations = LocationService(api_client)
+    def __init__(self, api_client, config, locations):
+        super().__init__(api_client, config, locations)
         self._origin_choices: dict[str, dict] = {}  # search_label -> terminal row
         self._last_rows: list[dict] = []
         self.request_refresh = None  # injected by host after wrapping refresh()
@@ -237,7 +235,7 @@ class TradeRouteOptimizerModule(ModuleBase):
         system. Shared by the origin combo (all systems) and the SCAN
         button's terminal queue (optionally narrowed by BUY IN)."""
         rows = [
-            row for row in self._locations.all_locations()
+            row for row in self.locations.all_locations()
             if row.get("_endpoint") == "terminals"
             and row.get("type") == "commodity"
             and row.get("is_available_live")
@@ -248,7 +246,7 @@ class TradeRouteOptimizerModule(ModuleBase):
         return rows
 
     def _populate_buy_system_combo(self):
-        systems = self._locations.available_systems()
+        systems = self.locations.available_systems()
         names = sorted({row["name"] for row in systems if row.get("name")})
         self.buy_system_combo.blockSignals(True)
         self.buy_system_combo.clear()
@@ -281,7 +279,7 @@ class TradeRouteOptimizerModule(ModuleBase):
         rows = self._candidate_terminals()
         self._origin_choices = {}
         for row in rows:
-            label = self._locations.friendly_label(row)
+            label = self.locations.friendly_label(row)
             if label in self._origin_choices and self._origin_choices[label] is not row:
                 system = row.get("star_system_name")
                 if system:

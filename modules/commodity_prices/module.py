@@ -15,7 +15,6 @@ from PySide6.QtWidgets import QComboBox, QLabel, QHBoxLayout, QVBoxLayout, QWidg
 
 from host import theme
 from host.api_client import UexRateLimitError
-from host.locations import LocationService
 from host.module_base import ModuleBase
 
 ALL_SYSTEMS = "All Systems"
@@ -64,9 +63,8 @@ class CommodityPricesModule(ModuleBase):
         f'<span style="color:{theme.ACCENT_CYAN};">Commodities</span>'
     )
 
-    def __init__(self, api_client, config):
-        super().__init__(api_client, config)
-        self._locations = LocationService(api_client)
+    def __init__(self, api_client, config, locations):
+        super().__init__(api_client, config, locations)
         self._commodities: list[str] = []
         self._last_rows: list[dict] = []
         self._terminal_nicknames: dict[int, str] = {}
@@ -174,14 +172,7 @@ class CommodityPricesModule(ModuleBase):
         return box, price, loc, system_combo
 
     def _populate_commodities(self):
-        try:
-            data = self.api.get("commodities")
-        except Exception:
-            data = []
-        names = sorted({
-            row["name"] for row in data
-            if row.get("is_visible") and row.get("name")
-        })
+        names = self.locations.visible_commodity_names()
         self._commodities = names
         self.combo.blockSignals(True)
         self.combo.addItems(names)
@@ -201,11 +192,11 @@ class CommodityPricesModule(ModuleBase):
         # up by id_terminal instead. Same field trade_route_optimizer's
         # origin-terminal picker already uses, for consistency.
         rows = [
-            row for row in self._locations.all_locations()
+            row for row in self.locations.all_locations()
             if row.get("_endpoint") == "terminals" and row.get("type") == "commodity"
         ]
         self._terminal_nicknames = {
-            row["id"]: self._locations.display_name(row) for row in rows if row.get("id")
+            row["id"]: self.locations.display_name(row) for row in rows if row.get("id")
         }
 
     def _on_sell_filter_changed(self, _system: str):

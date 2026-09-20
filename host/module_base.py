@@ -7,15 +7,17 @@ error rather than corrupting shared state or crashing the app.
 """
 from host.api_client import UexApiClient
 from host.config import Config
+from host.locations import LocationService
 
 
 class ModuleBase:
     module_id: str = ""
     display_name: str = ""
 
-    def __init__(self, api_client: UexApiClient, config: Config):
+    def __init__(self, api_client: UexApiClient, config: Config, locations: LocationService):
         self.api = api_client
         self.config = config
+        self.locations = locations
         self.settings = config.module_settings(self.module_id)
 
     def create_card(self, parent):

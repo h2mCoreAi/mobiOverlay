@@ -49,6 +49,7 @@ import time
 from host import theme
 from host.api_client import UexApiClient
 from host.card import Card
+from host.locations import LocationService
 from host.main_window import MainWindow
 from host.module_loader import discover_modules
 from host.splash import show_splash, set_status
@@ -168,13 +169,18 @@ def main():
         token=config.data["api"]["uex_token"],
     )
 
+    set_status(splash, "Loading location data...")
+    app.processEvents()
+    locations = LocationService(api_client)
+    locations.ensure_loaded()
+
     window = MainWindow(config)
 
     def _on_module_loading(name):
         set_status(splash, f"Loading {name.replace('_', ' ').title()}...")
 
     discover_start = time.monotonic()
-    modules = discover_modules(api_client, config, on_module_loading=_on_module_loading)
+    modules = discover_modules(api_client, config, locations, on_module_loading=_on_module_loading)
     logger.info("discover_modules() took %.2fs total", time.monotonic() - discover_start)
     if not modules:
         logger.warning("No modules loaded — the overlay will show an empty container.")

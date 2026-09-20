@@ -57,6 +57,11 @@ class LocationService:
         self._distance_cache: dict[tuple, float | None] = {}
         self._orbit_tables: dict[tuple, dict | None] = {}
         self._friendly_names: dict[str, str] | None = None  # normalized nickname -> best display_name, see friendly_label()
+        # Commodities cache — fetched once per session on first call to
+        # commodities(), shared across all modules that need the list
+        # (commodity_prices, refinery_finder, multi_commodity_finder).
+        # Avoids 3+ redundant API calls at startup.
+        self._commodities: list[dict] | None = None
 
     # ------------------------------------------------------------------
     # Loading / caching
@@ -476,6 +481,39 @@ class LocationService:
 
     def available_systems(self) -> list[dict]:
         return [s for s in self.systems() if s.get("is_available")]
+
+    # ------------------------------------------------------------------
+    # Commodities — shared cache across modules (Q2 optimization)
+    # ------------------------------------------------------------------
+    def commodities(self) -> list[dict]:
+        """All commodities from UEX's `commodities` endpoint, cached for the
+        session. Avoids multiple modules (commodity_prices, refinery_finder,
+        multi_commodity_finder) each fetching the same ~150-200 item list
+        independently at startup."""
+        if self._commodities is not None:
+            return self._commodities
+        try:
+            self._commodities = self.api.get("commodities")
+        except Exception:
+            logger.warning("locations: could not fetch commodities from UEX API", exc_info=True)
+            self._commodities = []
+        return self._commodities
+
+    def visible_commodity_names(self) -> list[str]:
+        """Sorted list of visible commodity names — the common query pattern
+        used by commodity pickers across multiple modules."""
+        return sorted({
+            row["name"] for row in self.commodities()
+            if row.get("is_visible") and row.get("name")
+        })
+
+    def raw_commodities(self) -> list[dict]:
+        """Commodities where is_raw == 1 (for refinery_finder)."""
+        return [
+            {"id": row["id"], "name": row["name"]}
+            for row in self.commodities()
+            if row.get("is_raw") == 1 and row.get("is_visible") and row.get("name") and row.get("id") is not None
+        ]
 
     # ------------------------------------------------------------------
     # Real travel distance (Phase 3 of the location-service plan — see

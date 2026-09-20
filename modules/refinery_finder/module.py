@@ -55,11 +55,11 @@ class RefineryFinderModule(ModuleBase):
         f'<span style="color:{theme.ACCENT_CYAN};">Refinery</span>'
     )
 
-    def __init__(self, api_client, config):
-        super().__init__(api_client, config)
+    def __init__(self, api_client, config, locations):
+        super().__init__(api_client, config, locations)
         self.settings.setdefault("system_filter", ALL_SYSTEMS)
         self._raw_commodities: list[dict] = []  # [{id, name}] where is_raw == 1
-        self._methods: list[dict] = []
+        self._methods: list[dict] | None = None  # cached once per session, see _ensure_methods()
         self._last_yield_rows: list[dict] = []
         self._capacity_by_terminal: dict[int, int] = {}
         self.request_refresh = None  # injected by host after wrapping refresh()
@@ -116,15 +116,7 @@ class RefineryFinderModule(ModuleBase):
         return card
 
     def _populate_commodities(self):
-        try:
-            data = self.api.get("commodities")
-        except Exception:
-            data = []
-        rows = [
-            {"id": row["id"], "name": row["name"]}
-            for row in data
-            if row.get("is_raw") == 1 and row.get("is_visible") and row.get("name") and row.get("id") is not None
-        ]
+        rows = self.locations.raw_commodities()
         rows.sort(key=lambda r: r["name"])
         self._raw_commodities = rows
         names = [r["name"] for r in rows]
@@ -154,6 +146,18 @@ class RefineryFinderModule(ModuleBase):
     # ------------------------------------------------------------------
     # ModuleBase refresh
     # ------------------------------------------------------------------
+    def _ensure_methods(self):
+        """Fetch refineries_methods once per session and cache it. Methods
+        are static reference data (refining method names, yield/cost/speed
+        ratings) that don't change during a session — no need to re-fetch
+        on every refresh."""
+        if self._methods is not None:
+            return
+        try:
+            self._methods = self.api.get("refineries_methods")
+        except Exception:
+            self._methods = []
+
     def refresh(self):
         name = self.combo.currentText()
         if not name:
@@ -170,7 +174,7 @@ class RefineryFinderModule(ModuleBase):
             for row in capacities
             if row.get("id_terminal") is not None and row.get("value") is not None
         }
-        self._methods = self.api.get("refineries_methods")
+        self._ensure_methods()
         self._render_methods()
         self._render_results()
 
@@ -274,7 +278,7 @@ class RefineryFinderModule(ModuleBase):
     # ------------------------------------------------------------------
     def _render_methods(self):
         self._clear_layout(self._methods_layout)
-        methods = sorted(self._methods, key=lambda m: m.get("name", ""))
+        methods = sorted(self._methods or [], key=lambda m: m.get("name", ""))
         if not methods:
             self._methods_layout.addWidget(self._info_label("Methods data not loaded yet."))
             return

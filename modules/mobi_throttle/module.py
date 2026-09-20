@@ -529,8 +529,8 @@ class MobiThrottleModule(ModuleBase):
         "refresh_interval_seconds": 5,
     }
 
-    def __init__(self, api_client, config):
-        super().__init__(api_client, config)
+    def __init__(self, api_client, config, locations):
+        super().__init__(api_client, config, locations)
         for key, value in self.DEFAULTS.items():
             self.settings.setdefault(key, value)
         if "x" not in self.settings or "y" not in self.settings:

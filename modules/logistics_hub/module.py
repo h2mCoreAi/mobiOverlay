@@ -101,19 +101,38 @@ import logging
 logger = logging.getLogger("mobioverlay.logistics_hub")
 
 # ---------------------------------------------------------------------------
-# Optional third‑party dependencies – imported lazily so the module can still
-# load if the user has not yet installed the local requirements.txt.
+# OCR dependencies are loaded lazily on first scan, not at module import time.
+# `import easyocr` alone takes ~2.8s (loads PyTorch) — deferring it to first
+# actual use cuts startup from ~3.6s to ~0.8s. Users who never click SCAN
+# CONTRACT never pay the cost at all.
 # ---------------------------------------------------------------------------
-try:
-    import easyocr  # type: ignore
-    from PIL import Image, ImageOps  # type: ignore
+_ocr_modules: dict | None = None  # populated by _ensure_ocr_loaded()
+_ocr_load_error: str | None = None  # set if import fails
 
-    OCR_AVAILABLE = True
-except ImportError:
-    easyocr = None  # type: ignore
-    Image = None  # type: ignore
-    ImageOps = None  # type: ignore
-    OCR_AVAILABLE = False
+
+def _ensure_ocr_loaded() -> bool:
+    """Lazily import easyocr and PIL on first use. Returns True if available."""
+    global _ocr_modules, _ocr_load_error
+    if _ocr_modules is not None:
+        return True
+    if _ocr_load_error is not None:
+        return False
+    try:
+        import easyocr  # type: ignore
+        from PIL import Image, ImageOps  # type: ignore
+        import numpy as np
+        _ocr_modules = {
+            "easyocr": easyocr,
+            "Image": Image,
+            "ImageOps": ImageOps,
+            "np": np,
+        }
+        logger.info("OCR engine loaded successfully")
+        return True
+    except ImportError as e:
+        _ocr_load_error = str(e)
+        logger.warning("OCR dependencies not available: %s", e)
+        return False
 
 COPY_ROUTE_CONFIRM_MS = 1500  # how long the COPY ROUTE button shows "COPIED" before reverting
 
@@ -1447,8 +1466,8 @@ class LogisticsHubModule(ModuleBase):
         f'<span style="color:{theme.ACCENT_CYAN};">Logistics</span>'
     )
 
-    def __init__(self, api_client, config):
-        super().__init__(api_client, config)
+    def __init__(self, api_client, config, locations):
+        super().__init__(api_client, config, locations)
         # This module is on-demand only (SCAN CONTRACT) — the host's generic
         # periodic-refresh timer would otherwise call refresh() every
         # DEFAULT_REFRESH_SECONDS and re-OCR whatever's on screen at that
@@ -1468,11 +1487,11 @@ class LogisticsHubModule(ModuleBase):
         self._route_popout_layout: QVBoxLayout | None = None
         self._route_popout_opacity_slider: QSlider | None = None
         self._reader = None
-        # Shared Core service (host/locations.py) — one place resolving/
-        # caching UEX location data for every module, not this module's
-        # own copy. See docs/DECISIONS.md, 2026-09-04, for why this lives
-        # in Core rather than as a "location module" other modules depend on.
-        self._locations = LocationService(api_client)
+        # Shared Core service now provided by host (host/locations.py) —
+        # self.locations is set in ModuleBase.__init__. Keep a private
+        # alias for compatibility with existing code that uses
+        # self._locations throughout this module.
+        self._locations = self.locations
         self._location_choices: dict[str, dict] = {}  # display name -> terminal row, for the picker
         self._pending_scan: dict | None = None  # scanned, awaiting ACCEPT/REJECT in the review popup
         # Debug-log context for the currently-open review popup — set in
@@ -2285,10 +2304,14 @@ class LogisticsHubModule(ModuleBase):
             self._set_status("No capture region set — use SET SCAN AREA on the card first.")
             self._clear_error_state()
             return
-        if not OCR_AVAILABLE:
+
+        # Lazy-load OCR engine on first scan (takes ~2-3s for PyTorch init)
+        self._set_status("Loading OCR engine..." if self._reader is None else "Scanning...")
+        QApplication.processEvents()  # show the status before blocking on import
+        if not _ensure_ocr_loaded():
             raise RuntimeError(
-                "easyocr/Pillow not installed. Run:\n"
-                "  pip install -r modules/logistics_hub/requirements.txt"
+                f"easyocr/Pillow not available: {_ocr_load_error or 'unknown error'}\n"
+                "Run: pip install -r modules/logistics_hub/requirements.txt"
             )
 
         pix = self._grab_region(region)
@@ -2721,7 +2744,17 @@ class LogisticsHubModule(ModuleBase):
         return screen.grabWindow(0, local_x, local_y, w, h)
 
     def _ocr(self, pixmap):
-        """Runs EasyOCR over the given QPixmap and returns raw text."""
+        """Runs EasyOCR over the given QPixmap and returns raw text.
+        
+        OCR modules (easyocr, PIL, numpy) are loaded lazily by _ensure_ocr_loaded()
+        before this method is called. Access them via _ocr_modules dict.
+        """
+        # Get lazily-loaded modules
+        Image = _ocr_modules["Image"]
+        ImageOps = _ocr_modules["ImageOps"]
+        easyocr = _ocr_modules["easyocr"]
+        np = _ocr_modules["np"]
+
         # Convert QPixmap → QImage → PIL image. In PySide6/Qt6, QImage.bits()
         # already returns a correctly-sized Python memoryview (unlike PyQt5's
         # sip.voidptr, which needed .setsize() to become buffer-like) — wrap
@@ -2756,7 +2789,6 @@ class LogisticsHubModule(ModuleBase):
         if self._reader is None:
             self._reader = easyocr.Reader(["en"], gpu=False, verbose=False)
 
-        import numpy as np
         # detail=1 (not the previous detail=0) so each result carries its
         # bounding box, not just bare text — needed by _order_ocr_boxes()
         # below to read the panel in genuine left-to-right, top-to-bottom
