@@ -116,6 +116,45 @@ def _default_launch_position() -> tuple[int, int]:
     return geo.x() + 100, geo.y() + 100
 
 
+def _ensure_on_screen(x: int, y: int, w: int, h: int,
+                      hint_pos: tuple[int, int] | None = None,
+                      margin: int = 10) -> tuple[int, int]:
+    """Ensure (x, y) is on a real screen, not in a gap between monitors.
+
+    Multi-monitor layouts can have gaps (e.g. screen0 ends at x=2048, screen1
+    starts at x=2560 — a 512px gap where Qt's screenAt() returns None). This
+    validates a position and clamps it to a real screen if necessary.
+
+    Args:
+        x, y: Proposed top-left position
+        w, h: Window dimensions (used to clamp within available geometry)
+        hint_pos: Optional fallback position to pick the target screen when
+                  (x, y) lands in a gap. If None or itself invalid, uses primary.
+        margin: Minimum px from screen edges
+
+    Returns:
+        (x, y) clamped to a real screen's available geometry
+    """
+    app = QGuiApplication.instance()
+    if app is None:
+        return x, y
+
+    screen = app.screenAt(QPoint(x, y))
+
+    if screen is None:
+        if hint_pos is not None:
+            screen = app.screenAt(QPoint(*hint_pos))
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return x, y
+
+    avail = screen.availableGeometry()
+    x = max(avail.x() + margin, min(x, avail.right() - w - margin))
+    y = max(avail.y() + margin, min(y, avail.bottom() - h - margin))
+    return x, y
+
+
 class _TrayRow(QWidget):
     """One stowed card's row in the tray panel — click anywhere to deploy it."""
 
@@ -422,8 +461,8 @@ class _SettingsPanel(QWidget):
         # -- Pill click-through --
         pill_row = _SettingsRow(
             "PILL CLICK-THROUGH",
-            "Makes the minimized pill click-through — it can't be dragged "
-            "or clicked at all. Redeploy with the hotkey above.",
+            "ON = pill passes all clicks through to the game (cannot drag or click it). "
+            "Redeploy via hotkey or system tray only. OFF = pill is draggable and clickable.",
         )
         current_pill_click_through = main_window.config.data["ui"].get("pill_click_through", False)
         pill_btn = QPushButton()
@@ -774,9 +813,10 @@ class MainWindow(QWidget):
     def stow_app(self):
         if self._app_stowed:
             return
-        self._pre_stow_geometry = (self.x(), self.y(), self.width(), self.height())
+        pre_stow_x, pre_stow_y = self.x(), self.y()
+        self._pre_stow_geometry = (pre_stow_x, pre_stow_y, self.width(), self.height())
         self.config.data["ui"]["pre_stow_geometry"] = {
-            "x": self.x(), "y": self.y(), "width": self.width(), "height": self.height(),
+            "x": pre_stow_x, "y": pre_stow_y, "width": self.width(), "height": self.height(),
         }
         self.card_container.setVisible(False)
         self._size_grip.setVisible(False)
@@ -787,13 +827,22 @@ class MainWindow(QWidget):
         # margins (outer.setContentsMargins(10,10,10,10)) — pad for them
         # explicitly rather than resizing to an exact fit that clips it.
         hint = self.title_bar.sizeHint()
-        self.resize(hint.width() + 24, hint.height() + 24)
-        # Re-open at the pill's own last remembered spot, not wherever the
-        # full-size window happened to be sitting — dragging the pill
-        # around shouldn't get forgotten every time it's deployed and
-        # re-stowed.
+        pill_w, pill_h = hint.width() + 24, hint.height() + 24
+        self.resize(pill_w, pill_h)
+
+        # Position the pill on a real screen, not in a gap between monitors.
+        # Prefer the saved pill position if valid; fall back to the screen
+        # the deployed window was on, then primary if all else fails.
         if self._pill_geometry:
-            self.move(*self._pill_geometry)
+            pill_x, pill_y = self._pill_geometry
+        else:
+            pill_x, pill_y = pre_stow_x, pre_stow_y
+        pill_x, pill_y = _ensure_on_screen(
+            pill_x, pill_y, pill_w, pill_h,
+            hint_pos=(pre_stow_x, pre_stow_y),
+        )
+        self.move(pill_x, pill_y)
+
         self._apply_native_click_through(self._pill_click_through)
         self._tray.update_menu_state(is_stowed=True)
         self.config.save()

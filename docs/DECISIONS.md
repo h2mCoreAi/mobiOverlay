@@ -3648,3 +3648,25 @@ by an automated check.
   `home_chirp_cooldown` all work unchanged; edge-detection logic
   (deadzone, reverse, startup-at-home) untouched.
 
+- **2026-09-20 — Pill invisible in multi-monitor gap: fixed.**
+  **Root cause**: User's dual-monitor setup has a 512px horizontal gap
+  (screen0 ends at x=2048, screen1 starts at x=2560). The saved
+  `pill_geometry: {x:2660, y:100}` was applied directly via `move()` without
+  validation. Qt's `screenAt(QPoint(2660, 100))` returns None for coordinates
+  in a gap, and nothing prevented the pill from landing there — completely
+  invisible, and with `pill_click_through: true` also undraggable.
+  **Fix**: New `_ensure_on_screen()` helper validates proposed pill position:
+  1. Check `QGuiApplication.screenAt(proposed_pos)` — if a real screen, use it
+  2. If None (gap), fall back to the screen containing the pre-stow window's
+     position (so the pill stays near where the user was working)
+  3. If that's also invalid, fall back to primary
+  4. Clamp final position to that screen's `availableGeometry()` with a 10px
+     margin, accounting for pill width/height
+  Called from `stow_app()` before moving the window. This ensures the pill
+  always lands on a visible, usable area of a real monitor.
+  **UX note**: Settings panel description for "PILL CLICK-THROUGH" clarified:
+  "ON = pill passes all clicks through to the game (cannot drag or click it).
+  Redeploy via hotkey or system tray only. OFF = pill is draggable and
+  clickable." Already defaults to OFF for new installs (existing behavior),
+  so first-time stow is movable out of the box.
+
