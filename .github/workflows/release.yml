@@ -4,11 +4,9 @@ name: Build and release Windows exe
 # spec file anyone can use to build it themselves — see BUILD.md) and
 # publishes it as a GitHub Release asset whenever a version tag is pushed.
 #
-# This is a FULL build including easyocr/torch/torchvision for Logistics Hub OCR.
+# This is a FULL build: a TRUE SINGLE-FILE EXE with all 8 modules bundled
+# inside, plus easyocr/torch/torchvision for Logistics Hub OCR.
 # Expect ~600-900MB exe, 10-20min build, ~2GB disk during build.
-#
-# modules/ ships alongside the exe as plain, readable .py files rather than
-# being bundled into it — see docs/ARCHITECTURE.md ("Packaging") for why.
 
 on:
   push:
@@ -55,10 +53,9 @@ jobs:
         run: |
           $releaseDir = "release/mobiOverlay"
           New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          # Single-file exe — modules are bundled inside, no separate folder needed
           Copy-Item "dist/mobiOverlay.exe" "$releaseDir/mobiOverlay.exe"
-          Copy-Item "modules" "$releaseDir/modules" -Recurse
           Copy-Item "README.md" "$releaseDir/README.md" -ErrorAction SilentlyContinue
-          Get-ChildItem "$releaseDir/modules" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
 
       - name: Zip and checksum
         shell: pwsh
@@ -76,7 +73,9 @@ jobs:
             mobiOverlay-*-windows.zip
             mobiOverlay-*-windows.zip.sha256
           body: |
-            **Full release** — includes Logistics Hub with OCR support (easyocr/torch).
+            **True single-file exe** — all 8 modules bundled inside,
+            including Logistics Hub with OCR support (easyocr/torch).
+            Just extract and double-click, no separate folders needed.
             
             Automated build from source at this tag — built by this
             workflow (`.github/workflows/release.yml`), not compiled

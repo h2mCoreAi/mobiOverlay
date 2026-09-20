@@ -3531,3 +3531,21 @@ by an automated check.
   PyInstaller doesn't pick up by default. Added `collect_all('pygame')` to
   the spec (same pattern as torch/easyocr). Caught during Mitch's local
   smoke test before public release.
+
+- **2026-09-20 — Switched to TRUE single-file exe: modules bundled inside.**
+  CEO wanted one double-clickable `mobiOverlay.exe` with no separate
+  `modules/` folder required. Changed approach:
+  - `mobioverlay.spec`: Added `Tree('modules', prefix='modules')` to bundle
+    the entire modules tree (all 8 modules) as data, extracted to
+    `sys._MEIPASS/modules` at runtime.
+  - `host/paths.py`: Added `modules_root()` — returns `sys._MEIPASS/modules`
+    when frozen, `modules/` when running from source. `app_root()` unchanged
+    (still returns the exe folder, where config/data must persist).
+  - `host/module_loader.py`: Uses `modules_root()` instead of `app_root() /
+    "modules"` for discovery.
+  - `release.yml`/`BUILD.md`/`README.md`: Simplified — no more "copy modules
+    next to exe" step for end users.
+  **Development workflow unchanged**: modules are still plain .py in the repo,
+  edited in place; the frozen build just bundles them at build time.
+  **Data files still persist next to exe**: config.json, notes data, cache
+  files — anything that must survive between launches — still use `app_root()`.

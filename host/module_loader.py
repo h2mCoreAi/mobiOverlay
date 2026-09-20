@@ -6,11 +6,9 @@ error — it never takes the whole host down.
 
 Modules are loaded by file path (importlib.util.spec_from_file_location),
 not as a dotted "modules.<name>.module" package import. That matters once
-this is packaged: modules/ is meant to stay an external, editable folder
-next to the exe (see docs/ARCHITECTURE.md, "Packaging") rather than being
-frozen inside it, so it won't be an importable package on sys.path the way
-it is when running from source. File-path loading works identically either
-way.
+this is packaged: in a onefile frozen build, modules are bundled inside the
+exe and extracted to sys._MEIPASS/modules at runtime, not next to the exe.
+File-path loading works identically either way.
 """
 import importlib.util
 import logging
@@ -22,11 +20,11 @@ from host.api_client import UexApiClient
 from host.config import Config
 from host.locations import LocationService
 from host.module_base import ModuleBase
-from host.paths import app_root
+from host.paths import modules_root
 
 logger = logging.getLogger("mobioverlay.module_loader")
 
-MODULES_ROOT = app_root() / "modules"
+MODULES_ROOT = modules_root()
 
 
 def discover_modules(api_client: UexApiClient, config: Config, locations: LocationService, on_module_loading=None) -> list[ModuleBase]:

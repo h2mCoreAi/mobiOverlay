@@ -1,8 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# Full-product spec: bundles easyocr, torch, torchvision for Logistics Hub OCR,
-# and pygame-ce for mobiThrottle joystick support.
-# modules/ stays external (plain .py next to the exe) — see docs/ARCHITECTURE.md.
+# Full-product spec: bundles everything into a single mobiOverlay.exe:
+# - All 8 modules (bundled as data, discovered at runtime from sys._MEIPASS)
+# - easyocr, torch, torchvision for Logistics Hub OCR
+# - pygame-ce for mobiThrottle joystick support
+#
+# config.json, notes data, cache files still persist NEXT TO the exe (not inside
+# it) — see host/paths.py's app_root() vs modules_root() distinction.
 #
 # Expect a ~600-900MB exe and 3-10min build time (torch binaries are large).
 
@@ -33,6 +37,13 @@ pillow_hiddenimports = collect_submodules('PIL')
 pygame_datas, pygame_binaries, pygame_hiddenimports = collect_all('pygame')
 
 # ---------------------------------------------------------------------------
+# Collect modules/ tree (all 8 modules, bundled into the exe as data).
+# PyInstaller extracts these to sys._MEIPASS/modules at runtime.
+# Excludes __pycache__ via Tree's excludes parameter.
+# ---------------------------------------------------------------------------
+modules_tree = Tree('modules', prefix='modules', excludes=['__pycache__', '*.pyc'])
+
+# ---------------------------------------------------------------------------
 # Aggregate all external deps' artifacts
 # ---------------------------------------------------------------------------
 all_datas = (
@@ -42,6 +53,7 @@ all_datas = (
     + easyocr_datas
     + pillow_datas
     + pygame_datas
+    + modules_tree
 )
 all_binaries = torch_binaries + torchvision_binaries + easyocr_binaries + pygame_binaries
 all_hiddenimports = (

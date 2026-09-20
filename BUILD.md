@@ -46,32 +46,19 @@ pip install pyinstaller
 pyinstaller mobioverlay.spec --noconfirm
 ```
 
-This produces `dist/mobiOverlay.exe`. **`modules/` is not bundled into the
-exe on purpose** (see `docs/ARCHITECTURE.md`, "Packaging") — copy it next
-to the exe before running:
+This produces `dist/mobiOverlay.exe` — a **true single-file executable**
+with all 8 modules bundled inside. No separate `modules/` folder needed
+next to the exe. Just double-click and go.
 
-```bash
-cp -r modules dist/modules
-```
+`config.json` and other data files (notes, cache) are created next to
+the exe the first time you run it — those persist between launches.
 
-Your final layout should look like:
+## Development workflow
 
-```
-dist/
-  mobiOverlay.exe
-  modules/
-    commodity_prices/
-    crosshair/
-    logistics_hub/
-    mobi_notes/
-    mobi_throttle/
-    multi_commodity_finder/
-    refinery_finder/
-    trade_route_optimizer/
-```
-
-`config.json` isn't something you build or copy — it's created next to the
-exe the first time you run it.
+When running from source, modules are loaded from the `modules/` folder in
+the project root (the normal external layout). When running the packaged exe,
+modules are bundled inside and extracted to a temp directory at launch —
+the module discovery code handles both cases transparently.
 
 ## Build troubleshooting
 

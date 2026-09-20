@@ -8,8 +8,10 @@ MobiGlas. Dark sci-fi HUD with cyan/amber accents. Data comes from the
 
 1. **Download** the latest `mobiOverlay-vX.X.X-windows.zip` from
    [Releases](../../releases)
-2. **Extract** the zip anywhere (e.g. `C:\Games\mobiOverlay\`)
+2. **Extract** `mobiOverlay.exe` anywhere (e.g. `C:\Games\mobiOverlay\`)
 3. **Run** `mobiOverlay.exe`
+
+That's it — one file, all 8 modules included. No separate folders needed.
 
 ### Windows SmartScreen Warning
 
@@ -58,13 +60,12 @@ to the exe.
 
 ```
 mobiOverlay/
-  mobiOverlay.exe    # Main application
-  modules/           # Module code (plain .py, readable/auditable)
+  mobiOverlay.exe    # The whole application — all 8 modules bundled inside
   config.json        # Created on first run, stores your layout/settings
 ```
 
-`modules/` is external on purpose — you can inspect what any module does,
-and future module updates won't require rebuilding the exe.
+Module source code is bundled inside the exe. To inspect or modify modules,
+see the `modules/` folder in the [source repository](../../).
 
 ## Building from Source
 
@@ -75,8 +76,9 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 pip install pyinstaller
 pyinstaller mobioverlay.spec --noconfirm
-cp -r modules dist/modules
 ```
+
+The resulting `dist/mobiOverlay.exe` is a complete single-file build.
 
 ## Privacy
 

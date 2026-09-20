@@ -130,28 +130,35 @@ prettified `hotkey_display` for the UI.
 
 ## Packaging
 
-PyInstaller. `host/` is bundled into the exe. `modules/` and `config.json`
-are **not** — they live as real files next to the exe on disk, not frozen
-inside it. This is a deliberate decision (2026-09-03, see DECISIONS.md):
+PyInstaller onefile build — **everything in one exe**. The distinction:
 
-- `modules/` external → adding/editing a module never requires rebuilding
-  the exe, matching the original "drop a folder in, zero rebuild" goal.
-  It also gives the community a way to audit what a module does (plain
-  readable `.py`) before running it, which matters for an unsigned exe.
-- `config.json` external → a PyInstaller onefile build extracts to a
-  temp directory that's wiped and recreated every launch; anything written
-  relative to that temp path would silently never persist between runs.
+- **Bundled inside the exe** (extracted to `sys._MEIPASS` at runtime):
+  - `host/` — the core application
+  - `modules/` — all 8 modules (discovered via `host/paths.modules_root()`)
+  - `host/assets/fonts/` — bundled fonts
+  - All dependencies (torch, easyocr, pygame, etc.)
 
-Both paths are resolved via `host/paths.py`'s `app_root()`: the exe's own
-folder when frozen (`sys.frozen`), the project root when running from
-source. Bundled, non-pluggable assets (fonts) keep using ordinary
-`__file__`-relative paths — those are meant to travel inside the frozen
-build, unlike modules/config.
+- **Persisted next to the exe** (via `host/paths.app_root()`):
+  - `config.json` — layout and settings
+  - `mobinotes_data.json` — mobiNotes storage
+  - `locations_cache.json` — UEX location cache
+  - `logistics_hub_debug.jsonl` — Logistics Hub debug log
+  - Other data files that must survive between launches
 
-Because `modules/` is external and not a real importable package once
-frozen, the module loader imports each `modules/<name>/module.py` by file
-path (`importlib.util.spec_from_file_location`), not as a dotted
-`modules.<name>.module` package import — see `host/module_loader.py`.
+The split matters because PyInstaller's onefile temp extraction directory
+is wiped and recreated every launch — anything written there never persists.
+
+`host/paths.py` exposes two functions:
+- `app_root()` — exe folder when frozen, project root from source
+- `modules_root()` — `sys._MEIPASS/modules` when frozen, `modules/` from source
+
+The module loader (`host/module_loader.py`) uses `modules_root()` for
+discovery and imports each `modules/<name>/module.py` by file path
+(`importlib.util.spec_from_file_location`).
+
+**Development workflow:** when running from source, modules are in the
+normal `modules/` folder and can be edited live. The frozen exe bundles
+whatever's in `modules/` at build time.
 
 Verify no personal machine paths get baked into the build or logged in
 example configs before any public release.
