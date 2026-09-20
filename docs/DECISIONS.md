@@ -3648,3 +3648,23 @@ by an automated check.
   `home_chirp_cooldown` all work unchanged; edge-detection logic
   (deadzone, reverse, startup-at-home) untouched.
 
+- **2026-09-20 — Fixed: Stow/Deploy hotkey appeared to fully hide the
+  overlay instead of showing a visible pill.**
+  **Root cause**: When `pill_geometry` was empty (first stow, or config
+  cleared), the pill inherited the deployed window's top-left coordinates
+  after resize. If the deployed window sat near the right edge of a
+  monitor (common when positioning an overlay on a secondary display at
+  x=2660), the now-tiny pill (~150×60px) kept that same top-left and
+  landed mostly or entirely off-screen — users saw it "vanish" rather
+  than stow to a visible pill.
+  **Fix**: New `_ensure_pill_on_screen()` helper in `host/main_window.py`,
+  called from `stow_app()` only when no saved `pill_geometry` exists.
+  Clamps the pill position to stay fully within the screen bounds (with
+  a 20px margin), using `QGuiApplication.screenAt()` to find the correct
+  monitor. The computed position is saved as the new `pill_geometry` so
+  subsequent stows reopen there without re-computing.
+  **Click-through unchanged**: `pill_click_through` setting and
+  `_apply_native_click_through()` (WS_EX_TRANSPARENT via Win32) work
+  exactly as before — when enabled, the pill is visible but unclickable,
+  redeploy via hotkey only.
+
