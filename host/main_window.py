@@ -771,6 +771,33 @@ class MainWindow(QWidget):
             }
         self.config.save()
 
+    def _ensure_pill_on_screen(self, pill_w: int, pill_h: int):
+        """Move the pill to a visible position on the screen containing the
+        deployed window. Called only when there's no saved pill_geometry.
+
+        Without this, the pill inherits the deployed window's top-left
+        coordinates after resize. If the deployed window was near the right
+        edge of a monitor (common for a secondary-monitor overlay), the
+        now-tiny pill can land entirely off-screen.
+        """
+        x, y = self.x(), self.y()
+        screen = QGuiApplication.screenAt(QPoint(x, y))
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        geo = screen.availableGeometry()
+        # Clamp to keep the pill fully within the screen bounds, with a
+        # small margin so it's clearly visible (not jammed into a corner).
+        margin = 20
+        new_x = max(geo.x() + margin, min(x, geo.x() + geo.width() - pill_w - margin))
+        new_y = max(geo.y() + margin, min(y, geo.y() + geo.height() - pill_h - margin))
+        self.move(new_x, new_y)
+        # Save this computed position as the new pill geometry so subsequent
+        # stows reopen here rather than re-computing every time.
+        self._pill_geometry = (new_x, new_y)
+        self.config.data["ui"]["pill_geometry"] = {"x": new_x, "y": new_y}
+
     def stow_app(self):
         if self._app_stowed:
             return
@@ -787,13 +814,22 @@ class MainWindow(QWidget):
         # margins (outer.setContentsMargins(10,10,10,10)) — pad for them
         # explicitly rather than resizing to an exact fit that clips it.
         hint = self.title_bar.sizeHint()
-        self.resize(hint.width() + 24, hint.height() + 24)
+        pill_w, pill_h = hint.width() + 24, hint.height() + 24
+        self.resize(pill_w, pill_h)
         # Re-open at the pill's own last remembered spot, not wherever the
         # full-size window happened to be sitting — dragging the pill
         # around shouldn't get forgotten every time it's deployed and
         # re-stowed.
         if self._pill_geometry:
             self.move(*self._pill_geometry)
+        else:
+            # No saved pill position yet — default to top-left of the
+            # deployed window's position, clamped to stay on-screen. Without
+            # this, the pill inherits the deployed window's top-left coords
+            # after resize, which can land it off-screen (e.g. if the deployed
+            # window sat near the right edge of a monitor, the now-tiny pill
+            # keeps that same top-left and vanishes past the edge).
+            self._ensure_pill_on_screen(pill_w, pill_h)
         self._apply_native_click_through(self._pill_click_through)
         self._tray.update_menu_state(is_stowed=True)
         self.config.save()
