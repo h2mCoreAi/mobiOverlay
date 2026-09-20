@@ -498,6 +498,63 @@ def run_hauling_resolution_checks(locations) -> tuple[int, int]:
     return failures, total
 
 
+# Availability filtering fixtures (2026-09-20): verify that user-facing
+# location pickers filter out unavailable/junk locations while OCR
+# resolution still uses the full index.
+AVAILABILITY_FILTER_FIXTURES = [
+    # Junk outposts that exist in UEX but have is_available=0 terminals
+    # (their structural outpost record has is_available=1, but the terminal
+    # inside has is_available=0 — they shouldn't appear in pickers)
+    ("Benson Mining Outpost", False),
+    ("Bud's Growery", False),
+    ("Gallete Family Farms", False),
+    ("NT-999-XX", False),
+    # Real locations that should be in available_locations
+    ("Admin - Seraphim", True),
+    ("Admin - Everus Harbor", True),
+    ("Admin - Baijini Point", True),
+    ("Seraphim Station", True),
+    ("CRU-L5 Beautiful Glen Station", True),
+]
+
+
+def run_availability_filter_checks(locations) -> tuple[int, int]:
+    """Returns (failures, total_checks). Tests that available_locations()
+    correctly filters out junk/unavailable POIs while keeping real ones."""
+    failures = 0
+    total = 0
+
+    available = locations.available_locations()
+    all_locs = locations.all_locations()
+    available_names = {l.get("name") for l in available}
+
+    for name, should_be_available in AVAILABILITY_FILTER_FIXTURES:
+        total += 1
+        # First verify it exists in the full index
+        in_all = name in {l.get("name") for l in all_locs}
+        in_available = name in available_names
+        ok = in_available == should_be_available
+        print(f"[{'PASS' if ok else 'FAIL'}] availability_filter_{name.replace(' ', '_').lower()}")
+        if not ok:
+            failures += 1
+            print(f"    expected in available_locations: {should_be_available}")
+            print(f"    actual in available_locations:   {in_available}")
+            print(f"    (exists in all_locations: {in_all})")
+
+    # Extra check: search() should use available_locations by default
+    total += 1
+    benson_default = locations.search("Benson Mining")
+    benson_all = locations.search("Benson Mining", include_unavailable=True)
+    ok = len(benson_default) < len(benson_all)
+    print(f"[{'PASS' if ok else 'FAIL'}] search_filters_unavailable_by_default")
+    if not ok:
+        failures += 1
+        print(f"    search('Benson Mining'): {len(benson_default)} results")
+        print(f"    search('Benson Mining', include_unavailable=True): {len(benson_all)} results")
+
+    return failures, total
+
+
 def run_distance_checks(mod) -> tuple[int, int]:
     """Returns (failures, total_checks)."""
     by_key = {}
@@ -1685,6 +1742,10 @@ def run() -> int:
     hauling_failures, hauling_total = run_hauling_resolution_checks(locations)
     failures += hauling_failures
     print(f"\n{hauling_total - hauling_failures}/{hauling_total} hauling resolution checks passed")
+
+    availability_failures, availability_total = run_availability_filter_checks(locations)
+    failures += availability_failures
+    print(f"\n{availability_total - availability_failures}/{availability_total} availability filter checks passed")
 
     covalex_failures, covalex_total = run_covalex_orison_check(mod)
     failures += covalex_failures

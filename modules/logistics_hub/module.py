@@ -1952,9 +1952,15 @@ class LogisticsHubModule(ModuleBase):
         """Fill the current-location picker from the shared Core location
         service (host/locations.py) — synchronous, same pattern
         trade_route_optimizer uses to populate its system/terminal combos
-        in create_card(). Restores the last-saved location, if any."""
+        in create_card(). Restores the last-saved location, if any.
+
+        Only shows available locations (is_available=1) by default —
+        decommissioned/hidden POIs like Benson Mining Outpost, Bud's Growery,
+        etc. are filtered out. OCR resolution still uses the full index
+        (resolve_for_hauling doesn't filter) so contracts mentioning those
+        places can still be parsed; this filter is for the picker UI only."""
         self._location_choices = {}
-        for row in self._locations.all_locations():
+        for row in self._locations.available_locations():
             label = self._locations.search_label(row)
             if label in self._location_choices and self._location_choices[label] is not row:
                 # Two distinct locations produced the same label (rare, but

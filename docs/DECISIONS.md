@@ -3702,6 +3702,44 @@ by an automated check.
     - terminals id 22 = "Admin - CRU-L5" (correct for Beautiful Glen)
     - terminals id 9 = "ArcCorp Mining Area 061" (the wrong match we now reject)
 
+- **2026-09-20 — Location picker availability filtering.**
+  **Problem (CEO-reported)**: User-facing location pickers (Logistics Hub
+  CURRENT LOCATION combo, etc.) showed many junk/unavailable locations like
+  "Benson Mining Outpost", "Bud's Growery", "Gallete Family Farms", "NT-999-XX"
+  that don't actually exist in-game.
+  **Root cause**: The `all_locations()` method returned every record from all
+  four UEX endpoints without filtering. While the `terminals` endpoint has
+  `is_available=0` for decommissioned locations, the `outposts` endpoint marks
+  the structural record as `is_available=1` even when the terminal inside has
+  `is_available=0` — so the outpost appears but can't actually be used.
+  **Fix (`host/locations.py`)**:
+    - `available_locations()`: New method that filters to usable locations:
+      - Terminals: requires `is_available=1`
+      - Structural (stations/outposts/cities): requires at least one available
+        terminal referencing it via FK (id_space_station/id_outpost/id_city)
+    - `available_terminals(type_filter)`: Convenience wrapper for commodity
+      terminals specifically
+    - `search(include_unavailable=False)`: Now defaults to available-only;
+      set `include_unavailable=True` for debug/internal tools
+  **Module updates**:
+    - Logistics Hub: `_populate_location_combo()` now uses `available_locations()`
+      instead of `all_locations()` — junk filtered from the CURRENT LOCATION picker
+    - Trade Route Optimizer: Already filtered by `is_available_live` (unchanged)
+    - Commodity Prices: Uses `all_locations()` for nickname lookup (display only,
+      not a picker) — unchanged, acceptable
+    - Multi-Commodity Finder: No location picker — unchanged
+  **OCR resolution unchanged**: `resolve_for_hauling()` still uses the full index
+  so contracts mentioning unavailable locations can still be parsed. The filter
+  is for user-facing pickers only.
+  **Tests added**: `AVAILABILITY_FILTER_FIXTURES` with 10 checks verifying:
+    - Junk outposts (Benson, Bud's Growery, etc.) filtered from `available_locations()`
+    - Real locations (Admin - Seraphim, Seraphim Station, etc.) still present
+    - `search()` uses filtered list by default
+  **Live data verified (2026-09-20)**:
+    - 1009 total locations → 902 in `available_locations()`
+    - 826 terminals → 771 available (55 filtered)
+    - 118 outposts → 78 available (40 filtered, including the junk ones)
+
 - **2026-09-20 — M2: Background OCR for Logistics Hub.**
   **Problem**: Logistics Hub's SCAN CONTRACT froze the entire UI for 1-3s
   during EasyOCR/PyTorch inference, making the overlay appear unresponsive.

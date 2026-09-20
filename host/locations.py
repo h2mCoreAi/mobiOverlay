@@ -615,15 +615,23 @@ class LocationService:
                 return loc
         return None
 
-    def search(self, query: str, limit: int = 50) -> list[dict]:
-        """All unique locations whose search_label contains `query`
-        (case-insensitive substring), for building a picker's filtered
-        list without a full Qt QCompleter. Empty query returns everything
-        (still capped at `limit`)."""
+    def search(
+        self, query: str, limit: int = 50, include_unavailable: bool = False
+    ) -> list[dict]:
+        """Locations whose search_label contains `query` (case-insensitive
+        substring), for building a picker's filtered list. Empty query
+        returns everything (still capped at `limit`).
+
+        By default, only available locations are searched (same as
+        `available_locations()`). Set `include_unavailable=True` to search
+        all locations regardless of availability — use sparingly, only for
+        internal/debug tools that genuinely need the full index.
+        """
         self.ensure_loaded()
         q = query.lower()
+        source = self._locations if include_unavailable else self.available_locations()
         results = [
-            row for row in (self._locations or [])
+            row for row in (source or [])
             if q in self.search_label(row).lower()
         ]
         return results[:limit]
@@ -631,6 +639,80 @@ class LocationService:
     def all_locations(self) -> list[dict]:
         self.ensure_loaded()
         return list(self._locations or [])
+
+    def available_locations(self, include_all_endpoints: bool = True) -> list[dict]:
+        """Locations that are actually usable in-game — the default for any
+        user-facing picker/autocomplete. Filters out decommissioned, hidden,
+        and removed POIs that would otherwise drown the list in junk entries.
+
+        Filtering rules:
+        - `terminals`: requires `is_available=1` (the primary availability flag)
+        - `space_stations`/`outposts`/`cities`: requires at least one available
+          terminal inside (via `id_space_station`/`id_outpost`/`id_city` FK).
+          This catches the case where a structural record is marked `is_available=1`
+          but its terminal is `is_available=0` (e.g. "Bud's Growery" outpost exists
+          but the terminal inside is decommissioned — confirmed live 2026-09-20).
+
+        Set `include_all_endpoints=False` to get only terminals (for pickers
+        that specifically need tradeable terminals, not stations/outposts).
+
+        Note: OCR resolution (`resolve_for_hauling`) does NOT use this filter —
+        it needs to resolve whatever text is on screen, including stations that
+        might be unavailable but still appear in contracts. This filter is for
+        user-facing pickers only.
+        """
+        self.ensure_loaded()
+
+        # Build a set of structural IDs that have at least one available terminal
+        structural_with_terminals: dict[str, set[int]] = {
+            "id_space_station": set(),
+            "id_outpost": set(),
+            "id_city": set(),
+        }
+        for row in self._locations or []:
+            if row.get("_endpoint") != "terminals":
+                continue
+            if not row.get("is_available"):
+                continue
+            for fk_key in structural_with_terminals:
+                fk_val = row.get(fk_key)
+                if fk_val is not None:
+                    structural_with_terminals[fk_key].add(fk_val)
+
+        results = []
+        for row in self._locations or []:
+            endpoint = row.get("_endpoint")
+            if endpoint == "terminals":
+                if row.get("is_available"):
+                    results.append(row)
+            elif include_all_endpoints:
+                # Structural endpoints: check if any available terminal references this
+                fk_mapping = {
+                    "space_stations": "id_space_station",
+                    "outposts": "id_outpost",
+                    "cities": "id_city",
+                }
+                fk_key = fk_mapping.get(endpoint)
+                if fk_key:
+                    row_id = row.get("id")
+                    if row_id is not None and row_id in structural_with_terminals[fk_key]:
+                        results.append(row)
+        return results
+
+    def available_terminals(self, type_filter: str | None = None) -> list[dict]:
+        """Available terminals only — a convenience wrapper for pickers that
+        specifically need tradeable commodity terminals.
+
+        Args:
+            type_filter: Optional terminal type (e.g. "commodity", "refinery").
+                         Pass None to get all terminal types.
+        """
+        results = []
+        for row in self.available_locations(include_all_endpoints=False):
+            if type_filter and row.get("type") != type_filter:
+                continue
+            results.append(row)
+        return results
 
     # ------------------------------------------------------------------
     # Facilities — what a location actually has (refinery, cargo center,
