@@ -24,7 +24,10 @@ pygame_datas, pygame_binaries, pygame_hiddenimports = collect_all('pygame')
 modules_tree = Tree('modules', prefix='modules', excludes=['__pycache__', '*.pyc'])
 
 all_datas = (
-    [('host/assets/fonts', 'host/assets/fonts')]
+    [
+        ('host/assets/fonts', 'host/assets/fonts'),
+        ('host/assets/icons', 'host/assets/icons'),
+    ]
     + torch_datas
     + torchvision_datas
     + easyocr_datas

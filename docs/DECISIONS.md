@@ -3596,3 +3596,30 @@ by an automated check.
   **Data files still persist next to exe**: config.json, notes data, cache
   files — anything that must survive between launches — still use `app_root()`.
 
+- **2026-09-20 — System tray icon added for overlay recovery.**
+  `host/single_instance.py` already told users to "check your system tray"
+  when a second instance tried to start, but no tray icon actually existed.
+  Added `QSystemTrayIcon` to provide a recovery path when users forget the
+  Stow/Deploy hotkey or lose track of the stowed pill.
+
+  **Why tray, not taskbar:** The main window uses `Qt.Tool` (alongside
+  `Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint`) specifically to exclude
+  it from the Windows taskbar — an overlay shouldn't occupy a taskbar slot.
+  That's intentional. The system tray (notification area) is the correct
+  alternative affordance: always accessible, doesn't fight the overlay design.
+
+  **Implementation:**
+  - `_SystemTray` class in `host/main_window.py`, created at startup only if
+    `QSystemTrayIcon.isSystemTrayAvailable()` returns true.
+  - Menu: Show (deploys if stowed, raises if deployed), Stow, Quit.
+  - Double-click or activation → deploy/show (same as Show menu item).
+  - Quit runs the same clean-shutdown path as closing the window (saves
+    geometry, releases hotkey hook, releases tray icon).
+  - Menu state updates when app stows/deploys (Show enabled when stowed,
+    Stow enabled when deployed).
+  - Tray icon: `host/assets/icons/mobioverlay.png` (64×64 RGBA), a cyan "m"
+    on dark background matching the HUD theme, generated programmatically
+    with Pillow at build time and bundled in the PyInstaller spec.
+  - Minimize button tooltip updated to mention the tray icon as a third way
+    back (alongside clicking the pill and using the hotkey).
+
