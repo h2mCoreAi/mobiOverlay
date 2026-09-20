@@ -15,15 +15,13 @@ between its card and its reticle overlay. All configuration lives in the
 card; there is no second settings window.
 """
 import ctypes
-import threading
+import io
+import math
+import struct
 import time
+import wave
 
 import pygame  # provided by the pygame-ce package (see requirements.txt)
-
-try:
-    import winsound
-except ImportError:  # pragma: no cover - Windows-only
-    winsound = None
 
 from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPainterPath, QPen
@@ -93,17 +91,67 @@ def value_to_color(abs_val, line_color):
     return lerp_color(line_color, theme.ACCENT_AMBER, t)
 
 
-def play_home_tick(count):
-    if winsound is None or count <= 0:
+_chirp_sound = None  # lazily-initialized pygame.mixer.Sound
+
+
+def _generate_chirp_wav(freq_hz: int = 1400, duration_ms: int = 45, volume: float = 0.3) -> bytes:
+    """Generates a short sine-wave chirp as an in-memory WAV file.
+    Uses pygame.mixer for playback (routes through WASAPI shared-mode on
+    Windows), which keeps audio working even when a game has exclusive
+    focus — unlike winsound.Beep which uses the legacy PC speaker and
+    silently fails in that scenario."""
+    sample_rate = 22050
+    n_samples = int(sample_rate * duration_ms / 1000)
+    samples = []
+    for i in range(n_samples):
+        t = i / sample_rate
+        fade = 1.0
+        fade_samples = int(0.005 * sample_rate)
+        if i < fade_samples:
+            fade = i / fade_samples
+        elif i > n_samples - fade_samples:
+            fade = (n_samples - i) / fade_samples
+        val = math.sin(2 * math.pi * freq_hz * t) * volume * fade
+        samples.append(int(val * 32767))
+
+    buf = io.BytesIO()
+    with wave.open(buf, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(struct.pack(f'<{len(samples)}h', *samples))
+    return buf.getvalue()
+
+
+def _init_chirp_sound():
+    """Lazily initialize the pygame mixer and chirp sound once."""
+    global _chirp_sound
+    if _chirp_sound is not None:
+        return True
+    try:
+        if not pygame.mixer.get_init():
+            pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=512)
+        wav_data = _generate_chirp_wav(HOME_TICK_FREQ, HOME_TICK_MS, volume=0.35)
+        _chirp_sound = pygame.mixer.Sound(io.BytesIO(wav_data))
+        return True
+    except Exception:
+        return False
+
+
+def play_home_tick(count: int):
+    """Plays the home-chirp sound `count` times with brief gaps between.
+    Non-blocking: schedules playback via pygame.mixer channels, which mix
+    and play asynchronously. Falls back gracefully (silent) if mixer fails."""
+    if count <= 0:
+        return
+    if not _init_chirp_sound():
         return
 
-    def beep_sequence():
-        for i in range(count):
-            winsound.Beep(HOME_TICK_FREQ, HOME_TICK_MS)
-            if i < count - 1:
-                time.sleep(0.06)
-
-    threading.Thread(target=beep_sequence, daemon=True).start()
+    gap_ms = 60
+    chirp_ms = HOME_TICK_MS
+    for i in range(count):
+        delay = i * (chirp_ms + gap_ms)
+        QTimer.singleShot(delay, lambda: _chirp_sound.play() if _chirp_sound else None)
 
 
 def list_joysticks():

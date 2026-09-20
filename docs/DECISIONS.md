@@ -3623,3 +3623,28 @@ by an automated check.
   - Minimize button tooltip updated to mention the tray icon as a third way
     back (alongside clicking the pill and using the hotkey).
 
+- **2026-09-20 — mobiThrottle home chirp: switched from winsound.Beep to
+  pygame.mixer.Sound.**
+  **Root cause**: `winsound.Beep()` uses the legacy Windows PC speaker (or
+  its emulated software fallback), not the system's audio output device.
+  When a game like Star Citizen owns WASAPI exclusive-mode audio or even
+  just when the legacy beep is disabled/muted (common on modern Windows),
+  `winsound.Beep()` either blocks briefly and produces nothing, or raises
+  a `RuntimeError` — both swallowed silently in the daemon thread, so no
+  chirp is audible even though the edge-detection logic fires correctly.
+  **Fix**: Generate a short sine-wave WAV in memory (1400 Hz, 45 ms, same
+  frequency/duration as before) and play it via `pygame.mixer.Sound()`.
+  pygame.mixer uses SDL_mixer under the hood, which routes through WASAPI
+  shared-mode on Windows — this keeps working even when a game has
+  exclusive audio focus, same reason system notifications still play
+  during gameplay. The mixer is initialized lazily on first chirp
+  (frequency 22050 Hz, mono, small 512-sample buffer for low latency);
+  multi-beep sequences use `QTimer.singleShot` scheduling (non-blocking,
+  Qt-event-loop integrated) instead of a daemon thread with `time.sleep`.
+  **Fallback**: If mixer init fails (missing audio device, driver issue),
+  `_init_chirp_sound()` returns False and the chirp degrades silently —
+  bar tracking/flashing continues unaffected, only audio is lost.
+  **No config changes**: `home_chirp_enabled`, `home_chirp_count`,
+  `home_chirp_cooldown` all work unchanged; edge-detection logic
+  (deadzone, reverse, startup-at-home) untouched.
+
