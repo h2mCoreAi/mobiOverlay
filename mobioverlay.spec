@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# Full-product spec: bundles easyocr, torch, torchvision for Logistics Hub OCR.
+# Full-product spec: bundles easyocr, torch, torchvision for Logistics Hub OCR,
+# and pygame-ce for mobiThrottle joystick support.
 # modules/ stays external (plain .py next to the exe) — see docs/ARCHITECTURE.md.
 #
 # Expect a ~600-900MB exe and 3-10min build time (torch binaries are large).
@@ -26,6 +27,12 @@ pillow_datas = collect_data_files('PIL')
 pillow_hiddenimports = collect_submodules('PIL')
 
 # ---------------------------------------------------------------------------
+# Collect pygame-ce — mobiThrottle uses it for joystick/throttle axis reads.
+# pygame bundles SDL2 DLLs that must be collected explicitly.
+# ---------------------------------------------------------------------------
+pygame_datas, pygame_binaries, pygame_hiddenimports = collect_all('pygame')
+
+# ---------------------------------------------------------------------------
 # Aggregate all external deps' artifacts
 # ---------------------------------------------------------------------------
 all_datas = (
@@ -34,13 +41,15 @@ all_datas = (
     + torchvision_datas
     + easyocr_datas
     + pillow_datas
+    + pygame_datas
 )
-all_binaries = torch_binaries + torchvision_binaries + easyocr_binaries
+all_binaries = torch_binaries + torchvision_binaries + easyocr_binaries + pygame_binaries
 all_hiddenimports = (
     torch_hiddenimports
     + torchvision_hiddenimports
     + easyocr_hiddenimports
     + pillow_hiddenimports
+    + pygame_hiddenimports
     + [
         'PIL._tkinter_finder',
         'numpy',
