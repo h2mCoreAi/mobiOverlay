@@ -3502,3 +3502,25 @@ by an automated check.
   correctly prints "doesn't buy from you" for every uncovered commodity,
   and re-running the same scan in BUY mode correctly flips every instance
   to "doesn't sell to you."
+
+- **2026-09-20 — Full-product PyInstaller build with easyocr/torch/torchvision.**
+  Phase 1 of public release: the packaged exe now bundles the complete OCR
+  stack (easyocr, torch, torchvision, Pillow, numpy, opencv, scipy, skimage)
+  so Logistics Hub works out of the box without a separate Python install.
+  Key gotchas:
+  - **UPX disabled**: Compressing torch binaries with UPX causes runtime
+    crashes and barely reduces size. Set `upx=False` in the spec.
+  - **collect_all() for torch**: PyInstaller's default analysis misses many
+    torch/torchvision native libraries. Using `collect_all('torch')` and
+    `collect_all('torchvision')` captures everything.
+  - **CPU-only torch in CI**: Installing torch via the PyPI `cpu` index
+    (`--index-url https://download.pytorch.org/whl/cpu`) saves ~2GB of
+    CUDA libs that aren't needed. Resulting exe is ~600-900MB.
+  - **CI disk space**: Added a step to free disk in the workflow; torch
+    install + PyInstaller temp files can exceed 10GB transiently.
+  - **First-scan latency**: easyocr initializes lazily on first use (already
+    the case pre-bundle), so first Logistics Hub scan still takes 10-30s.
+    Language models (~100MB) are downloaded to `~/.EasyOCR/` on first-ever
+    run, not bundled — this is easyocr's standard behavior.
+  `modules/` still ships external (plain .py next to the exe) per existing
+  architecture — only the host and its heavy deps are frozen into the exe.

@@ -4,6 +4,9 @@ name: Build and release Windows exe
 # spec file anyone can use to build it themselves — see BUILD.md) and
 # publishes it as a GitHub Release asset whenever a version tag is pushed.
 #
+# This is a FULL build including easyocr/torch/torchvision for Logistics Hub OCR.
+# Expect ~600-900MB exe, 10-20min build, ~2GB disk during build.
+#
 # modules/ ships alongside the exe as plain, readable .py files rather than
 # being bundled into it — see docs/ARCHITECTURE.md ("Packaging") for why.
 
@@ -19,6 +22,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 45  # torch collection can be slow
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,9 +31,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Free up disk space — torch/easyocr need several GB during install+build
+      - name: Free disk space
+        shell: pwsh
+        run: |
+          # Remove some preinstalled tools we don't need
+          if (Test-Path "C:\hostedtoolcache\CodeQL") { Remove-Item "C:\hostedtoolcache\CodeQL" -Recurse -Force -ErrorAction SilentlyContinue }
+          if (Test-Path "C:\hostedtoolcache\Java_*") { Get-ChildItem "C:\hostedtoolcache\Java_*" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          # Install CPU-only torch first to avoid pulling CUDA (~2GB savings)
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
           pip install pyinstaller
 
@@ -42,6 +57,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
           Copy-Item "dist/mobiOverlay.exe" "$releaseDir/mobiOverlay.exe"
           Copy-Item "modules" "$releaseDir/modules" -Recurse
+          Copy-Item "README.md" "$releaseDir/README.md" -ErrorAction SilentlyContinue
           Get-ChildItem "$releaseDir/modules" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
 
       - name: Zip and checksum
@@ -60,11 +76,16 @@ jobs:
             mobiOverlay-*-windows.zip
             mobiOverlay-*-windows.zip.sha256
           body: |
+            **Full release** — includes Logistics Hub with OCR support (easyocr/torch).
+            
             Automated build from source at this tag — built by this
             workflow (`.github/workflows/release.yml`), not compiled
             locally by a person. Check the Actions log for this run to
             see exactly what went into it, and verify the download's
             SHA256 against the attached `.sha256` file.
+
+            **Note:** First scan in Logistics Hub may take 10-30 seconds
+            while the OCR engine initializes and downloads language models.
 
             Prefer to build it yourself? See `BUILD.md` — same
             `mobioverlay.spec` this workflow uses.
