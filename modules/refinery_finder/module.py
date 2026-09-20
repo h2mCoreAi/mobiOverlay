@@ -116,15 +116,7 @@ class RefineryFinderModule(ModuleBase):
         return card
 
     def _populate_commodities(self):
-        try:
-            data = self.api.get("commodities")
-        except Exception:
-            data = []
-        rows = [
-            {"id": row["id"], "name": row["name"]}
-            for row in data
-            if row.get("is_raw") == 1 and row.get("is_visible") and row.get("name") and row.get("id") is not None
-        ]
+        rows = self.locations.raw_commodities()
         rows.sort(key=lambda r: r["name"])
         self._raw_commodities = rows
         names = [r["name"] for r in rows]

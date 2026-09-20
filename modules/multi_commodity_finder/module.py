@@ -197,14 +197,7 @@ class MultiCommodityFinderModule(ModuleBase):
 
     # -- setup --------------------------------------------------------------
     def _populate_commodities(self):
-        try:
-            data = self.api.get("commodities")
-        except Exception:
-            data = []
-        names = sorted({
-            row["name"] for row in data
-            if row.get("is_visible") and row.get("name")
-        })
+        names = self.locations.visible_commodity_names()
         self._commodities = names
         selected = set(self.settings.get("selected_commodities", []))
 

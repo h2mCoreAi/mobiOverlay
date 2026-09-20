@@ -172,14 +172,7 @@ class CommodityPricesModule(ModuleBase):
         return box, price, loc, system_combo
 
     def _populate_commodities(self):
-        try:
-            data = self.api.get("commodities")
-        except Exception:
-            data = []
-        names = sorted({
-            row["name"] for row in data
-            if row.get("is_visible") and row.get("name")
-        })
+        names = self.locations.visible_commodity_names()
         self._commodities = names
         self.combo.blockSignals(True)
         self.combo.addItems(names)
