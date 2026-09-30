@@ -34,6 +34,30 @@ logger = logging.getLogger("mobioverlay.locations")
 CACHE_PATH = app_root() / "locations_cache.json"
 CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60  # 1 week — SC locations don't churn daily
 
+# Cache version: bumped when the schema or resolution logic changes in a way
+# that would make old cached data produce wrong results. A stale-versioned
+# cache is treated as invalid regardless of age — this prevents users from
+# getting stuck on a broken id space after a fix (exactly the "Seraphim
+# Station → GrimHEX" bug that prompted this, 2026-09-20).
+CACHE_VERSION = 2  # v2: 2026-09-20, added alias support + hauling-terminal preference
+
+# Known aliases: OCR text from Star Citizen → UEX terminal name/nickname.
+# Used when the in-game contract text uses a different name than UEX's own
+# data (e.g. "Beautiful Glen Station" vs "CRU-L5 Beautiful Glen Station",
+# or a station renamed in-game but not yet updated in UEX). The key is
+# normalized (lowercase, alphanumeric only); the value is the target to
+# look up in the name index. Add entries here when OCR text consistently
+# maps to the wrong UEX record or no record at all.
+LOCATION_ALIASES = {
+    # Beautiful Glen Station: in-game contract text says "Beautiful Glen
+    # Station" but UEX's space_stations record is "CRU-L5 Beautiful Glen
+    # Station" with nickname "CRU-L5". The Admin terminal is "Admin - CRU-L5".
+    "beautifulglenstation": "CRU-L5 Beautiful Glen Station",
+    "beautifulglen": "CRU-L5 Beautiful Glen Station",
+    # Add more as discovered — the pattern is: in-game text that doesn't
+    # match UEX's name/nickname verbatim → the actual UEX name to resolve to.
+}
+
 # `terminals` goes first: its nicknames tend to be the fuller, friendlier
 # name ("Port Tressler", "HDMS-Edmond") for the very same real place that
 # the structural endpoints label tersely ("Tressler", "Edmond") — the
@@ -90,6 +114,14 @@ class LocationService:
             logger.warning("locations: cache file unreadable, will refetch", exc_info=True)
             return False
 
+        cache_version = payload.get("cache_version", 1)
+        if cache_version < CACHE_VERSION:
+            logger.info(
+                "locations: cache version %d is outdated (current=%d), refetching",
+                cache_version, CACHE_VERSION,
+            )
+            return False
+
         fetched_at = payload.get("fetched_at", 0)
         if time.time() - fetched_at > CACHE_MAX_AGE_SECONDS:
             logger.info("locations: cache is stale (>%ds old), refetching", CACHE_MAX_AGE_SECONDS)
@@ -106,6 +138,7 @@ class LocationService:
 
     def _save_to_disk(self):
         payload = {
+            "cache_version": CACHE_VERSION,
             "fetched_at": time.time(),
             "systems": self._systems,
             "locations": self._locations,
@@ -419,15 +452,256 @@ class LocationService:
         best = self.best_fuzzy_match(text)
         return best if best and best[1] >= cutoff else None
 
-    def search(self, query: str, limit: int = 50) -> list[dict]:
-        """All unique locations whose search_label contains `query`
-        (case-insensitive substring), for building a picker's filtered
-        list without a full Qt QCompleter. Empty query returns everything
-        (still capped at `limit`)."""
+    def resolve_fuzzy_for_hauling(
+        self, text: str, cutoff: float = 0.85
+    ) -> tuple[dict, float] | None:
+        """Fuzzy resolution with Admin terminal promotion for hauling.
+
+        Same as `resolve_fuzzy()`, but if the best match is a structural
+        record (space_station/outpost/city), automatically promotes it to
+        the corresponding Admin terminal. This ensures fuzzy-matched
+        locations used in hauling contracts get the correct terminal ID
+        for distance/route calculations.
+
+        Example: OCR "CRU-LI Ambitious Dream Station" (typo) fuzzy-matches
+        "CRU-L1 Ambitious Dream Station" (space_station), which is then
+        promoted to "Admin - CRU-L1" (terminals) for hauling."""
+        best = self.resolve_fuzzy(text, cutoff)
+        if not best:
+            return None
+        loc, score = best
+        # If it's a structural record, try to find the Admin terminal
+        if loc.get("_endpoint") in ("space_stations", "outposts", "cities"):
+            admin = self.find_admin_terminal_for_station(loc)
+            if admin:
+                return (admin, score)
+        return best
+
+    def resolve_for_hauling(self, text: str) -> list[dict]:
+        """Hauling-contract-aware resolution: resolves OCR text to terminal
+        records suitable for cargo/freight operations.
+
+        Key differences from plain `resolve_all()`:
+        1. **Aliases first**: checks `LOCATION_ALIASES` for known in-game
+           text that doesn't match UEX naming (e.g. "Beautiful Glen Station"
+           → "CRU-L5 Beautiful Glen Station").
+        2. **Prefers Admin terminals**: for hauling contracts, the actual
+           stop is the "Admin - X" commodity kiosk, not the structural
+           space_station/outpost/city record. When both exist for the same
+           place, the Admin terminal is what UEX's commodity/route APIs use.
+        3. **Validates matches**: rejects any candidate whose name/nickname
+           doesn't fuzzy-match the OCR text (cutoff 0.6), preventing false
+           positives like "Seraphim Station" → GrimHEX just because they
+           share a normalized substring.
+
+        Returns an empty list if no valid match is found (same contract as
+        `resolve_all()`). Callers should fall back to `resolve_fuzzy()` if
+        this returns empty and they're willing to accept an unconfirmed guess.
+        """
+        self.ensure_loaded()
+        if not self._name_index:
+            return []
+        norm = self.normalize(text)
+        if not norm:
+            return []
+
+        # Step 1: Check aliases first — known game-text-to-UEX-name mappings
+        alias_target = LOCATION_ALIASES.get(norm)
+        if alias_target:
+            alias_matches = self.resolve_all(alias_target)
+            if alias_matches:
+                return self._filter_and_prefer_admin(alias_matches, text, try_admin_lookup=True)
+
+        # Step 2: Normal resolution
+        matches = self.resolve_all(text)
+        if not matches:
+            return []
+
+        # Step 3: Filter and prefer Admin terminals
+        return self._filter_and_prefer_admin(matches, text, try_admin_lookup=True)
+
+    def _filter_and_prefer_admin(
+        self, matches: list[dict], ocr_text: str, try_admin_lookup: bool = False
+    ) -> list[dict]:
+        """Filter matches to those that actually match the OCR text, then
+        prefer Admin terminals for hauling. Returns filtered+sorted list.
+
+        If try_admin_lookup is True and a structural record (space_station/
+        outpost/city) matches, also look up its Admin terminal and include
+        that in the results. This handles "Seraphim Station" → Admin - Seraphim
+        for hauling contracts where the Admin terminal is the real target.
+        """
+        # Validate: reject matches whose name/nickname doesn't resemble the
+        # OCR text at all — prevents "Seraphim Station" matching GrimHEX just
+        # because a space_station id happens to be in the index.
+        validated = []
+        norm_ocr = self.normalize(ocr_text)
+        matcher = difflib.SequenceMatcher(a=norm_ocr)
+
+        # Track seen keys to avoid duplicates when adding Admin terminals
+        seen_keys = set()
+
+        # First pass: collect Admin terminals to add (via FK lookup)
+        # These bypass the fuzzy validation since they're validated through
+        # their structural record.
+        admin_from_fk: list[tuple[dict, float]] = []
+
+        for m in matches:
+            name = m.get("name") or ""
+            nickname = m.get("nickname") or ""
+            # Check if either name or nickname fuzzy-matches the OCR text
+            best_score = 0.0
+            for label in (name, nickname):
+                if not label:
+                    continue
+                norm_label = self.normalize(label)
+                if not norm_label:
+                    continue
+                # Exact or substring match is always valid
+                if norm_label in norm_ocr or norm_ocr in norm_label:
+                    best_score = 1.0
+                    break
+                # Fuzzy match as fallback
+                matcher.set_seq2(norm_label)
+                best_score = max(best_score, matcher.ratio())
+            if best_score >= 0.6:
+                key = self.terminal_key(m)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    validated.append((m, best_score))
+
+                # If this is a structural record and try_admin_lookup is True,
+                # also try to find its Admin terminal. The Admin terminal is
+                # validated by the FK relationship, not by fuzzy matching the
+                # OCR text (e.g. "Shallow Fields Station" → "Admin - CRU-L4"
+                # via id_space_station FK, even though those names don't match).
+                if try_admin_lookup and m.get("_endpoint") in ("space_stations", "outposts", "cities"):
+                    admin = self.find_admin_terminal_for_station(m)
+                    if admin:
+                        admin_key = self.terminal_key(admin)
+                        if admin_key not in seen_keys:
+                            # Queue for addition (don't add to seen_keys yet,
+                            # in case the Admin terminal also appears directly
+                            # in matches with a higher score)
+                            admin_from_fk.append((admin, 0.95))
+
+        # Add Admin terminals from FK lookup
+        for admin, score in admin_from_fk:
+            admin_key = self.terminal_key(admin)
+            if admin_key not in seen_keys:
+                seen_keys.add(admin_key)
+                validated.append((admin, score))
+
+        if not validated:
+            return []
+
+        # Deduplicate by physical place: if a structural record AND its Admin
+        # terminal both appear, keep only the Admin terminal. This ensures
+        # "Dream Station" returns [Admin - CRU-L1, Admin - HUR-L2] (2 unique
+        # places), not [Admin - CRU-L1, Admin - HUR-L2, CRU-L1 Ambitious Dream
+        # Station, HUR-L2 Faithful Dream Station] (4 records for 2 places).
+        # The Admin terminal is the authoritative identity for hauling.
+        deduped: list[tuple[dict, float]] = []
+        place_keys_seen: set[str] = set()
+
+        # Sort first so Admin terminals come before their structural records
+        def presort_key(item):
+            m, score = item
+            name = m.get("name") or ""
+            is_admin = name.startswith("Admin - ")
+            is_terminal = m.get("_endpoint") == "terminals"
+            return (not is_admin, not is_terminal, -score)
+
+        validated.sort(key=presort_key)
+
+        for m, score in validated:
+            # Compute a "physical place key" that's the same for a terminal
+            # and its structural record — but ONLY for Admin terminals.
+            # Non-Admin terminals (shops like "New Deal", "Kel-To") keep their
+            # own identity even if they share the same city FK, because they're
+            # genuinely different locations. Admin terminals are special because
+            # they represent the "cargo kiosk" at a station/outpost, which is
+            # the canonical identity for hauling contracts.
+            endpoint = m.get("_endpoint")
+            mid = m.get("id")
+            name = m.get("name") or ""
+            is_admin = name.startswith("Admin - ")
+
+            if endpoint == "terminals" and is_admin:
+                # Admin terminals: use FK to deduplicate with structural records
+                for fk_key, struct_ep in [
+                    ("id_space_station", "space_stations"),
+                    ("id_outpost", "outposts"),
+                    ("id_city", "cities"),
+                ]:
+                    fk_val = m.get(fk_key)
+                    if fk_val is not None:
+                        place_key = f"{struct_ep}:{fk_val}"
+                        break
+                else:
+                    place_key = f"terminals:{mid}"
+            elif endpoint == "terminals":
+                # Non-Admin terminals: each is a distinct location
+                place_key = f"terminals:{mid}"
+            else:
+                # Structural record
+                place_key = f"{endpoint}:{mid}"
+
+            if place_key not in place_keys_seen:
+                place_keys_seen.add(place_key)
+                deduped.append((m, score))
+
+        return [m for m, _score in deduped]
+
+    def find_admin_terminal_for_station(self, station: dict) -> dict | None:
+        """Given a space_station/outpost/city record, find its corresponding
+        Admin terminal (the commodity kiosk). Returns None if not found.
+
+        This is the reverse of `same_physical_place()`: given a structural
+        record, find the trading kiosk that references it via id_space_station/
+        id_outpost/id_city. Used when resolution returns a structural record
+        but the caller needs the actual Admin terminal for API calls."""
+        self.ensure_loaded()
+        station_endpoint = station.get("_endpoint")
+        station_id = station.get("id")
+        if not station_endpoint or station_id is None:
+            return None
+
+        fk_mapping = {
+            "space_stations": "id_space_station",
+            "outposts": "id_outpost",
+            "cities": "id_city",
+        }
+        fk_key = fk_mapping.get(station_endpoint)
+        if not fk_key:
+            return None
+
+        for loc in self._locations or []:
+            if (
+                loc.get("_endpoint") == "terminals"
+                and loc.get(fk_key) == station_id
+                and (loc.get("name") or "").startswith("Admin - ")
+            ):
+                return loc
+        return None
+
+    def search(
+        self, query: str, limit: int = 50, include_unavailable: bool = False
+    ) -> list[dict]:
+        """Locations whose search_label contains `query` (case-insensitive
+        substring), for building a picker's filtered list. Empty query
+        returns everything (still capped at `limit`).
+
+        By default, only available locations are searched (same as
+        `available_locations()`). Set `include_unavailable=True` to search
+        all locations regardless of availability — use sparingly, only for
+        internal/debug tools that genuinely need the full index.
+        """
         self.ensure_loaded()
         q = query.lower()
+        source = self._locations if include_unavailable else self.available_locations()
         results = [
-            row for row in (self._locations or [])
+            row for row in (source or [])
             if q in self.search_label(row).lower()
         ]
         return results[:limit]
@@ -435,6 +709,80 @@ class LocationService:
     def all_locations(self) -> list[dict]:
         self.ensure_loaded()
         return list(self._locations or [])
+
+    def available_locations(self, include_all_endpoints: bool = True) -> list[dict]:
+        """Locations that are actually usable in-game — the default for any
+        user-facing picker/autocomplete. Filters out decommissioned, hidden,
+        and removed POIs that would otherwise drown the list in junk entries.
+
+        Filtering rules:
+        - `terminals`: requires `is_available=1` (the primary availability flag)
+        - `space_stations`/`outposts`/`cities`: requires at least one available
+          terminal inside (via `id_space_station`/`id_outpost`/`id_city` FK).
+          This catches the case where a structural record is marked `is_available=1`
+          but its terminal is `is_available=0` (e.g. "Bud's Growery" outpost exists
+          but the terminal inside is decommissioned — confirmed live 2026-09-20).
+
+        Set `include_all_endpoints=False` to get only terminals (for pickers
+        that specifically need tradeable terminals, not stations/outposts).
+
+        Note: OCR resolution (`resolve_for_hauling`) does NOT use this filter —
+        it needs to resolve whatever text is on screen, including stations that
+        might be unavailable but still appear in contracts. This filter is for
+        user-facing pickers only.
+        """
+        self.ensure_loaded()
+
+        # Build a set of structural IDs that have at least one available terminal
+        structural_with_terminals: dict[str, set[int]] = {
+            "id_space_station": set(),
+            "id_outpost": set(),
+            "id_city": set(),
+        }
+        for row in self._locations or []:
+            if row.get("_endpoint") != "terminals":
+                continue
+            if not row.get("is_available"):
+                continue
+            for fk_key in structural_with_terminals:
+                fk_val = row.get(fk_key)
+                if fk_val is not None:
+                    structural_with_terminals[fk_key].add(fk_val)
+
+        results = []
+        for row in self._locations or []:
+            endpoint = row.get("_endpoint")
+            if endpoint == "terminals":
+                if row.get("is_available"):
+                    results.append(row)
+            elif include_all_endpoints:
+                # Structural endpoints: check if any available terminal references this
+                fk_mapping = {
+                    "space_stations": "id_space_station",
+                    "outposts": "id_outpost",
+                    "cities": "id_city",
+                }
+                fk_key = fk_mapping.get(endpoint)
+                if fk_key:
+                    row_id = row.get("id")
+                    if row_id is not None and row_id in structural_with_terminals[fk_key]:
+                        results.append(row)
+        return results
+
+    def available_terminals(self, type_filter: str | None = None) -> list[dict]:
+        """Available terminals only — a convenience wrapper for pickers that
+        specifically need tradeable commodity terminals.
+
+        Args:
+            type_filter: Optional terminal type (e.g. "commodity", "refinery").
+                         Pass None to get all terminal types.
+        """
+        results = []
+        for row in self.available_locations(include_all_endpoints=False):
+            if type_filter and row.get("type") != type_filter:
+                continue
+            results.append(row)
+        return results
 
     # ------------------------------------------------------------------
     # Facilities — what a location actually has (refinery, cargo center,

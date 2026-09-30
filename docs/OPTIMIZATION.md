@@ -15,6 +15,8 @@ expected benefit, effort/risk, and project-rule compliance.
 | Q3 | ✅ Implemented | Connection pooling on UexApiClient |
 | Q4 | ✅ Implemented | Cache refineries_methods once per session |
 | M1 | ✅ Implemented | Lazy-load easyocr/PyTorch on first OCR use |
+| M2 | ✅ Implemented | Background OCR thread + thin OCR extract to `modules/logistics_hub/ocr.py` |
+| M5 | ✅ Implemented | In-flight/short-TTL request deduplication in UexApiClient |
 
 ---
 
@@ -184,37 +186,40 @@ guard with a "loading OCR engine..." status message.
 
 ---
 
-### M2. Move OCR processing to a background thread
+### M2. Move OCR processing to a background thread ✅ IMPLEMENTED
 
-**Problem**: OCR runs synchronously on the Qt main thread in `_scan_region()`:
+**Problem**: OCR ran synchronously on the Qt main thread, blocking the entire
+UI for 1-3 seconds during each scan.
 
-```python
-# logistics_hub/module.py (approx line 3000+)
-def _run_ocr(self, image: QImage) -> list[str]:
-    # ... PIL conversion, easyocr.readtext() ...
-```
+**Solution implemented**: Uses a plain `threading.Thread` (NOT QThread) for
+inference, with a `_OcrSignalBridge` QObject to marshal results back to the
+main thread via Qt signals.
 
-A single scan blocks the entire UI for 1-3 seconds depending on region size.
+**Critical design constraint**: `easyocr.Reader()` MUST be created on the main
+thread. Creating it inside a QThread crashes Qt6Core.dll on Windows due to
+PyTorch/OpenMP initialization conflicts with Qt's threading model. The first
+scan blocks briefly (~2.8s) while loading the Reader; subsequent scans run
+inference in the background with full UI responsiveness.
 
-**Benefit**: UI stays responsive during scans. User can collapse cards, read
-routes, etc. while OCR runs.
+Pure OCR helpers extracted to `modules/logistics_hub/ocr.py`:
+- `order_ocr_boxes()` — column-aware reading order
+- `preprocess_image()` — grayscale, upscale, autocontrast
+- `run_ocr()` — EasyOCR inference wrapper
 
-**Effort**: Medium — wrap OCR in `QThread` or `concurrent.futures.ThreadPoolExecutor`,
-emit results via Qt signal. Pattern already exists in `host/hotkey.py:217-224`:
+This is a thin slice (only what M2 needs), not the full L1 decomposition.
 
-```python
-def worker():
-    try:
-        combo = keyboard.read_hotkey(suppress=False)
-        signal_holder.captured.emit(combo)
-    except Exception as exc:
-        signal_holder.failed.emit(str(exc))
-threading.Thread(target=worker, daemon=True).start()
-```
+**Additional fix**: `_pixmap_to_pil()` now uses `bytearray(qimg.bits())` to
+make a full copy of image bytes before the QImage goes out of scope —
+`QImage.bits()` returns a view that becomes invalid after garbage collection.
 
-**Risk**: Thread safety for EasyOCR (confirmed safe — stateless inference).
+**Benefit**: UI stays responsive during scans (after first-scan Reader load).
+User can collapse cards, move the overlay, etc. while OCR runs.
 
-**Project rules**: ✓ No API changes.
+**Risk**: Thread safety confirmed — `Reader.readtext()` is stateless inference
+over numpy arrays, safe from any thread. Only Reader construction is unsafe
+in non-main threads.
+
+**Project rules**: ✓ No API logic changes.
 
 ---
 
@@ -263,25 +268,26 @@ doing one module at a time with visual diff testing.
 
 ---
 
-### M5. Add request deduplication to UexApiClient
+### M5. Add request deduplication to UexApiClient ✅ IMPLEMENTED
 
-**Problem**: Nothing prevents two modules from requesting the same endpoint with
-the same params simultaneously. During startup or a user clicking multiple cards'
-refresh buttons rapidly, this can happen.
+**Problem**: Nothing prevented duplicate identical GET requests when multiple
+modules refreshed at once (startup, or user clicking several Refresh buttons).
+
+**Solution implemented**: Added two deduplication mechanisms to `UexApiClient.get()`:
+1. **In-flight sharing**: Concurrent calls for the same endpoint+params share a
+   single `Future`. Only one HTTP request fires; others wait on `future.result()`.
+2. **Short-TTL cache**: Completed results are reused for 2 seconds
+   (`DEDUPE_TTL_SECONDS`), so rapid sequential calls hit the cache.
+
+Cache key: `f"{endpoint}|{sorted_params}"`. Errors are cached too (re-raised to
+waiting callers).
 
 **Benefit**: Eliminates true duplicate requests, helps stay under 120/min limit.
 
-**Effort**: Medium — add a simple request-dedup cache with short TTL (e.g., 500ms):
+**Risk**: Low — lock held briefly around dict lookups; actual network call runs
+outside the lock.
 
-```python
-class UexApiClient:
-    def __init__(self, ...):
-        self._inflight: dict[str, tuple[float, list]] = {}  # key -> (timestamp, result)
-```
-
-**Risk**: Low — must handle cache invalidation carefully.
-
-**Project rules**: ✓ No API logic changes.
+**Project rules**: ✓ No API logic changes, no behavior change for unique calls.
 
 ---
 

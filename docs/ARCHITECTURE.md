@@ -4,11 +4,15 @@
 
 ```
 mobiOverlay/
-  host/            # main window, card container, config, module loader, HTTP client
+  host/            # mobiOverlay Core: main window, card container, config,
+                   # module loader, API client, location service, hotkey, tray
   modules/
-    <module_name>/ # one folder per module, auto-discovered
-  docs/
-  config.json       # generated at runtime, git-ignored
+    <module_name>/ # one folder per module, auto-discovered at startup
+      module.py    # entry point class implementing the module contract
+  tests/           # regression tests (plain asserts, no framework)
+  docs/            # this folder — architecture, decisions, module docs
+  config.json      # generated at runtime, persists next to exe, git-ignored
+  locations_cache.json  # UEX location cache (7-day TTL), git-ignored
 ```
 
 ## Module contract
@@ -25,6 +29,8 @@ with a single class mobiOverlay Core can instantiate. That class must provide:
   return type and skips the module (with a logged error) otherwise.
 - `refresh()` — fetch/update data on its own schedule; runs inside mobiOverlay
   Core's error boundary, so a failure here degrades only this module's card
+- `shutdown()` — optional cleanup hook called by `app.aboutToQuit` for every
+  module before process exit (e.g. release hotkeys, close file handles)
 
 mobiOverlay Core never reaches into a module's internals beyond this
 contract. Adding module #2 means adding a new folder under `modules/` —
@@ -39,16 +45,71 @@ zero edits to `host/` or to any other module.
   stow/deploy via the tray panel, persist layout to `config.json`
 - Own the shared UEX API client (base URL, bearer token, rate-limit handling)
   and hand it to modules rather than each module managing its own HTTP client
+- Own the shared LocationService (see below) for UEX location data
 - Own `config.json` read/write; modules only touch their own namespaced section
+- Own the single-instance guard preventing duplicate overlay processes
+- Own the system tray icon for overlay recovery when minimized/hidden
+- Own the global hotkey (Stow/Deploy) and its low-level keyboard hook
+
+## LocationService (host/locations.py)
+
+Shared UEX location data — star systems, terminals, space stations, outposts,
+and cities — used by any module that needs to resolve, search, or display a
+real Star Citizen place. One shared instance is created by `host/main.py` and
+passed to all modules at discovery time.
+
+Key features:
+- **Disk cache**: `locations_cache.json` next to `config.json`, 7-day TTL
+  (`CACHE_MAX_AGE_SECONDS`), auto-refreshes from live UEX API when stale
+- **Cache versioning**: `CACHE_VERSION` (currently v2) — stale-versioned caches
+  auto-invalidate on load, forcing a fresh API fetch when the schema changes
+- **Alias support**: `LOCATION_ALIASES` dict maps known in-game text variations
+  to UEX names (e.g. "Beautiful Glen Station" → "CRU-L5 Beautiful Glen Station")
+- **Hauling-contract resolution**: `resolve_for_hauling()` prefers Admin terminals
+  (the actual cargo kiosks) over structural space_station/outpost/city records;
+  `resolve_fuzzy_for_hauling()` adds fuzzy matching with Admin promotion
+- **Availability filtering**: `available_locations()` / `available_terminals()`
+  filter to only in-game-usable locations for user-facing pickers
+- **Real travel distance**: `distance(a, b)` uses `terminals_distances` (point-
+  to-point) or `orbits_distances` (orbit-level fallback), queried lazily and
+  cached per-session
+- **Commodities cache**: `commodities()` fetches the commodity list once per
+  session, shared across modules (Q2 optimization)
+
+**Endpoint tagging**: `terminals`, `space_stations`, `outposts`, and `cities`
+each have independent id sequences on UEX's side. Every row is tagged with its
+source endpoint (`_endpoint`), and every dedup/lookup uses `(endpoint, id)`,
+never a bare id. This was a real bug that silently collided unrelated locations.
+
+## UexApiClient (host/api_client.py)
+
+Shared HTTP client for all UEX API access. Key features:
+- **Connection pooling**: `HTTPAdapter` with `pool_connections=10, pool_maxsize=10`
+  reuses TCP connections across requests (Q3 optimization)
+- **In-flight request deduplication**: Concurrent calls for the same endpoint+params
+  share a single `Future` — only one HTTP request fires (M5 optimization)
+- **Short-TTL cache**: Completed results are reused for 2 seconds
+  (`DEDUPE_TTL_SECONDS`), preventing duplicate API calls on rapid refreshes
+- **Rate-limit awareness**: `UexRateLimitError` raised when UEX reports
+  `requests_limit_reached`, distinct from generic `UexApiError`
 
 ## Config schema (config.json)
 
 ```json
 {
-  "ui": { "opacity": 0.9, "always_on_top": true, "window_geometry": {} },
+  "ui": {
+    "window_opacity": 0.9,
+    "card_opacity": 0.9,
+    "font_scale": 1.15,
+    "window_geometry": { "x": 100, "y": 100, "width": 400, "height": 600 },
+    "pill_geometry": { "x": 100, "y": 100 },
+    "show_console": false
+  },
   "api": { "uex_token": "", "uex_base_url": "https://api.uexcorp.uk/2.0/" },
   "cards": { "<card_id>": { "x": 0, "y": 0, "collapsed": false, "visible": true } },
-  "modules": { "<module_id>": { } }
+  "modules": { "<module_id>": { } },
+  "hotkey_combo": "f3",
+  "hotkey_display": "F3"
 }
 ```
 
@@ -75,58 +136,96 @@ still always-on-top), and clicking that pill restores it to its exact
 previous position/size — the pill's own position is remembered
 independently too, so dragging it around survives re-stowing (see
 `save_current_position()`). See `MainWindow.stow_app`/`deploy_app` in
-`host/main_window.py`. A system-wide hotkey (`host/hotkey.py`, a
-low-level keyboard hook — plain Qt shortcuts and even Win32
-`RegisterHotKey` only reliably fire while mobiOverlay itself has focus,
-useless for toggling while the game does) can trigger the same
-stow/deploy toggle from Settings, meant for use while playing. Deploying
-via the hotkey also pulls real OS input focus onto the window
-(`MainWindow._take_foreground_focus()`, `AttachThreadInput` +
-`SetForegroundWindow`) rather than only appearing on top while the game
-keeps keyboard focus.
+`host/main_window.py`.
+
+**Gap-aware pill positioning**: `_ensure_on_screen()` validates pill position
+against actual monitor geometry, handling multi-monitor gaps (e.g. a 512px
+horizontal gap between monitors). If the pill would land in a gap or off-screen,
+it's clamped to a visible area with a 10px margin.
+
+**Pill click-through**: `pill_click_through` setting (default OFF) controls
+whether the stowed pill passes all mouse events through to the game via
+`WS_EX_TRANSPARENT`. When ON, redeploy via hotkey or system tray only.
+
+## System tray icon (host/main_window.py)
+
+A Windows system tray icon (`QSystemTrayIcon`) provides overlay recovery when
+the main window is minimized/stowed or if the pill lands somewhere invisible.
+Menu options: Show mobiOverlay, Exit. Double-click also shows the window.
+Icon file: `host/assets/icons/mobioverlay.png`.
+
+## Single-instance guard (host/single_instance.py)
+
+Prevents running two mobiOverlay copies at once. Uses a Windows named mutex
+(`mobiOverlay-SingleInstance-v1`) checked at startup. If another instance holds
+the mutex, shows an error dialog and exits. This prevents duplicate global
+keyboard hooks from racing on the same hotkey.
 
 ## Global hotkey (host/hotkey.py)
 
 Uses the `keyboard` library's low-level global keyboard hook
-(`WH_KEYBOARD_LL` via `SetWindowsHookEx`, installed once for the app's
-life in `GlobalHotkey.__init__`), not Win32 `RegisterHotKey`/`WM_HOTKEY`.
+(`WH_KEYBOARD_LL` via `SetWindowsHookEx`), not Win32 `RegisterHotKey`/`WM_HOTKEY`.
 `RegisterHotKey` was tried first and reliably failed to fire while Star
 Citizen had focus — it delivers through the normal window message queue,
 which a fullscreen/exclusive-input game can block. A low-level hook
 intercepts the actual keyboard input stream below that queue, so it isn't
-affected by which window Windows currently considers focused. This mirrors
-ThrottleWatch (a separate, already-shipping SC overlay by the same
-author), which never has this problem for exactly that reason — see
-`throttle_watch.py`'s `HotkeyState` for the original this was ported from.
+affected by which window Windows currently considers focused.
+
+**Lazy hook install**: The hook is NOT installed in `__init__` — it's installed
+lazily on the first `set_hotkey()` call. A user running with no global hotkey
+configured never even has a `WH_KEYBOARD_LL` hook installed.
+
+**Teardown safety**: `GlobalHotkey.shutdown()` fully releases the OS-level hook
+before process exit. An `atexit` handler provides a belt-and-suspenders safety
+net. A hook that outlives its process can block game input (~5s Windows timeout).
 
 `HotkeyState` tracks one combo's pressed/held state from raw key up/down
-events fed to it by the single shared hook (not `keyboard.add_hotkey`,
-whose shared cross-hotkey pressed-keys dict is vulnerable to a permanently
-stuck-down modifier if a single key-up event is ever lost — e.g. a UAC
-prompt stealing focus mid-combo). A `reconcile()` watchdog (`GlobalHotkey`
-runs it once/second via `QTimer`) self-heals stuck state by checking
-`GetAsyncKeyState` against what the hook thinks is still held. Only one
-hotkey exists right now (Stow/Deploy the whole app).
+events fed to it by the single shared hook. A `reconcile()` watchdog runs
+once/second via `QTimer`, self-healing stuck state by checking `GetAsyncKeyState`
+against what the hook thinks is still held.
 
 Because `keyboard.hook()`'s callback runs on the `keyboard` library's own
 dispatch thread, never the Qt/GUI thread, `GlobalHotkey` is a `QObject`
 with a `triggered` `Signal()` — emitting it from that thread is the
-standard thread-safe way to marshal the actual callback (which touches Qt
-widgets) back onto the GUI thread; Qt auto-queues a cross-thread signal
-emission to whatever thread its connected slot lives on. This plays the
-same role ThrottleWatch's `self.root.after(0, ...)` plays for Tk.
+standard thread-safe way to marshal the actual callback back onto the GUI thread.
 
 The capture UI (`_HotkeyField` in `main_window.py`) is click-to-arm: click
-the field, press and release any combo (including a bare key, since this
-hook only listens — `suppress=False` — rather than exclusively claiming
-the key the way `RegisterHotKey` did). Capture itself is
+the field, press and release any combo. Capture uses
 `GlobalHotkey.capture_combo()`, which spawns a daemon thread calling
-`keyboard.read_hotkey(suppress=False)` (blocks until a full press+release)
-and reports the result back via another `Signal`, the same proven pattern
-ThrottleWatch's Settings dialog uses. Escape is treated as cancel rather
-than becoming the hotkey. Config stores the raw `keyboard`-library combo
-string directly (`hotkey_combo`, e.g. `"f3"` or `"ctrl+alt+p"`) plus a
-prettified `hotkey_display` for the UI.
+`keyboard.read_hotkey(suppress=False)` and reports the result back via a Signal.
+Config stores the raw `keyboard`-library combo string (`hotkey_combo`,
+e.g. `"f3"` or `"ctrl+alt+p"`) plus a prettified `hotkey_display` for the UI.
+
+## Logistics Hub OCR (modules/logistics_hub/ocr.py)
+
+The OCR pipeline for reading hauling contract text from screen captures:
+
+**Threading model (M2 optimization)**:
+- `easyocr.Reader()` is created on the **main thread** only (first scan blocks
+  ~2.8s while loading). Creating it in a QThread crashes Qt6Core.dll due to
+  PyTorch/OpenMP initialization conflicts with Qt's threading model on Windows.
+- Inference (`readtext()`) runs in a plain `threading.Thread`, safe from any thread.
+- `_OcrSignalBridge` (QObject on main thread) marshals results back via Qt signals.
+
+**Pipeline**:
+1. `preprocess_image()`: grayscale, 2x LANCZOS upscale, autocontrast
+2. `run_ocr()`: EasyOCR inference with `OCR_ALLOWLIST` character restriction
+3. `order_ocr_boxes()`: column-aware reading order (splits at largest horizontal
+   gap if wide enough, reads left column before right)
+
+**Lazy import**: `easyocr` and `torch` are imported only on first scan use,
+not at module load time, avoiding the 2.8s import cost for users who never
+use Logistics Hub (M1 optimization).
+
+## mobiThrottle home chirp (modules/mobi_throttle/module.py)
+
+Uses `pygame.mixer` (SDL_mixer under the hood) instead of `winsound.Beep()`
+for the home-position audio chirp. `winsound.Beep()` uses the legacy Windows
+PC speaker which doesn't play when a game has exclusive audio focus. pygame.mixer
+routes through WASAPI shared-mode, working alongside Star Citizen's audio.
+
+The mixer is initialized lazily on first chirp (22050 Hz, mono, 512-sample buffer).
+Multi-beep sequences use `QTimer.singleShot` scheduling instead of `time.sleep`.
 
 ## Packaging
 
@@ -135,20 +234,21 @@ PyInstaller onefile build — **everything in one exe**. The distinction:
 - **Bundled inside the exe** (extracted to `sys._MEIPASS` at runtime):
   - `host/` — the core application
   - `modules/` — all 8 modules (discovered via `host/paths.modules_root()`)
-  - `host/assets/fonts/` — bundled fonts
-  - All dependencies (torch, easyocr, pygame, etc.)
+  - `host/assets/fonts/` — bundled fonts (Orbitron, Share Tech Mono)
+  - `host/assets/icons/` — tray icon
+  - All dependencies (torch, easyocr, pygame-ce, etc.)
 
 - **Persisted next to the exe** (via `host/paths.app_root()`):
   - `config.json` — layout and settings
   - `mobinotes_data.json` — mobiNotes storage
-  - `locations_cache.json` — UEX location cache
+  - `locations_cache.json` — UEX location cache (7-day TTL, versioned)
   - `logistics_hub_debug.jsonl` — Logistics Hub debug log
-  - Other data files that must survive between launches
+  - `logistics_hub_completed.jsonl` — completed hauling contracts log
 
 The split matters because PyInstaller's onefile temp extraction directory
 is wiped and recreated every launch — anything written there never persists.
 
-`host/paths.py` exposes two functions:
+`host/paths.py` exposes:
 - `app_root()` — exe folder when frozen, project root from source
 - `modules_root()` — `sys._MEIPASS/modules` when frozen, `modules/` from source
 
@@ -156,9 +256,9 @@ The module loader (`host/module_loader.py`) uses `modules_root()` for
 discovery and imports each `modules/<name>/module.py` by file path
 (`importlib.util.spec_from_file_location`).
 
-**Development workflow:** when running from source, modules are in the
+**Build output**: `dist/mobiOverlay.exe` (~333 MB with CPU-only torch, larger
+with CUDA). Build command: `pyinstaller mobioverlay.spec --noconfirm`.
+
+**Development workflow**: When running from source, modules are in the
 normal `modules/` folder and can be edited live. The frozen exe bundles
 whatever's in `modules/` at build time.
-
-Verify no personal machine paths get baked into the build or logged in
-example configs before any public release.

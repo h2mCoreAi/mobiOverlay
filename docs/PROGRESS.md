@@ -1,12 +1,56 @@
 # Progress
 
-## Status: mobiThrottle built, live-verified, and user-confirmed working
-## with a real throttle (7th module) — one usability bug found in real use
-## (tiny spinbox arrows) and fixed same day. mobiNotes built and
-## live-verified (6th module). Location-service plan — Phases 1-4 done
-## (shared service, Logistics Hub migrated, real-distance routing, Trade
-## Route Optimizer/Commodity Prices migrated) + extensive live hardening;
-## Phase 5 (shared current location) not started
+## Status: v0.2.0 ready for release — all 8 modules built and live-verified,
+## optimization pass complete (M2 background OCR, M5 API dedupe), location
+## service hardened with hauling-specific resolution and availability filtering.
+
+---
+
+## v0.1.0 → v0.2.0 (2026-09-20)
+
+Summary of changes shipping in v0.2.0 since the initial v0.1.0 release:
+
+### New Features
+- **System tray icon** (PR #7) — Windows system tray icon for overlay recovery
+  when minimized/stowed or if the pill lands somewhere invisible
+- **Home chirp audio fix** (PR #8) — mobiThrottle's home-position chirp now uses
+  `pygame.mixer` instead of `winsound.Beep()`, working alongside SC's audio
+- **Stow-to-pill fixes** (PR #9, #10) — pill now stays on-screen even on multi-
+  monitor setups with gaps; `_ensure_on_screen()` validates against real monitor
+  geometry with a 10px margin; click-through UX clarified in Settings
+- **Hauling contract improvements** (PR #11):
+  - **Location resolution overhaul**: `resolve_for_hauling()` prefers Admin terminals
+    over structural records, validates matches with fuzzy threshold, checks aliases
+  - **Admin terminal promotion**: All haul stops auto-promote to linked Admin
+    commodity terminals using UEX FK relationships
+  - **Availability filtering**: User-facing location pickers now filter out junk/
+    unavailable locations (Benson Mining, Bud's Growery, etc.)
+  - **Cache versioning**: `CACHE_VERSION` (v2) auto-invalidates stale caches when
+    resolution logic changes
+
+### Optimizations (see docs/OPTIMIZATION.md)
+- **M2: Background OCR thread** — EasyOCR inference runs in a `threading.Thread`
+  with `_OcrSignalBridge` to marshal results back to Qt. Reader created on main
+  thread only (QThread crashes Qt6Core.dll). Pure OCR helpers extracted to
+  `modules/logistics_hub/ocr.py`.
+- **M5: API request deduplication** — `UexApiClient.get()` now shares in-flight
+  requests via `Future` and caches results for 2s (`DEDUPE_TTL_SECONDS`),
+  preventing duplicate API calls during rapid refreshes.
+
+### Safety & Reliability
+- **Single-instance guard** — prevents running two mobiOverlay copies at once
+  (duplicate global keyboard hooks would race on the same hotkey)
+- **Hotkey teardown** — `GlobalHotkey.shutdown()` fully releases the OS-level
+  hook before process exit, with `atexit` safety net
+- **Lazy hook install** — WH_KEYBOARD_LL hook not installed until a hotkey is
+  actually configured (no hook = no risk for users without hotkeys)
+
+### Tests
+- `tests/test_api_client_dedupe.py` — unit tests for M5 deduplication
+- `tests/test_logistics_hub_parsing.py` — extended with hauling resolution fixtures
+  (19 checks for Admin promotion, alias support, availability filtering)
+
+---
 
 ## Done
 
