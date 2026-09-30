@@ -7551,3 +7551,31 @@ by an automated check.
   actual network call runs outside the lock.
   **No behavior change**: Successful unique calls work exactly as before. Only
   redundant calls within the 2s window are deduplicated.
+
+- **2026-09-20 — v0.2.0 release.**
+  **Summary**: Second public release, shipping all improvements since v0.1.0.
+  
+  **New features**:
+  - System tray icon for overlay recovery (PR #7)
+  - mobiThrottle home chirp audio fix via pygame.mixer (PR #8)
+  - Stow-to-pill gap-aware positioning for multi-monitor setups (PR #9, #10)
+  - Hauling contract location resolution overhaul (PR #11):
+    - `resolve_for_hauling()` with Admin terminal preference
+    - `LOCATION_ALIASES` for known in-game text variations
+    - `available_locations()` / `available_terminals()` for user-facing pickers
+    - `CACHE_VERSION` (v2) auto-invalidation
+  
+  **Optimizations**:
+  - M2: Background OCR thread with `_OcrSignalBridge` (extracted to `ocr.py`)
+  - M5: UexApiClient in-flight/short-TTL request deduplication
+  
+  **Safety**:
+  - Single-instance guard preventing duplicate global keyboard hooks
+  - Hotkey teardown with `shutdown()` + atexit safety net
+  - Lazy WH_KEYBOARD_LL hook install (no hook until hotkey configured)
+  
+  **Tests**: 19 hauling resolution fixtures, API dedupe unit tests.
+  
+  **Build**: `pyinstaller mobioverlay.spec --noconfirm` → `dist/mobiOverlay.exe`
+  (~333 MB with CPU-only torch). Tag `v0.2.0` on master triggers GitHub Actions
+  release workflow.

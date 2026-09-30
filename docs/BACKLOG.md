@@ -118,14 +118,26 @@ tier.
 - [CStone.space](https://dutchdemons.com/tool/cstone-space/)
 - [Schaulers Trade Route Planner](https://schaulers.space/app)
 
-## Status
+## Status (v0.2.0)
 
-Commodity Prices, Trade Route Optimizer, and Refinery Finder (tiers 1.1,
-1.2, and 1.3) are all built — see docs/PROGRESS.md. Refinery Finder is a
-narrower-scoped "Refinery Yield Calculator": ranks real terminals by
-reported yield modifier rather than computing an exact SCU-in/SCU-out
-number, since UEX doesn't expose the base composition data a literal
-calculator would need (see docs/modules/refinery-finder.md). Item Price
-Lookup / Ship Outfitting (1.4) is the strongest remaining Tier 1 pick. The
-Multi-Stop Contract Route Optimizer above is a separate high-priority
-want, held for later due to its complexity.
+**Built and shipping:**
+- Commodity Prices (tier 1.1) — `modules/commodity_prices/`
+- Trade Route Optimizer (tier 1.2) — `modules/trade_route_optimizer/`
+- Refinery Finder (tier 1.3, narrowed scope) — `modules/refinery_finder/`
+- Logistics Hub (Multi-Stop Contract Route Optimizer) — `modules/logistics_hub/`
+- Multi-Commodity Finder — `modules/multi_commodity_finder/`
+- Crosshair — `modules/crosshair/`
+- mobiNotes — `modules/mobi_notes/`
+- mobiThrottle — `modules/mobi_throttle/`
+
+**8 modules total.** Refinery Finder ranks terminals by reported yield modifier
+rather than computing exact SCU-in/SCU-out (UEX lacks base composition data).
+Logistics Hub is the "Multi-Stop Contract Route Optimizer" from the high-want
+section — implemented with OCR-based contract reading + 2-opt route optimization.
+
+**Remaining from Tier 1:**
+Item Price Lookup / Ship Outfitting (1.4) is the strongest remaining pick.
+
+**Next picks (Tier 2):**
+Vehicle Purchase/Rental, Refinery Capacity Tracker, Terminal/Distance Finder,
+Fuel Price Finder.

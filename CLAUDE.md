@@ -4,18 +4,54 @@ Modular, always-on-top Star Citizen data overlay. Dark sci-fi HUD styled after
 MobiGlas. Data comes from the UEX Corp API (community-sourced SC trade/economy
 data) — no game memory reads, no log parsing (see docs/DECISIONS.md for why).
 
-**Locked architecture decisions:**
+**See `AGENTS.md` for full AI agent onboarding** — safety rules, coding
+conventions, testing, and common tasks. This file is a quick reference.
+
+---
+
+## Locked architecture decisions
+
 - UI: PySide6/Qt (chosen for reliable one-file PyInstaller packaging)
-- Modules: folder-per-module under `modules/`, auto-discovered at startup by mobiOverlay Core (the `host/` package)
-- Cards: draggable/collapsible/closable, layout persisted to local JSON config
-- mobiOverlay Core never imports module internals directly — only calls the module contract
+- Modules: folder-per-module under `modules/`, auto-discovered at startup
+- Cards: draggable/collapsible/closable, layout persisted to `config.json`
+- mobiOverlay Core (`host/`) never imports module internals — only calls the contract
 
-**Docs, read only what's relevant to the task:**
-- `docs/ARCHITECTURE.md` — module contract, mobiOverlay Core responsibilities, config schema
-- `docs/modules/<name>.md` — scope for one specific module (only exists once that module is started)
-- `docs/PROGRESS.md` — current status, what's done, what's next
-- `docs/DECISIONS.md` — dated log of choices + rationale, append-only
-- `docs/BACKLOG.md` — full ranked module backlog with community-interest evidence
+---
 
-Start any session by reading PROGRESS.md first to orient, then only the
-ARCHITECTURE.md and module doc relevant to the task at hand.
+## Docs to read
+
+| When | Read |
+|------|------|
+| First | `AGENTS.md` — full onboarding, safety rules |
+| Every session | `docs/PROGRESS.md` — current status |
+| For architecture | `docs/ARCHITECTURE.md` — contracts, services |
+| For a specific module | `docs/modules/<name>.md` |
+| For past decisions | `docs/DECISIONS.md` — append-only log |
+| For what's next | `docs/BACKLOG.md` — ranked module candidates |
+
+---
+
+## Quick commands
+
+```bash
+# Run from source
+python host/main.py
+
+# Run tests
+python tests/test_logistics_hub_parsing.py
+
+# Build exe
+pyinstaller mobioverlay.spec --noconfirm
+```
+
+---
+
+## Safety rules (summary — see AGENTS.md for full list)
+
+1. **Never force-kill SC processes** — only kill mobiOverlay
+2. **Never leave overlay running unattended** alongside SC
+3. **Never send hotkey keystrokes** while SC may be live
+4. **Never move overlay** onto the primary/gaming monitor
+5. **Never embed UEX tokens** in distributed code
+6. **Never invent API logic** UEX doesn't compute
+7. **Never run two mobiOverlay instances** at once
