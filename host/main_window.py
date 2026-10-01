@@ -493,9 +493,8 @@ class _SystemTray:
     """System tray icon for restoring the overlay when users forget the hotkey
     or lose the stowed pill. Created only if QSystemTrayIcon.isSystemTrayAvailable().
 
-    The main window uses Qt.Tool, which excludes it from the Windows taskbar
-    intentionally (overlay design). This tray icon provides the recovery
-    affordance alongside the hotkey and stowed pill.
+    This tray icon provides a recovery affordance alongside the hotkey, the
+    stowed pill, and the window's own native-style minimize/maximize.
     """
 
     def __init__(self, main_window: "MainWindow"):
@@ -624,11 +623,29 @@ class _TitleBar(QWidget):
         self.minimize_btn.clicked.connect(self._win.stow_app)
         layout.addWidget(self.minimize_btn)
 
+        self.os_minimize_btn = QPushButton("🗕")
+        self.os_minimize_btn.setObjectName("cardIconBtn")
+        self.os_minimize_btn.setFixedSize(20, 20)
+        self.os_minimize_btn.setToolTip("Minimize to the Windows taskbar")
+        self.os_minimize_btn.clicked.connect(self._win.showMinimized)
+        layout.addWidget(self.os_minimize_btn)
+
+        self.maximize_btn = QPushButton("🗖")
+        self.maximize_btn.setObjectName("cardIconBtn")
+        self.maximize_btn.setFixedSize(20, 20)
+        self.maximize_btn.setToolTip("Maximize")
+        self.maximize_btn.clicked.connect(self._win.toggle_maximize)
+        layout.addWidget(self.maximize_btn)
+
         close_btn = QPushButton("✕")
         close_btn.setObjectName("cardIconBtn")
         close_btn.setFixedSize(20, 20)
         close_btn.clicked.connect(self._win.close)
         layout.addWidget(close_btn)
+
+    def set_maximized_label(self, maximized: bool):
+        self.maximize_btn.setText("🗗" if maximized else "🗖")
+        self.maximize_btn.setToolTip("Restore" if maximized else "Maximize")
 
     def update_tray_label(self):
         count = len(self._win.card_container.stowed_cards())
@@ -644,6 +661,8 @@ class _TitleBar(QWidget):
         self.tray_btn.setVisible(not stowed)
         self.settings_btn.setVisible(not stowed)
         self.minimize_btn.setVisible(not stowed)
+        self.os_minimize_btn.setVisible(not stowed)
+        self.maximize_btn.setVisible(not stowed)
         self.byline_label.setVisible(not stowed)
 
     def mousePressEvent(self, event):
@@ -671,12 +690,21 @@ class _TitleBar(QWidget):
                 self._win.save_current_position()
         self._drag_offset = None
 
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton and not self._win.is_app_stowed():
+            self._win.toggle_maximize()
+
 
 class MainWindow(QWidget):
     def __init__(self, config: Config):
         super().__init__()
         self.config = config
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setWindowFlags(
+            Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+            | Qt.WindowMinMaxButtonsHint
+        )
+        if TRAY_ICON_PATH.exists():
+            self.setWindowIcon(QIcon(str(TRAY_ICON_PATH)))
         # Per-pixel alpha (not setWindowOpacity, which dims the whole
         # rendered window uniformly) so the empty background can be made
         # see-through independently of card opacity — cards paint their own
@@ -783,9 +811,32 @@ class MainWindow(QWidget):
         # stowed), so this can safely always target pre_stow_geometry —
         # no risk of the moveEvent race above, since there's no
         # size-changing gesture on the pill to race against.
-        if not self._geometry_tracking_ready or self._app_stowed:
+        # A maximized fill-the-screen size must never overwrite the user's
+        # real restored size/position — skip saving while maximized; the
+        # pre-maximize geometry is captured explicitly in toggle_maximize().
+        if not self._geometry_tracking_ready or self._app_stowed or self.isMaximized():
             return
         self._geometry_save_timer.start(400)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == event.Type.WindowStateChange:
+            self.title_bar.set_maximized_label(self.isMaximized())
+
+    def toggle_maximize(self):
+        if self.isMaximized():
+            self.showNormal()
+            self.save_current_position()
+        else:
+            # Capture the real pre-maximize geometry up front — resizeEvent
+            # skips saving once isMaximized() is already true, so this is
+            # the only chance to record what "restore" should return to.
+            self._pre_stow_geometry = (self.x(), self.y(), self.width(), self.height())
+            self.config.data["ui"]["pre_stow_geometry"] = {
+                "x": self.x(), "y": self.y(), "width": self.width(), "height": self.height(),
+            }
+            self.config.save()
+            self.showMaximized()
 
     def _save_tracked_geometry(self):
         self._pre_stow_geometry = (self.x(), self.y(), self.width(), self.height())
