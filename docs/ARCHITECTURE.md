@@ -152,7 +152,7 @@ whether the stowed pill passes mouse events through to the game via
 `WS_EX_TRANSPARENT`. When ON, the pill unlocks on hover: a `QTimer`
 (`PILL_HOVER_POLL_MS`, 100 ms) checks the cursor position, and after it
 has rested on the pill for `PILL_HOVER_UNLOCK_MS` (700 ms) click-through is
-cleared and the title bar lights up (`unlocked` property). The pill is then
+cleared and the title bar lights up (tint and border painted in `MainWindow.paintEvent`; `_TitleBar` has no `WA_StyledBackground`, so stylesheet rules on it never render). The pill is then
 clickable (redeploy) and draggable until the cursor leaves. The timer only
 runs while stowed with click-through ON, and the window style changes only
 on lock/unlock, never per poll. Measured at ~2 µs per check. A global

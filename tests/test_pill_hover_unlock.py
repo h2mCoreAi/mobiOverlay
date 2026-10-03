@@ -45,7 +45,9 @@ def run() -> int:
     win._pill_hover_since -= mw.PILL_HOVER_UNLOCK_MS / 1000 + 0.01
     win._poll_pill_hover()
     assert win._pill_unlocked and not win.testAttribute(Qt.WA_TransparentForMouseEvents), "didn't unlock after resting"
-    assert win.title_bar.property("unlocked") is True, "no unlocked highlight"
+    unlocked_img = win.grab().toImage()
+    edge = unlocked_img.pixelColor(unlocked_img.width() // 2, 1)
+    assert edge.blue() > 150, f"no visible unlocked highlight on the pill edge: {edge.name()}"
     checks += 1
 
     cursor["pos"] = QPoint(-5000, -5000)

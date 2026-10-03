@@ -10,7 +10,7 @@ from ctypes import wintypes
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QPoint, QRectF, QTimer
-from PySide6.QtGui import QCursor, QGuiApplication, QColor, QPainter, QPainterPath, QIcon
+from PySide6.QtGui import QCursor, QGuiApplication, QColor, QPainter, QPainterPath, QPen, QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QSizeGrip, QSizePolicy, QLineEdit, QSystemTrayIcon, QMenu
@@ -53,10 +53,6 @@ QWidget#titleBar {{
         stop:0 #182029, stop:1 #0d131a);
     border: 1px solid {theme.BORDER_CYAN};
     border-radius: {theme.RADIUS}px;
-}}
-QWidget#titleBar[unlocked="true"] {{
-    background: {theme.ACCENT_CYAN_DIM};
-    border: 1px solid {theme.ACCENT_CYAN};
 }}
 QLabel#wordmark {{
     font-family: "{theme.FONT_DISPLAY}";
@@ -1122,9 +1118,9 @@ class MainWindow(QWidget):
         self._pill_unlocked = unlocked
         if apply_click_through:
             self._apply_native_click_through(not unlocked)
-        self.title_bar.setProperty("unlocked", unlocked)
-        self.title_bar.style().unpolish(self.title_bar)
-        self.title_bar.style().polish(self.title_bar)
+        # Highlight is painted in paintEvent: _TitleBar has no
+        # WA_StyledBackground, so a stylesheet rule on it never renders.
+        self.update()
 
     def capture_hotkey_combo(self, on_captured, on_error=None):
         return self._hotkey.capture_combo(on_captured, on_error)
@@ -1165,6 +1161,17 @@ class MainWindow(QWidget):
         # free, not a separate value to keep in sync.
         path.addRoundedRect(QRectF(self.rect()), theme.RADIUS, theme.RADIUS)
         painter.fillPath(path, color)
+        if self._app_stowed and getattr(self, "_pill_unlocked", False):
+            # Hover-unlocked click-through pill: solid tint plus a bright
+            # border, so it's obvious the next click will land on it.
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+            tint = QColor(theme.ACCENT_CYAN)
+            tint.setAlphaF(0.35)
+            painter.fillPath(path, tint)
+            pen = QPen(QColor(theme.ACCENT_CYAN))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), theme.RADIUS, theme.RADIUS)
         painter.end()
         super().paintEvent(event)
 
