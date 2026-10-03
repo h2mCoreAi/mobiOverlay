@@ -15,6 +15,7 @@
 Bundled, non-pluggable assets (fonts) should keep using __file__-relative
 paths as before — those are meant to travel inside the frozen build.
 """
+import os
 import sys
 from pathlib import Path
 
@@ -41,3 +42,17 @@ def relaunch_command() -> list[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable]
     return [sys.executable, str(Path(__file__).resolve().parent / "main.py")]
+
+
+def relaunch_env() -> dict[str, str]:
+    """Environment for the relaunched process. A onefile build that spawns
+    itself passes on PyInstaller's bootloader variables, so the new process
+    reuses this instance's sys._MEIPASS extraction folder — which this
+    instance's bootloader deletes as it exits. The new copy then finds no
+    modules (they live under _MEIPASS) and the cleanup fails with "Failed to
+    remove temporary directory". PYINSTALLER_RESET_ENVIRONMENT (PyInstaller
+    6.9+) makes the bootloader start fresh with its own extraction folder."""
+    env = os.environ.copy()
+    if getattr(sys, "frozen", False):
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env

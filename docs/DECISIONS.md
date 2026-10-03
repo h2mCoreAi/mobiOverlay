@@ -7759,3 +7759,18 @@ by an automated check.
   was wrong arithmetic; that's corrected, and the `api_client.py` comment is
   updated. If a rate limit is ever actually hit, consider an automatic
   pause-and-resume rather than slowing every scan.
+
+- **2026-10-03 — Relaunch in the packaged exe loaded no modules.** Found by
+  the owner testing the code-review `dist-test` build. This had been broken
+  since modules moved inside the exe (2026-09-20); it was not caused by the
+  review changes. A onefile exe that re-runs `sys.executable` passes
+  PyInstaller's bootloader environment variables to the new process. The
+  new process then reuses the old instance's `_MEIPASS` extraction folder,
+  which the old bootloader deletes as it exits. Result: no modules (they're
+  discovered under `_MEIPASS/modules`), plus a "Failed to remove temporary
+  directory" error from the old bootloader. Reproduced with a minimal
+  onefile probe: without the fix the relaunched copy never started; with it,
+  the copy got its own folder and survived. Fix:
+  `host/paths.relaunch_env()` sets `PYINSTALLER_RESET_ENVIRONMENT=1`
+  (PyInstaller 6.9+, the documented way to spawn a fresh instance) when
+  frozen. `release.yml` and `BUILD.md` now pin `pyinstaller>=6.9`.

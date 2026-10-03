@@ -162,6 +162,17 @@ def test_non_dict_payload_is_api_error() -> int:
     raise AssertionError("a non-dict payload should raise UexApiError")
 
 
+def test_relaunch_env_resets_pyinstaller_when_frozen() -> int:
+    from host import paths
+    assert "PYINSTALLER_RESET_ENVIRONMENT" not in paths.relaunch_env(), "source runs need no reset"
+    sys.frozen = True
+    try:
+        assert paths.relaunch_env().get("PYINSTALLER_RESET_ENVIRONMENT") == "1",             "a frozen Relaunch would reuse (and lose) the old _MEIPASS folder"
+    finally:
+        del sys.frozen
+    return 2
+
+
 def run() -> int:
     checks = 0
     for test in (
@@ -173,6 +184,7 @@ def run() -> int:
         test_commodities_failure_not_cached,
         test_rate_limit_detected_on_http_error,
         test_non_dict_payload_is_api_error,
+        test_relaunch_env_resets_pyinstaller_when_frozen,
     ):
         checks += test()
         print(f"[PASS] {test.__name__}")

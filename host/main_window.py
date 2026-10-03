@@ -19,7 +19,7 @@ from host import theme
 from host import hotkey as hotkey_mod
 from host.card_container import CardContainer
 from host.config import Config
-from host.paths import app_root, relaunch_command
+from host.paths import app_root, relaunch_command, relaunch_env
 
 GWL_EXSTYLE = -20
 WS_EX_TRANSPARENT = 0x00000020
@@ -1149,7 +1149,7 @@ class MainWindow(QWidget):
         # hooked to aboutToQuit/atexit, which os._exit() below skips — run
         # them now, before the new process can race for the same lock.
         self._run_before_exit_callbacks()
-        subprocess.Popen(relaunch_command(), cwd=str(app_root()))
+        subprocess.Popen(relaunch_command(), cwd=str(app_root()), env=relaunch_env())
         self._exiting = True
         self.close()
         # Not just self.close(): the Settings panel that owns this button
