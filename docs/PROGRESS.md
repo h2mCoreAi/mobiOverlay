@@ -5,9 +5,9 @@ One-page status. Session notes are in `docs/HISTORY.md`. Older
 
 ## Version
 
-- Latest tag: **v0.3.0** (`a08512f`, 2026-09-30), native taskbar minimize/maximize.
+- Latest tag: **v0.3.1** (`b93ee83`, 2026-10-03), the PR #12 code review: exit/Relaunch, persistence and resilience fixes, hover-to-unlock click-through pill, mobiThrottle hotkeys unset by default. Owner-tested in a `dist-test` build and in-game. The release zip was published by GitHub Actions.
+- **v0.3.0** (`a08512f`, 2026-09-30): native taskbar minimize/maximize.
 - **v0.2.0** includes pill click-through and crosshair `WS_EX_TRANSPARENT` hardening (`6a494aa`).
-- `master` is ahead of `v0.3.0` by the 2026-10-03 code review (PR #12): exit/Relaunch, persistence and resilience fixes, hover-to-unlock click-through pill, mobiThrottle hotkeys unset by default. Owner-tested in a `dist-test` build, including an in-game session. **Not tagged yet.** Tagging `v0.3.1` (which publishes the release zip) is the owner's call.
 
 ## Shipped
 
@@ -21,7 +21,6 @@ Logistics Hub may order stops with greedy nearest-neighbor plus 2-opt on real UE
 
 - Next module candidate: Item Price Lookup / Ship Outfitting (Tier 1.4 in `docs/BACKLOG.md`).
 - Performance work still open: M3, M4, and L1 in `docs/OPTIMIZATION.md`. Q1–Q4, M1, M2, and M5 are shipped.
-- Tag `v0.3.1` for the PR #12 changes when the owner decides to release.
 - Human checks that were never closed are listed in `docs/HISTORY.md` (crosshair over the game, hotkey focus, relaunch after an OCR scan, grid-snap drag). They are unverified follow-ups, not new bugs.
 
 ## Working rules that are easy to miss
