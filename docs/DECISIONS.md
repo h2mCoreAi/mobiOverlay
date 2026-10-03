@@ -7666,7 +7666,7 @@ by an automated check.
      not the only one. Not re-editing that 2026-09-20 entry since this log
      is append-only â€” this entry is the correction.
 
-- **2026-10-03 — Docs restructured so any agent can pick up the project cold.**
+- **2026-10-03 â€” Docs restructured so any agent can pick up the project cold.**
   A cross-agent review found `docs/PROGRESS.md` (the file every agent was
   told to read first) was a ~1,200-line session diary whose status still
   called v0.2.0 unreleased, though `v0.3.0` was already tagged. Moved that log verbatim to
@@ -7679,4 +7679,4 @@ by an automated check.
   without the owner's explicit confirmation in the current session. Removed
   references to the owner's specific local install paths, and gitignored
   local build/runtime leftovers (`dist-test/`, `release/`,
-  `freeze-build*.log`, `.mobioverlay.lock`) — they are not project files.
+  `freeze-build*.log`, `.mobioverlay.lock`) â€” they are not project files.
