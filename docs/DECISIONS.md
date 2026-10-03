@@ -7744,3 +7744,18 @@ by an automated check.
   **Not changed (needs the owner):** mobiThrottle's default hotkeys install
   a global keyboard hook for every user; Commodity Prices' Retrieve Data
   paces at ~8 req/s, above the 120/min limit noted in `api_client.py`.
+
+- **2026-10-03 — mobiThrottle hotkeys default to unset; UEX rate limit
+  marked unconfirmed.** Follow-up to the code review entry above, decided by
+  the owner. (1) mobiThrottle's `toggle_hotkey`/`position_hotkey` defaults
+  changed from `ctrl+alt+o`/`ctrl+alt+p` to empty, so no global keyboard
+  hook is installed for users who never set one. `GlobalHotkey.set_hotkey("")`
+  already returns before installing anything. Existing configs keep their
+  saved combos, because the defaults only fill missing keys. Escape during
+  capture now cancels instead of binding "esc". (2) Scan pacing (~8 req/s)
+  is left unchanged. The "120/min" UEX limit was never confirmed, and a
+  real 205-call Retrieve Data run (~490/min) wasn't rate-limited.
+  `commodity-prices.md` claimed ~150 calls was "well under 120/min", which
+  was wrong arithmetic; that's corrected, and the `api_client.py` comment is
+  updated. If a rate limit is ever actually hit, consider an automatic
+  pause-and-resume rather than slowing every scan.
