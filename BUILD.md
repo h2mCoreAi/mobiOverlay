@@ -82,7 +82,7 @@ To test a new build without overwriting your live/stable exe:
    pyinstaller mobioverlay.spec --noconfirm --distpath dist-test
    ```
 
-2. **Copy to a test location** (e.g. `Desktop\mobiOverlay-pr11-test\`)
+2. **Copy to a separate test folder**, outside the repo and away from your live install
 
 3. **Copy your existing `config.json`** to the test folder (preserves settings)
 

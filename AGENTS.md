@@ -132,7 +132,7 @@ all 8 modules bundled inside. `config.json` and cache files persist next to the 
 4. **Test side-by-side** before merge:
    - Build to a separate folder: `pyinstaller mobioverlay.spec --distpath dist-test`
    - Copy to test location, copy `config.json`, run alongside Star Citizen
-   - **Never overwrite the owner's live `Desktop\mobiOverlay\` exe** until approved
+   - **Never overwrite the owner's live installed exe** until approved
 5. **Release flow**: tag `vX.Y.Z` on `master` → GitHub Actions publishes zip
 
 ---
