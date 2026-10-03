@@ -179,10 +179,34 @@ Icon file: `host/assets/icons/mobioverlay.png`.
 
 ## Single-instance guard (host/single_instance.py)
 
-Prevents running two mobiOverlay copies at once. Uses a Windows named mutex
-(`mobiOverlay-SingleInstance-v1`) checked at startup. If another instance holds
-the mutex, shows an error dialog and exits. This prevents duplicate global
-keyboard hooks from racing on the same hotkey.
+Prevents running two mobiOverlay copies at once. Holds an exclusive lock
+(`msvcrt.locking`) on `.mobioverlay.lock` next to the exe for the process's
+lifetime. If another instance holds it, shows an error dialog and exits. This
+prevents duplicate global keyboard hooks from racing on the same hotkey.
+The lock is released at exit, and by `MainWindow.relaunch()` before it starts
+the new process (see "Exit paths" below).
+
+## Exit paths
+
+- **✕ / tray Quit**: `MainWindow.closeEvent` saves geometry, unhooks the
+  hotkey, and calls `QApplication.quit()` explicitly. `host/main.py` sets
+  `quitOnLastWindowClosed(False)` (so closing a module popout can't quit the
+  app), which means closing the main window alone would otherwise leave an
+  invisible process running.
+- **Relaunch**: ends with `os._exit()`, which skips `aboutToQuit` and
+  `atexit`. Cleanup that must still happen (every module's `shutdown()`,
+  the single-instance lock) is registered with `MainWindow.add_before_exit()`
+  and runs before the new process is spawned.
+
+## Persistent files
+
+`config.json`, `mobinotes_data.json`, and `locations_cache.json` are written
+with `host/fileio.atomic_write_text()` (temp file + `os.replace`), so a crash
+mid-save can't truncate them. A file that fails to parse is moved aside to
+`<name>.corrupt-<timestamp>` by `quarantine_corrupt()` instead of being
+overwritten by the next save. The location cache is only written after a
+complete UEX fetch; a failed or partial fetch falls back to the older cache
+and is retried (at most every 5 minutes) on the next lookup.
 
 ## Global hotkey (host/hotkey.py)
 

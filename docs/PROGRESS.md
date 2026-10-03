@@ -7,7 +7,7 @@ One-page status. Session notes are in `docs/HISTORY.md`. Older
 
 - Latest tag: **v0.3.0** (`a08512f`, 2026-09-30), native taskbar minimize/maximize.
 - **v0.2.0** includes pill click-through and crosshair `WS_EX_TRANSPARENT` hardening (`6a494aa`).
-- Commits after `v0.3.0` are documentation and repo hygiene only. No app code has changed, and no newer build is tagged.
+- Commits after `v0.3.0` were documentation and repo hygiene only, until the 2026-10-03 code-review fixes on branch `cursor/code-review-fixes-a7c1` (see `docs/DECISIONS.md`). No newer build is tagged.
 
 ## Shipped
 
@@ -21,6 +21,7 @@ Logistics Hub may order stops with greedy nearest-neighbor plus 2-opt on real UE
 
 - Next module candidate: Item Price Lookup / Ship Outfitting (Tier 1.4 in `docs/BACKLOG.md`).
 - Performance work still open: M3, M4, and L1 in `docs/OPTIMIZATION.md`. Q1–Q4, M1, M2, and M5 are shipped.
+- mobiThrottle installs its two global hotkeys (`ctrl+alt+o`, `ctrl+alt+p`) by default, so every user gets a `WH_KEYBOARD_LL` hook even without a throttle. This conflicts with the host's lazy-install rule. Not changed yet; the owner needs to decide.
 - Human checks that were never closed are listed in `docs/HISTORY.md` (crosshair over the game, hotkey focus, relaunch after an OCR scan, grid-snap drag). They are unverified follow-ups, not new bugs.
 
 ## Working rules that are easy to miss

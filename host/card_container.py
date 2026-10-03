@@ -74,7 +74,7 @@ class CardContainer(QWidget):
             self._auto_place(card)
 
         if state.get("width") and state.get("height"):
-            card.set_manual_size(state["width"], state["height"])
+            card.set_manual_size(state["width"], state["height"], persist=False)
 
         card.set_collapsed(state.get("collapsed", False))
         initially_visible = state.get("visible", True)

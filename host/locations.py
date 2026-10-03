@@ -27,12 +27,16 @@ import logging
 import re
 import time
 
+from host.fileio import atomic_write_text
 from host.paths import app_root
 
 logger = logging.getLogger("mobioverlay.locations")
 
 CACHE_PATH = app_root() / "locations_cache.json"
 CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60  # 1 week — SC locations don't churn daily
+# Minimum gap between retries after a failed/partial UEX fetch. A full fetch
+# is ~4 calls per star system, run synchronously on the GUI thread.
+FETCH_RETRY_SECONDS = 300
 
 # Cache version: bumped when the schema or resolution logic changes in a way
 # that would make old cached data produce wrong results. A stale-versioned
@@ -86,6 +90,11 @@ class LocationService:
         # (commodity_prices, refinery_finder, multi_commodity_finder).
         # Avoids 3+ redundant API calls at startup.
         self._commodities: list[dict] | None = None
+        # Set when the last UEX fetch failed or was partial (e.g. offline at
+        # launch) — ensure_loaded() then retries, throttled, instead of
+        # staying empty for the rest of the session.
+        self._fetch_incomplete = False
+        self._last_fetch_attempt = 0.0
 
     # ------------------------------------------------------------------
     # Loading / caching
@@ -96,15 +105,25 @@ class LocationService:
         result). A no-op if already loaded this session, unless
         force_refresh is set."""
         if self._locations is not None and not force_refresh:
-            return
-        if force_refresh:
-            self._friendly_names = None
+            if not self._fetch_incomplete or time.monotonic() - self._last_fetch_attempt < FETCH_RETRY_SECONDS:
+                return
+            force_refresh = True  # last fetch failed — try the API again
+        self._friendly_names = None
         if not force_refresh and self._load_from_disk():
             return
-        self._fetch_from_api()
-        self._save_to_disk()
+        self._last_fetch_attempt = time.monotonic()
+        complete = self._fetch_from_api()
+        self._fetch_incomplete = not complete
+        if complete:
+            self._save_to_disk()
+            return
+        # Never persist a failed or partial fetch: written with a fresh
+        # timestamp, it would be trusted for the next 7 days even after the
+        # network came back. An older, complete cache beats a partial fetch.
+        if self._load_from_disk(allow_stale=True):
+            logger.warning("locations: UEX fetch incomplete — using the older cached copy for now")
 
-    def _load_from_disk(self) -> bool:
+    def _load_from_disk(self, allow_stale: bool = False) -> bool:
         if not CACHE_PATH.exists():
             return False
         try:
@@ -112,6 +131,8 @@ class LocationService:
                 payload = json.load(f)
         except (OSError, json.JSONDecodeError):
             logger.warning("locations: cache file unreadable, will refetch", exc_info=True)
+            return False
+        if not isinstance(payload, dict) or not payload.get("locations"):
             return False
 
         cache_version = payload.get("cache_version", 1)
@@ -123,7 +144,7 @@ class LocationService:
             return False
 
         fetched_at = payload.get("fetched_at", 0)
-        if time.time() - fetched_at > CACHE_MAX_AGE_SECONDS:
+        if not allow_stale and time.time() - fetched_at > CACHE_MAX_AGE_SECONDS:
             logger.info("locations: cache is stale (>%ds old), refetching", CACHE_MAX_AGE_SECONDS)
             return False
 
@@ -144,14 +165,16 @@ class LocationService:
             "locations": self._locations,
         }
         try:
-            with open(CACHE_PATH, "w", encoding="utf-8") as f:
-                json.dump(payload, f)
+            atomic_write_text(CACHE_PATH, json.dumps(payload))
         except OSError:
             logger.warning("locations: failed to write cache file", exc_info=True)
 
-    def _fetch_from_api(self):
+    def _fetch_from_api(self) -> bool:
+        """Populate the in-memory index from UEX. Returns True only if every
+        request succeeded — the caller won't cache anything less."""
         locations_by_key: dict = {}
         name_index: dict[str, dict] = {}
+        complete = True
 
         try:
             systems = self.api.get("star_systems")
@@ -160,7 +183,7 @@ class LocationService:
             self._systems = []
             self._locations = []
             self._name_index = {}
-            return
+            return False
 
         self._systems = systems
 
@@ -175,6 +198,7 @@ class LocationService:
                         "locations: could not fetch %s for system %s",
                         endpoint, system.get("name"), exc_info=True,
                     )
+                    complete = False
                     continue
                 for row in rows:
                     row["_endpoint"] = endpoint
@@ -191,6 +215,7 @@ class LocationService:
             "locations: resolved %d unique locations (%d searchable names) from UEX API",
             len(self._locations), len(name_index),
         )
+        return complete and bool(self._locations)
 
     def _rebuild_name_index(self):
         index: dict[str, dict] = {}
@@ -843,8 +868,10 @@ class LocationService:
         try:
             self._commodities = self.api.get("commodities")
         except Exception:
+            # Not cached: an empty list stored here would leave every
+            # commodity picker blank until the app is restarted.
             logger.warning("locations: could not fetch commodities from UEX API", exc_info=True)
-            self._commodities = []
+            return []
         return self._commodities
 
     def visible_commodity_names(self) -> list[str]:

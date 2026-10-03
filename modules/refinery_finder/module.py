@@ -135,6 +135,19 @@ class RefineryFinderModule(ModuleBase):
         self.system_combo.setCurrentText(saved_system if saved_system else ALL_SYSTEMS)
         self.system_combo.blockSignals(False)
 
+    def _repopulate_system_filter(self):
+        """Fill the system dropdown from the systems that actually report
+        yields. It used to hold only ALL_SYSTEMS, so the filter (and the
+        saved system_filter setting) could never be used."""
+        systems = sorted({r["star_system_name"] for r in self._last_yield_rows if r.get("star_system_name")})
+        saved = self.settings.get("system_filter") or ALL_SYSTEMS
+        self.system_combo.blockSignals(True)
+        self.system_combo.clear()
+        self.system_combo.addItem(ALL_SYSTEMS)
+        self.system_combo.addItems(systems)
+        self.system_combo.setCurrentText(saved if saved in systems else ALL_SYSTEMS)
+        self.system_combo.blockSignals(False)
+
     def _on_commodity_changed(self, _name: str):
         self.request_refresh and self.request_refresh()
 
@@ -151,17 +164,22 @@ class RefineryFinderModule(ModuleBase):
         are static reference data (refining method names, yield/cost/speed
         ratings) that don't change during a session — no need to re-fetch
         on every refresh."""
-        if self._methods is not None:
+        if self._methods:
             return
         try:
             self._methods = self.api.get("refineries_methods")
         except Exception:
-            self._methods = []
+            # Left unset so the next refresh retries — an empty list cached
+            # here showed "not loaded yet" for the rest of the session.
+            pass
 
     def refresh(self):
+        if self.combo.count() == 0:
+            # Commodity list couldn't be fetched at startup — retry it.
+            self._populate_commodities()
         name = self.combo.currentText()
         if not name:
-            raise ValueError("No raw commodity selected")
+            raise ValueError("No raw commodity selected — the commodity list couldn't be loaded from UEX yet")
 
         # Confirmed live (2026-09-06): `id_commodity` does NOT filter this
         # endpoint server-side despite looking like a real query param —
@@ -176,6 +194,7 @@ class RefineryFinderModule(ModuleBase):
         }
         self._ensure_methods()
         self._render_methods()
+        self._repopulate_system_filter()
         self._render_results()
 
         self.timestamp_label.setText("UPDATED " + time.strftime("%H:%M:%S"))
@@ -200,7 +219,10 @@ class RefineryFinderModule(ModuleBase):
         if commodity is None:
             return
 
-        rows = [r for r in self._last_yield_rows if r.get("id_commodity") == commodity["id"]]
+        rows = [
+            r for r in self._last_yield_rows
+            if r.get("id_commodity") == commodity["id"] and r.get("value") is not None
+        ]
         system = self.system_combo.currentText()
         if system != ALL_SYSTEMS:
             rows = [r for r in rows if r.get("star_system_name") == system]
@@ -278,13 +300,13 @@ class RefineryFinderModule(ModuleBase):
     # ------------------------------------------------------------------
     def _render_methods(self):
         self._clear_layout(self._methods_layout)
-        methods = sorted(self._methods or [], key=lambda m: m.get("name", ""))
+        methods = sorted(self._methods or [], key=lambda m: m.get("name") or "")
         if not methods:
             self._methods_layout.addWidget(self._info_label("Methods data not loaded yet."))
             return
         for m in methods:
             row = QLabel(
-                f"{m.get('name', '?'):<24} YIELD {m.get('rating_yield', '?')}/3 · "
+                f"{m.get('name') or '?':<24} YIELD {m.get('rating_yield', '?')}/3 · "
                 f"COST {m.get('rating_cost', '?')}/3 · SPEED {m.get('rating_speed', '?')}/3"
             )
             row.setStyleSheet(_METHOD_ROW_STYLE)

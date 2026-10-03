@@ -210,9 +210,13 @@ class CommodityPricesModule(ModuleBase):
         self._apply_filters()
 
     def refresh(self):
+        if self.combo.count() == 0:
+            # The commodity list couldn't be fetched at startup (offline,
+            # UEX down) — retry it here rather than stay empty all session.
+            self._populate_commodities()
         name = self.combo.currentText()
         if not name:
-            raise ValueError("No commodity selected")
+            raise ValueError("No commodity selected — the commodity list couldn't be loaded from UEX yet")
 
         # An empty result is a legitimate state (some commodities genuinely
         # have no active listings right now), not an error — _apply_filters
@@ -266,11 +270,11 @@ class CommodityPricesModule(ModuleBase):
         # a real price_sell most of the time (UEX doesn't reliably track
         # sell-side demand caps the way it tracks source stock), so
         # requiring it would wrongly reject genuinely good sell terminals.
-        sell_rows = [r for r in self._last_rows if r.get("price_sell", 0) > 0]
+        sell_rows = [r for r in self._last_rows if (r.get("price_sell") or 0) > 0]
         if sell_system != ALL_SYSTEMS:
             sell_rows = [r for r in sell_rows if r.get("star_system_name") == sell_system]
 
-        buy_rows = [r for r in self._last_rows if r.get("price_buy", 0) > 0 and r.get("scu_buy", 0) > 0]
+        buy_rows = [r for r in self._last_rows if (r.get("price_buy") or 0) > 0 and (r.get("scu_buy") or 0) > 0]
         if buy_system != ALL_SYSTEMS:
             buy_rows = [r for r in buy_rows if r.get("star_system_name") == buy_system]
 
@@ -415,11 +419,11 @@ class CommodityPricesModule(ModuleBase):
         # that found this.
         results: dict[str, float] = {}
         for name, rows in self._all_commodity_data.items():
-            sell_rows = [r for r in rows if r.get("price_sell", 0) > 0]
+            sell_rows = [r for r in rows if (r.get("price_sell") or 0) > 0]
             if sell_system != ALL_SYSTEMS:
                 sell_rows = [r for r in sell_rows if r.get("star_system_name") == sell_system]
 
-            buy_rows = [r for r in rows if r.get("price_buy", 0) > 0 and r.get("scu_buy", 0) > 0]
+            buy_rows = [r for r in rows if (r.get("price_buy") or 0) > 0 and (r.get("scu_buy") or 0) > 0]
             if buy_system != ALL_SYSTEMS:
                 buy_rows = [r for r in buy_rows if r.get("star_system_name") == buy_system]
 

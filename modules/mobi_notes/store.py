@@ -12,6 +12,7 @@ import time
 import uuid
 from pathlib import Path
 
+from host.fileio import atomic_write_text, quarantine_corrupt
 from host.paths import app_root
 
 SCHEMA_VERSION = 1
@@ -35,14 +36,24 @@ class NotesStore:
             return
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            self._notes = []
-            return
-        self._notes = raw.get("notes", [])
+        except OSError:
+            # Unreadable right now (locked by a sync client, permissions) but
+            # not known-bad — refuse to start from an empty list, since the
+            # next save() would overwrite every real note with it.
+            raise
+        except json.JSONDecodeError:
+            raw = None
+        notes = raw.get("notes") if isinstance(raw, dict) else None
+        if not isinstance(notes, list):
+            # Corrupt: keep a copy for manual recovery before the next
+            # save() replaces it.
+            quarantine_corrupt(self.path)
+            notes = []
+        self._notes = notes
 
     def save(self):
         payload = {"schema_version": SCHEMA_VERSION, "notes": self._notes}
-        self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        atomic_write_text(self.path, json.dumps(payload, indent=2))
 
     # -- mutation -----------------------------------------------------------
     def add(self, page: str, title: str, body: str, tags: list[str], pinned: bool = False) -> dict:

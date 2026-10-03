@@ -2,6 +2,7 @@
 CardContainer, the tray for stowed (hidden) cards, and Settings.
 """
 import ctypes
+import logging
 import subprocess
 from ctypes import wintypes
 
@@ -155,6 +156,18 @@ def _ensure_on_screen(x: int, y: int, w: int, h: int,
     return x, y
 
 
+def _saved_geometry(saved, keys: tuple[str, ...]) -> tuple[int, ...] | None:
+    """A saved geometry dict from config as a tuple, or None if it's missing
+    or incomplete (a partial dict used to raise KeyError and stop the
+    window being built at all)."""
+    if not isinstance(saved, dict):
+        return None
+    try:
+        return tuple(int(saved[k]) for k in keys)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 class _TrayRow(QWidget):
     """One stowed card's row in the tray panel — click anywhere to deploy it."""
 
@@ -193,6 +206,9 @@ class _TrayPanel(QWidget):
 
     def __init__(self, main_window: "MainWindow"):
         super().__init__(main_window, Qt.Popup)
+        # A fresh panel is built on every click — without this each closed
+        # one stayed alive as a hidden child of MainWindow for the session.
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             _TrayPanel {{ background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; }}
@@ -279,8 +295,18 @@ class _HotkeyField(QLineEdit):
         self.setReadOnly(True)
         self.setAlignment(Qt.AlignCenter)
         self._capturing = False
+        self._capture_cancelled = False
         self._capture_handles = []  # keeps in-flight capture signal-holder QObjects alive
         self._show_current()
+
+    def hideEvent(self, event):
+        # keyboard.read_hotkey() can't be cancelled, so a capture started
+        # here keeps listening after the Settings popup closes. Without
+        # this, the next key pressed anywhere (e.g. W, in-game) would be
+        # saved as the global Stow/Deploy hotkey.
+        if self._capturing:
+            self._capture_cancelled = True
+        super().hideEvent(event)
 
     def _show_current(self):
         display = self._win.config.data["ui"].get("hotkey_display") or ""
@@ -294,6 +320,7 @@ class _HotkeyField(QLineEdit):
         if self._capturing:
             return
         self._capturing = True
+        self._capture_cancelled = False
         self.setText("Press a key combo…")
         handle = self._win.capture_hotkey_combo(
             lambda combo: self._on_captured(handle, combo),
@@ -304,6 +331,8 @@ class _HotkeyField(QLineEdit):
     def _on_captured(self, handle, combo: str):
         self._capture_handles.remove(handle)
         self._capturing = False
+        if self._capture_cancelled:
+            return
         if not combo or combo.lower() == "esc":
             self._show_current()  # Escape cancels rather than becoming the hotkey
             return
@@ -316,6 +345,8 @@ class _HotkeyField(QLineEdit):
     def _on_capture_error(self, handle, message: str):
         self._capture_handles.remove(handle)
         self._capturing = False
+        if self._capture_cancelled:
+            return
         self._flash("Capture failed — try again")
 
 
@@ -325,6 +356,9 @@ class _SettingsPanel(QWidget):
 
     def __init__(self, main_window: "MainWindow"):
         super().__init__(main_window, Qt.Popup)
+        # A fresh panel is built on every click — without this each closed
+        # one stayed alive as a hidden child of MainWindow for the session.
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             _SettingsPanel {{ background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; }}
@@ -756,21 +790,28 @@ class MainWindow(QWidget):
         self._geometry_save_timer.setSingleShot(True)
         self._geometry_save_timer.timeout.connect(self._save_tracked_geometry)
 
-        pre_stow = config.data["ui"].get("pre_stow_geometry") or {}
-        self._pre_stow_geometry: tuple[int, int, int, int] | None = (
-            (pre_stow["x"], pre_stow["y"], pre_stow["width"], pre_stow["height"])
-            if pre_stow else None
+        self._pre_stow_geometry: tuple[int, int, int, int] | None = _saved_geometry(
+            config.data["ui"].get("pre_stow_geometry"), ("x", "y", "width", "height")
         )
-        pill_geo = config.data["ui"].get("pill_geometry") or {}
-        self._pill_geometry: tuple[int, int] | None = (
-            (pill_geo["x"], pill_geo["y"]) if pill_geo else None
+        self._pill_geometry: tuple[int, int] | None = _saved_geometry(
+            config.data["ui"].get("pill_geometry"), ("x", "y")
         )
         self._pill_click_through = config.data["ui"].get("pill_click_through", False)
+        # Set when stowing a maximized window, so deploy can re-maximize.
+        self._stowed_from_maximized = False
 
-        geo = config.data["ui"].get("window_geometry") or {}
-        self.resize(geo.get("width", 680), geo.get("height", 560))
         default_x, default_y = _default_launch_position()
-        self.move(geo.get("x", default_x), geo.get("y", default_y))
+        x, y, width, height = _saved_geometry(
+            config.data["ui"].get("window_geometry"), ("x", "y", "width", "height")
+        ) or (default_x, default_y, 680, 560)
+        self.resize(width, height)
+        # A saved spot on a monitor that's since been unplugged or
+        # rearranged would open the window somewhere invisible. Fall back
+        # to the same non-primary default as a first launch — never the
+        # primary (gaming) monitor just because the saved one is gone.
+        if QGuiApplication.screenAt(QPoint(x + 20, y + 20)) is None:
+            x, y = default_x, default_y
+        self.move(x, y)
         self._geometry_tracking_ready = True
 
         # Global (system-wide) Stow/Deploy hotkey — works even while the
@@ -781,9 +822,19 @@ class MainWindow(QWidget):
             self._hotkey.set_hotkey(saved_combo, self.toggle_app_stow)
 
         # System tray icon — recovery affordance for when users forget the
-        # hotkey or lose the stowed pill. Qt.Tool excludes this window from
-        # the taskbar intentionally; the tray provides the alternative.
+        # hotkey or lose the stowed pill.
         self._tray = _SystemTray(self)
+
+        # Run by relaunch() before it hard-exits — see add_before_exit().
+        self._before_exit_callbacks: list = []
+        self._exiting = False
+
+    def add_before_exit(self, callback):
+        """Register cleanup that must run before this process exits.
+        relaunch() ends with os._exit(), which skips app.aboutToQuit and
+        atexit, so anything hooked only there (module shutdown(), the
+        single-instance lock) has to be registered here too."""
+        self._before_exit_callbacks.append(callback)
 
     def toggle_collapse_all(self):
         self._all_collapsed = not self._all_collapsed
@@ -839,6 +890,10 @@ class MainWindow(QWidget):
             self.showMaximized()
 
     def _save_tracked_geometry(self):
+        # The debounce can fire after a stow began (e.g. a resize right
+        # before stowing) — that would record the pill as the deployed size.
+        if self._app_stowed or self.isMaximized():
+            return
         self._pre_stow_geometry = (self.x(), self.y(), self.width(), self.height())
         self.config.data["ui"]["pre_stow_geometry"] = {
             "x": self.x(), "y": self.y(), "width": self.width(), "height": self.height(),
@@ -864,6 +919,17 @@ class MainWindow(QWidget):
     def stow_app(self):
         if self._app_stowed:
             return
+        # A maximized window ignores resize() — stowing it as-is left a
+        # full-screen "pill", and saved the maximized size as the size to
+        # restore to. Restore first; toggle_maximize() already saved the
+        # real pre-maximize geometry, and deploy_app() re-maximizes.
+        self._stowed_from_maximized = self.isMaximized()
+        if self._stowed_from_maximized:
+            self.showNormal()
+            if self._pre_stow_geometry:
+                x, y, w, h = self._pre_stow_geometry
+                self.setGeometry(x, y, w, h)
+        self._geometry_save_timer.stop()
         pre_stow_x, pre_stow_y = self.x(), self.y()
         self._pre_stow_geometry = (pre_stow_x, pre_stow_y, self.width(), self.height())
         self.config.data["ui"]["pre_stow_geometry"] = {
@@ -916,6 +982,9 @@ class MainWindow(QWidget):
             self.move(x, y)
             self.resize(w, h)
         self.save_current_position()
+        if self._stowed_from_maximized:
+            self._stowed_from_maximized = False
+            self.showMaximized()
         self._tray.update_menu_state(is_stowed=False)
         self._take_foreground_focus()
 
@@ -1076,7 +1145,12 @@ class MainWindow(QWidget):
         # this one's window_geometry save had actually landed.
         self._save_window_geometry()
         self._hotkey.shutdown()
+        # Module shutdown() and the single-instance lock release are only
+        # hooked to aboutToQuit/atexit, which os._exit() below skips — run
+        # them now, before the new process can race for the same lock.
+        self._run_before_exit_callbacks()
         subprocess.Popen(relaunch_command(), cwd=str(app_root()))
+        self._exiting = True
         self.close()
         # Not just self.close(): the Settings panel that owns this button
         # is itself a live top-level widget (Qt.Popup with WA_StyledBackground
@@ -1099,12 +1173,22 @@ class MainWindow(QWidget):
         # If stowed, self.x()/y()/width()/height() describe the tiny pill,
         # not a size worth reopening at next launch — save the geometry
         # from before it was stowed instead.
-        if self._app_stowed and self._pre_stow_geometry:
+        # Same for maximized: the fill-the-screen size isn't the size to
+        # reopen at (toggle_maximize() saved the real one).
+        if (self._app_stowed or self.isMaximized()) and self._pre_stow_geometry:
             x, y, w, h = self._pre_stow_geometry
         else:
             x, y, w, h = self.x(), self.y(), self.width(), self.height()
         self.config.data["ui"]["window_geometry"] = {"x": x, "y": y, "width": w, "height": h}
         self.config.save()
+
+    def _run_before_exit_callbacks(self):
+        callbacks, self._before_exit_callbacks = self._before_exit_callbacks, []
+        for callback in callbacks:
+            try:
+                callback()
+            except Exception:
+                logging.getLogger("mobioverlay").exception("Before-exit cleanup failed")
 
     def closeEvent(self, event):
         self._save_window_geometry()
@@ -1115,3 +1199,12 @@ class MainWindow(QWidget):
         self._hotkey.shutdown()
         self._tray.shutdown()
         super().closeEvent(event)
+        # host/main.py sets quitOnLastWindowClosed(False) so closing a
+        # module's popout can't quit the app. That also meant the ✕ button
+        # only hid this window: the process kept running invisibly, with
+        # no tray icon, still holding the single-instance lock, so the
+        # next launch said "already running". Closing the main window is
+        # always a real exit.
+        if not self._exiting:
+            self._exiting = True
+            QApplication.instance().quit()

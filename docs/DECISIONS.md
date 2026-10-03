@@ -7680,3 +7680,67 @@ by an automated check.
   references to the owner's specific local install paths, and gitignored
   local build/runtime leftovers (`dist-test/`, `release/`,
   `freeze-build*.log`, `.mobioverlay.lock`) — they are not project files.
+
+- **2026-10-03 — Code review: exit, persistence, and resilience fixes.**
+  A full review of `host/` and every module before new feature work. Fixed:
+  1. **✕ left an invisible process running.** `quitOnLastWindowClosed(False)`
+     (2026-09-04) meant closing `MainWindow` only hid it. `closeEvent` already
+     removed the tray icon, so the process was unreachable and kept the
+     single-instance lock ("already running" on next launch).
+     `closeEvent` now calls `QApplication.quit()`.
+  2. **Relaunch skipped module `shutdown()`** and released the
+     single-instance lock only at process death, after the new process had
+     been spawned. Added `MainWindow.add_before_exit()`. `main.py` registers
+     module shutdown (now idempotent) and the lock release there, and
+     `relaunch()` runs them before `Popen`.
+  3. **An abandoned hotkey capture could bind a gameplay key.**
+     `keyboard.read_hotkey()` can't be cancelled. Closing Settings
+     mid-capture left it listening, and the next key pressed anywhere
+     became the global Stow/Deploy hotkey. `_HotkeyField.hideEvent` now
+     marks the capture cancelled. The Settings and Tray popups now set
+     `WA_DeleteOnClose` (each click used to leak a hidden panel).
+  4. **Data-loss paths on corrupt/partial files.** `config.json`,
+     `mobinotes_data.json` and `locations_cache.json` were written with a
+     truncating `open("w")`. A corrupt notes file was loaded as an empty
+     list, and the next save wiped every note. Added `host/fileio.py` with
+     atomic writes and `quarantine_corrupt()`. `NotesStore.load()` now
+     raises on a transient read error instead of starting empty.
+     `Config.save()` logs failures instead of raising into UI slots.
+  5. **Offline at launch poisoned the location cache for 7 days.** A failed
+     or partial UEX fetch was saved with a fresh timestamp. Only complete
+     fetches are saved now, with a fallback to an older complete cache and
+     a throttled retry (`FETCH_RETRY_SECONDS`). A failed `commodities`
+     fetch is no longer cached as `[]` for the session. Commodity Prices,
+     Refinery Finder and Multi-Commodity Finder repopulate an empty picker
+     on refresh.
+  6. **Rate limits reported as HTTP errors were missed.** HTTP 429 (or an
+     error body with `requests_limit_reached`) now raises
+     `UexRateLimitError`, so the scan loops stop instead of firing into the
+     limit. A non-dict payload raises `UexApiError` instead of
+     `AttributeError`. Expired dedupe-cache entries are pruned.
+  7. **Smaller fixes.**
+     - Refinery Finder's system filter was never populated (it only ever
+       held "All Systems").
+     - Null `price_*`/`scu_*`/`profit`/`value` fields from UEX raised
+       `TypeError` in the comparisons.
+     - Stowing while maximized produced a full-screen "pill", and deploy
+       now re-maximizes. Closing while maximized saved the full-screen
+       size as the size to reopen at.
+     - A saved window position on a disconnected monitor now falls back
+       to the non-primary default.
+     - A partial geometry dict in config raised `KeyError` while the
+       window was being built.
+     - Card resize saved config on every mouse move; it now saves once
+       on release.
+     - Logistics Hub's OCR import catches non-`ImportError` failures
+       (which left SCAN disabled for good).
+     - Logistics Hub's debug log rotates at 5 MB (completed log untouched).
+     - The UI-state tests were silently skipped because the test called
+       `.click()` on `_ReminderBanner` (a `QLabel` since `6a494aa`). The
+       banner now has `click()`.
+  Docs: `ARCHITECTURE.md` described the single-instance guard as a named
+  mutex; it is a lockfile. Corrected, and added exit-path and
+  persistent-file sections. New `tests/test_core_persistence.py`.
+  **Not changed (needs the owner):** mobiThrottle's default hotkeys install
+  a global keyboard hook for every user; Commodity Prices' Retrieve Data
+  paces at ~8 req/s, above the 120/min limit noted in `api_client.py`.

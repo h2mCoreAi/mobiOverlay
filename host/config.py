@@ -3,9 +3,13 @@
 Schema documented in docs/ARCHITECTURE.md.
 """
 import json
+import logging
 from pathlib import Path
 
+from host.fileio import atomic_write_text, quarantine_corrupt
 from host.paths import app_root
+
+logger = logging.getLogger("mobioverlay.config")
 
 CONFIG_PATH = app_root() / "config.json"
 
@@ -47,7 +51,11 @@ def _deep_merge_defaults(data: dict, defaults: dict) -> dict:
     for key, value in defaults.items():
         if key not in data:
             data[key] = value
-        elif isinstance(value, dict) and isinstance(data[key], dict):
+        elif isinstance(value, dict) and not isinstance(data[key], dict):
+            # A hand-edited or damaged section (e.g. "ui": null) would
+            # otherwise crash every data["ui"][...] lookup at startup.
+            data[key] = value
+        elif isinstance(value, dict):
             _deep_merge_defaults(data[key], value)
     return data
 
@@ -58,19 +66,28 @@ class Config:
         self.data = self._load()
 
     def _load(self) -> dict:
+        data = {}
         if self.path.exists():
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-            except (json.JSONDecodeError, OSError):
+            except json.JSONDecodeError:
+                quarantine_corrupt(self.path)
+            except OSError:
+                logger.warning("Could not read %s — using defaults", self.path, exc_info=True)
+            if not isinstance(data, dict):
+                quarantine_corrupt(self.path)
                 data = {}
-        else:
-            data = {}
         return _deep_merge_defaults(data, json.loads(json.dumps(DEFAULT_CONFIG)))
 
     def save(self) -> None:
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        # Never raises: save() is called from dozens of UI slots, and a
+        # transient write failure (file locked by a sync client, disk full)
+        # shouldn't break whatever the user just clicked.
+        try:
+            atomic_write_text(self.path, json.dumps(self.data, indent=2))
+        except (OSError, TypeError, ValueError):
+            logger.warning("Failed to save %s", self.path, exc_info=True)
 
     # -- module-namespaced settings --
     def module_settings(self, module_id: str) -> dict:
