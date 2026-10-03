@@ -3,6 +3,9 @@
 ## Status: v0.2.0 ready for release — all 8 modules built and live-verified,
 ## optimization pass complete (M2 background OCR, M5 API dedupe), location
 ## service hardened with hauling-specific resolution and availability filtering.
+## Three more features shipped since the v0.2.0 docs pass (pill click-through,
+## crosshair click-through hardening, native taskbar minimize/maximize) — see
+## "Since v0.2.0" below. No new version tag cut yet for these.
 
 ---
 
@@ -49,6 +52,48 @@ Summary of changes shipping in v0.2.0 since the initial v0.1.0 release:
 - `tests/test_api_client_dedupe.py` — unit tests for M5 deduplication
 - `tests/test_logistics_hub_parsing.py` — extended with hauling resolution fixtures
   (19 checks for Admin promotion, alias support, availability filtering)
+
+---
+
+## Since v0.2.0 (not yet tagged)
+
+Three features shipped in commits `6a494aa` (2026-09-19) and `a08512f`
+(2026-09-30) without a corresponding DECISIONS.md/ARCHITECTURE.md entry at
+the time — found and backfilled during a 2026-10-03 documentation audit
+(the code was already correct and working; only the docs were missing).
+
+- **Pill click-through** (`pill_click_through` setting, default OFF) — a
+  new "PILL CLICK-THROUGH" toggle in Settings makes the stowed pill pass
+  all mouse events straight through to the game via a direct
+  `WS_EX_TRANSPARENT` Win32 style (`MainWindow._apply_native_click_through()`),
+  the same technique mobiThrottle's bar already uses for its own
+  click-through toggle. ON means the pill can't be dragged or clicked at
+  all (not even its own close button) — redeploy via the Stow/Deploy
+  hotkey or the system tray icon only. Always force-cleared on deploy, so
+  the full-size window is never left unable to receive mouse input.
+  Verified headlessly: setting persists to `config.json`, and the native
+  attribute flips correctly in both directions across stow/deploy. Later
+  hardened further for multi-monitor gaps — see the pill-positioning
+  entries in DECISIONS.md, 2026-09-20.
+- **Crosshair click-through hardened** — `_CrosshairOverlay.showEvent()`
+  now also sets `WS_EX_TRANSPARENT` directly via Win32 on every show, on
+  top of the existing `WA_TransparentForMouseEvents` attribute (set once
+  at construction, before the window is ever shown — already the
+  documented-reliable case, since Qt only loses that attribute on a
+  *later* toggle of an already-shown window, which this overlay never
+  does). Belt-and-suspenders, not a bug fix for an observed failure — see
+  docs/modules/crosshair.md.
+- **Native taskbar minimize/maximize** — `MainWindow` switched from
+  `Qt.Tool` to `Qt.Window | Qt.WindowMinMaxButtonsHint`, giving it a real
+  Windows taskbar entry/icon plus title-bar minimize (`🗕`) and maximize
+  (`🗖`/`🗗`) buttons alongside the existing Stow-to-pill button, double-
+  click-to-maximize on the title bar. Geometry persistence guards against
+  a maximized fill-screen size ever overwriting the user's saved
+  size/position. See ARCHITECTURE.md's "Native taskbar minimize/maximize"
+  section — this also supersedes the "`Qt.Tool` deliberately excludes the
+  overlay from the taskbar" reasoning the system tray icon was originally
+  added under (DECISIONS.md, 2026-09-20); the tray icon stays as an
+  additional recovery path, no longer the only one.
 
 ---
 
@@ -961,14 +1006,16 @@ Summary of changes shipping in v0.2.0 since the initial v0.1.0 release:
   the real running app — worth a quick real-mouse pass next time the
   app can be launched without interrupting a play session.
 
-- **Known issue: accept reminder banner clips in the Tracker popout
-  instead of wrapping.** Noted 2026-09-08 by the user, live-testing —
-  the popout's `QPushButton` reminder banner (see DECISIONS.md,
-  2026-09-08, "mirrors onto the Tracker popout") doesn't wrap its text
-  to the window width the way the card's copy does; a narrow popout
-  clips the message instead of growing/wrapping. Needs a fix (likely:
-  word-wrap enabled on the button label, or swap to a QLabel-styled-as-
-  button if QPushButton text wrapping proves unreliable) — not done yet.
+- **FIXED (2026-09-19): accept reminder banner clips in the Tracker
+  popout instead of wrapping.** The issue noted below from 2026-09-08
+  (`QPushButton` doesn't wrap text, clipping the message in a narrow
+  popout) was fixed by replacing both reminder-banner instances (card and
+  popout) with a new `_ReminderBanner(QLabel)` — real word-wrap via
+  `setWordWrap(True)`, with a `mousePressEvent` override that preserves
+  the original "any click anywhere on it dismisses" behavior a
+  `QPushButton` gave for free. Shipped in the same commit as the
+  crosshair/pill click-through hardening below but never written up at
+  the time — documented retroactively during a 2026-10-03 doc audit.
 
 - **OCR pipeline optimization pass — in progress, incremental, one
   change at a time per user direction.** Noted 2026-09-06 per user

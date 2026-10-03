@@ -28,6 +28,16 @@ card in the normal card system to show/hide it and nudge its position in
   main overlay window itself, see `feedback_gui_testing_dont_touch_gaming_monitor`
   in memory) — the primary display is the gaming monitor here, which is
   exactly where a crosshair needs to be centered.
+- **Click-through hardened (2026-09-19):** `_CrosshairOverlay.showEvent()`
+  now also sets the real `WS_EX_TRANSPARENT` extended window style directly
+  via Win32 (`GetWindowLongW`/`SetWindowLongW`) on every show, the same
+  direct-HWND fix mobiThrottle's bar uses for its own click-through toggle.
+  `WA_TransparentForMouseEvents` alone (set once in `__init__`, before this
+  window is ever shown) was already the documented-reliable case — Qt only
+  loses that attribute on a *later* toggle of an already-shown window, which
+  this overlay never does — but reapplying the native bit on every
+  `showEvent` closes even that remaining edge case (e.g. a fresh native
+  handle after a hide/show cycle) for zero added risk. See DECISIONS.md.
 
 ## Verified
 
@@ -47,11 +57,14 @@ card in the normal card system to show/hide it and nudge its position in
 
 ## Not yet verified
 
-- Click-through behavior (`WA_TransparentForMouseEvents`) against a real
-  mouse click while the game is running underneath it — this session's
-  established caution around not risking stray clicks into the live game
-  meant this wasn't tested with an actual click, only reasoned about from
-  documented Qt behavior for top-level windows
+- Click-through behavior against a real mouse click while the game is
+  running underneath it — this session's established caution around not
+  risking stray clicks into the live game meant this wasn't tested with an
+  actual click, only reasoned about from documented Qt/Win32 behavior for
+  top-level windows. The mechanism itself is now doubly hardened (Qt
+  attribute + direct `WS_EX_TRANSPARENT`, see above), but a human clicking
+  through the reticle onto a real in-game target is still the only test
+  that closes this out for good.
 - Whether it stays on top of Star Citizen specifically the same way the
   main overlay window does (same window-flag pattern, so expected to
   work, but not independently confirmed with the game running)

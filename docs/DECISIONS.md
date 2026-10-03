@@ -7579,3 +7579,89 @@ by an automated check.
   **Build**: `pyinstaller mobioverlay.spec --noconfirm` → `dist/mobiOverlay.exe`
   (~333 MB with CPU-only torch). Tag `v0.2.0` on master triggers GitHub Actions
   release workflow.
+
+- **2026-10-03 — Documentation audit: four features from commits `6a494aa`
+  (2026-09-19) and `a08512f` (2026-09-30) backfilled into the docs.** The
+  code for all four was already correct, committed, and (per the commit
+  messages) tested — only the DECISIONS.md/ARCHITECTURE.md writeups never
+  actually happened, despite `6a494aa`'s own commit message claiming
+  "document the work in DECISIONS/PROGRESS" (that commit's doc diff covers
+  only Multi-Commodity Finder and two small COPY-button fixes; the other
+  three changes below rode along in the same commit with no doc entry at
+  all). Found while reviewing the project after a folder move
+  (`C:\Users\mhoward\mobiOverlay` → `D:\Documents\Mitch\Star
+  Citizen\mobiOverlay`) surfaced a request for two "new" features that
+  turned out to already be shipped.
+
+  1. **Pill click-through** (`6a494aa`) — new `pill_click_through` setting
+     (default `False`) and a "PILL CLICK-THROUGH" toggle in `_SettingsPanel`.
+     `MainWindow._apply_native_click_through(enabled)` sets/clears the real
+     `WS_EX_TRANSPARENT` extended window style directly via
+     `GetWindowLongW`/`SetWindowLongW` on the window's own HWND — the same
+     direct-Win32 technique mobiThrottle's bar already uses for its own
+     click-through toggle (see the 2026-09-08 "click-through toggle" entry
+     above), chosen for the same reason: Qt's `WA_TransparentForMouseEvents`
+     attribute doesn't reliably re-push into the native window style when
+     toggled on an already-shown top-level widget on this Qt/Windows combo.
+     Applied in `stow_app()` (using whatever the setting currently is) and
+     force-cleared in `deploy_app()` *before* anything else runs, so a
+     redeployed full-size window can never end up stuck unable to receive
+     mouse input regardless of the setting. With it ON, the pill can't be
+     dragged or even have its own close button clicked — the Stow/Deploy
+     hotkey or the system tray icon are the only way back. Verified
+     headlessly: the setting round-trips through `config.json`, and
+     `WA_TransparentForMouseEvents` reads `True`/`False` correctly across a
+     stow/deploy cycle. (The multi-monitor pill-positioning follow-up fixes
+     dated 2026-09-20, above, already document themselves correctly — they
+     just assumed the reader already knew this setting existed.)
+  2. **Crosshair click-through hardened** (`6a494aa`) — added
+     `_CrosshairOverlay.showEvent()`, which applies the same direct
+     `WS_EX_TRANSPARENT` Win32 fix as #1 above, reapplied on every show.
+     This is belt-and-suspenders, not a response to an observed failure:
+     the reticle sets `WA_TransparentForMouseEvents` once in `__init__`,
+     before the window is ever shown, which is the documented-reliable case
+     for that Qt attribute (mobiThrottle's bug, by contrast, was a *later*
+     toggle on an already-shown window — the reticle never does that).
+     Reapplying the native bit on every `showEvent` closes the one
+     remaining edge case (a fresh native handle after a hide/show cycle)
+     for negligible cost. See docs/modules/crosshair.md.
+  3. **Logistics Hub accept-reminder banner now actually word-wraps**
+     (`6a494aa`) — new `_ReminderBanner(QLabel)` replaces the plain
+     `QPushButton` both the card and the Tracker popout used for the
+     accept-reminder banner, fixing the clipping-instead-of-wrapping bug
+     noted in docs/PROGRESS.md on 2026-09-08. `QPushButton` doesn't wrap
+     its label text regardless of stylesheet; `QLabel.setWordWrap(True)`
+     does. `_ReminderBanner.mousePressEvent()` preserves the original
+     "any click anywhere on it dismisses" behavior a `QPushButton` gave
+     for free, which a bare `QLabel` wouldn't have on its own.
+  4. **Native taskbar minimize/maximize** (`a08512f`) — `MainWindow`'s
+     window flags switched from `Qt.Tool` to `Qt.Window |
+     Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint |
+     Qt.WindowMinMaxButtonsHint`, giving it a real taskbar entry and icon.
+     Added title-bar minimize (`🗕`, wired to `showMinimized()`) and
+     maximize/restore (`🗖`/`🗗`, `toggle_maximize()`) buttons alongside the
+     existing Stow-to-pill button, plus double-click-to-maximize on the
+     title bar. `toggle_maximize()` explicitly snapshots pre-maximize
+     geometry before calling `showMaximized()`, since the existing
+     `resizeEvent` geometry-autosave path already skips saving while
+     `isMaximized()` is true (added specifically so a maximized
+     fill-the-screen size could never silently overwrite the user's real
+     saved size/position) — `toggle_maximize()` is therefore the *only*
+     place "restore to" geometry gets captured for a maximize, unlike every
+     other resize which the debounced autosave already covers.
+     `app.setQuitOnLastWindowClosed(False)` in `host/main.py` (originally
+     justified by `Qt.Tool` being excluded from Qt's "last window"
+     tracking — see the 2026-09-04 Relaunch-adjacent entry) was re-justified
+     in the same commit against the new `Qt.Window` flag instead, since the
+     actual risk it guards against (closing a module's own popout window
+     while MainWindow is merely minimized/stowed) doesn't depend on which
+     window-type flag MainWindow uses.
+     **Supersedes** the "why tray, not taskbar" reasoning the system tray
+     icon was added under (2026-09-20, above): that entry's claim that
+     `Qt.Tool` "deliberately" excludes the overlay from the taskbar is no
+     longer how the app behaves — the overlay now has a normal taskbar
+     presence by design, and the tray icon is kept as an *additional*
+     recovery affordance (for when the window is stowed-to-pill or
+     minimized-to-taskbar and the user doesn't remember the hotkey),
+     not the only one. Not re-editing that 2026-09-20 entry since this log
+     is append-only — this entry is the correction.

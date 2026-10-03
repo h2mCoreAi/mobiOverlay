@@ -147,6 +147,25 @@ it's clamped to a visible area with a 10px margin.
 whether the stowed pill passes all mouse events through to the game via
 `WS_EX_TRANSPARENT`. When ON, redeploy via hotkey or system tray only.
 
+**Native taskbar minimize/maximize (2026-09-30):** `MainWindow`'s window
+flags changed from `Qt.Tool` to `Qt.Window | Qt.WindowMinMaxButtonsHint`
+(alongside the existing `Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint`),
+so it now gets a real Windows taskbar entry and icon. Two new title-bar
+buttons (`🗕` OS-minimize, `🗖`/`🗗` maximize/restore) sit alongside the
+existing Stow-to-pill (`▬`) button — three distinct ways to get the window
+out of the way, each with a different purpose: Stow shrinks to the small
+pill (still always-on-top, toggleable by hotkey even while the game has
+focus); OS-minimize sends it to the taskbar like any normal window;
+Maximize fills the screen. Double-clicking the title bar also toggles
+maximize. `MainWindow.toggle_maximize()` explicitly captures pre-maximize
+geometry before calling `showMaximized()`, since `resizeEvent`'s normal
+geometry-save path skips saving while `isMaximized()` is true (a maximized
+fill-screen size must never overwrite the user's real restored size).
+This **supersedes** the original "`Qt.Tool` deliberately excludes the
+overlay from the taskbar" reasoning behind the system tray icon below
+(see DECISIONS.md, 2026-09-20) — the tray icon remains as an additional
+recovery affordance, just no longer the *only* one.
+
 ## System tray icon (host/main_window.py)
 
 A Windows system tray icon (`QSystemTrayIcon`) provides overlay recovery when
