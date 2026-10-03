@@ -2,7 +2,11 @@
 
 Modular, always-on-top Star Citizen data overlay. Dark sci-fi HUD styled after
 MobiGlas. Data comes from the UEX Corp API (community-sourced SC trade/economy
-data) — no game memory reads, no log parsing (see docs/DECISIONS.md for why).
+data) — no game memory reads, no log parsing by default (see docs/DECISIONS.md
+for why), except one opt-in exception: Logistics Hub can optionally cross-check
+scanned contracts against the player's own `Game.log` for post-accept
+verification (user-configured path, never a trigger or data source on its own
+— see AGENTS.md).
 
 **See `AGENTS.md` for full AI agent onboarding** — safety rules, coding
 conventions, testing, and common tasks. This file is a quick reference.
@@ -23,7 +27,8 @@ conventions, testing, and common tasks. This file is a quick reference.
 | When | Read |
 |------|------|
 | First | `AGENTS.md` — full onboarding, safety rules |
-| Every session | `docs/PROGRESS.md` — current status |
+| Every session | `docs/PROGRESS.md` — one-page status |
+| For old session notes | `docs/HISTORY.md` — archive, not the status |
 | For architecture | `docs/ARCHITECTURE.md` — contracts, services |
 | For a specific module | `docs/modules/<name>.md` |
 | For past decisions | `docs/DECISIONS.md` — append-only log |
@@ -53,5 +58,6 @@ pyinstaller mobioverlay.spec --noconfirm
 3. **Never send hotkey keystrokes** while SC may be live
 4. **Never move overlay** onto the primary/gaming monitor
 5. **Never embed UEX tokens** in distributed code
-6. **Never invent API logic** UEX doesn't compute
+6. **Never invent API logic** UEX doesn't compute (one documented exception:
+   Logistics Hub's 2-opt route ordering over real UEX distances — see AGENTS.md)
 7. **Never run two mobiOverlay instances** at once

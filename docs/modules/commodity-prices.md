@@ -10,14 +10,14 @@ than it has. Module folder, `module_id`, and class renamed to match
 ## Scope
 
 A card that looks up the best known price for a commodity across terminals,
-plus a brute-force scan to find the single most profitable commodity right
-now. Best Sell and Best Buy each have their own independent star-system
-filter (e.g. buy in Stanton while selling in Pyro, or restrict both to one
-system).
+plus a client-side scan (RETRIEVE DATA) to find the single most profitable
+commodity right now. Best Sell and Best Buy each have their own independent
+star-system filter (e.g. buy in Stanton while selling in Pyro, or restrict
+both to one system).
 
 - Input: pick a commodity (dropdown), optionally filter Best Sell and Best
-  Buy to one star system each, independently; or click "Find Most
-  Profitable" to have it pick the commodity for you
+  Buy to one star system each, independently; or click "RETRIEVE DATA" then
+  "FIND MOST PROFITABLE" to have it pick the commodity for you
 - Output: best sell price + terminal/location, best buy price +
   terminal/location, each respecting its own system filter
 - Manual refresh button + auto-refresh on the module's own interval
@@ -32,8 +32,11 @@ system).
   Retrieve Data loop both filter the response to
   `commodity_name == name` exactly before using it, or the wrong
   commodity's price can silently win "best price."
-- `terminals?type=commodity` — fetched once at card creation, purely to
-  build an `id_terminal -> nickname` lookup (`GET`, no auth needed)
+- Terminal nicknames come from the shared `LocationService.all_locations()`
+  (`host/locations.py`) rather than a direct `terminals?type=commodity`
+  fetch of this module's own — `_populate_terminal_nicknames()` builds its
+  `id_terminal -> nickname` map from that shared, cached index (Phase 4 of
+  the Core Location service migration, see DECISIONS.md)
 
 Confirmed via real API calls (2026-09-03): `commodities_prices` rows come
 pre-joined with `terminal_name`, `star_system_name`, `planet_name`,
@@ -45,22 +48,27 @@ from the fetched rows, not a separate systems endpoint.
 name** (2026-09-03 bug fix) — e.g. `"Admin - MIC-L2"` or `"TDD - Trade and
 Development Division - Area 18"`, not `"MIC-L2"` or `"TDD Area 18"`.
 `commodities_prices` has no nickname field of its own, so `_format_location()`
-fetches `terminals?type=commodity` once (`_populate_terminal_nicknames()`)
-and looks the clean name up by `id_terminal`, falling back to the raw
-`terminal_name` only if a terminal isn't found in that map. Same field
-(`nickname`) `trade_route_optimizer`'s origin-terminal picker already
-uses, for consistency — see that module's doc for the same issue on the
-`commodities_routes` endpoint (which needed a hand-rolled prefix strip
-instead, since it has no `id_terminal` for the destination to look up by).
+looks the clean name up by `id_terminal` in the `_terminal_nicknames` map
+built from `LocationService.all_locations()` (`_populate_terminal_nicknames()`),
+falling back to the raw `terminal_name` only if a terminal isn't found in
+that map. Same field (`nickname`) `trade_route_optimizer`'s origin-terminal
+picker already uses, for consistency — see that module's doc for the same
+issue on the `commodities_routes` endpoint (which needed a hand-rolled
+prefix strip instead, since it has no `id_terminal` for the destination to
+look up by).
 
 **No true "most profitable commodity" endpoint exists.** `commodities_ranking`
 is deprecated (confirmed live — returns empty data). Its documented
 replacement, `commodities_averages`, requires a bearer token AND is still
 per-commodity (`id_commodity` required) — not a discovery/ranking query.
 Since the project's hard rule is never embedding our own UEX token in the
-distributed app, "Find Most Profitable" is instead a client-side brute-force
-scan over data already downloaded by Retrieve Data — see docs/DECISIONS.md
-for the full reasoning that led here.
+distributed app, "RETRIEVE DATA" instead does a client-side brute-force scan
+across every commodity, caching the raw results in memory; "FIND MOST
+PROFITABLE" is a separate, instant, purely local action that reads that
+cached data (and the current Best Sell/Best Buy system filters) with no API
+call of its own — see docs/DECISIONS.md for the full reasoning that led
+here, and for the bug that motivated splitting the one combined action into
+these two (the original combined scan ignored the system filters entirely).
 
 **Stock-aware, not a bare price margin (2026-09-05 fix).** Originally
 computed `max(price_sell) - min(price_buy)` per commodity — a pure per-unit
@@ -86,7 +94,10 @@ comparison, same reasoning.
 ## Card contents
 
 - Commodity selector
-- "FIND MOST PROFITABLE" button — runs the brute-force scan (see below)
+- "RETRIEVE DATA" button — runs the brute-force scan across all commodities
+  (see below)
+- "FIND MOST PROFITABLE" button — instant, local; ranks the data already
+  downloaded by RETRIEVE DATA using the current system filters
 - "Best Sell" row: label + system filter dropdown ("All Systems" + systems
   present in the data), price, terminal/location
 - "Best Buy" row: same, independent filter/state from Best Sell
@@ -97,21 +108,33 @@ comparison, same reasoning.
   rather than a generic failure — see `UexRateLimitError` in
   `host/api_client.py`
 
-## Find Most Profitable — how it works
+## Retrieve Data / Find Most Profitable — how it works
 
-- Triggered only by clicking the button — never runs automatically, so it
-  never silently burns rate-limit budget on a refresh or app launch
-- Scans commodities one at a time on a `QTimer` (120ms between calls, ~8
-  req/sec) rather than one long blocking loop, so the UI stays responsive
-  and shows live progress ("SCANNING 42/118") instead of freezing
-- A commodity that individually fails to fetch is skipped, not treated as a
-  scan-ending error; hitting UEX's actual rate limit mid-scan stops the
-  scan and shows the clear rate-limit message with a retry
-- Result is cached in memory for 30 minutes (`SCAN_CACHE_SECONDS`) — a
-  second click within that window just re-selects the cached commodity
-  instead of re-scanning everything
-- ~100-150 calls in one burst is well under the 120/min UEX limit; this is
-  a deliberate, bounded, one-time cost per click, not background polling
+Split into two separate actions (see DECISIONS.md for the bug that
+motivated the split: the original combined scan computed margin across ALL
+systems, ignoring the Best Sell/Best Buy system filters entirely):
+
+- **RETRIEVE DATA** — the download step:
+  - Triggered only by clicking the button — never runs automatically, so it
+    never silently burns rate-limit budget on a refresh or app launch
+  - Scans commodities one at a time on a `QTimer` (120ms between calls, ~8
+    req/sec) rather than one long blocking loop, so the UI stays responsive
+    and shows live progress ("RETRIEVING 42/118") instead of freezing
+  - A commodity that individually fails to fetch is skipped, not treated as
+    a scan-ending error; hitting UEX's actual rate limit mid-scan stops the
+    scan and shows the clear rate-limit message with a retry
+  - Raw per-commodity rows are cached in memory (`_all_commodity_data`); a
+    countdown ("REFRESH IN MM:SS", 30 min) gates re-fetching — clicking
+    while it's counting down prompts "FORCE UPDATE?" first rather than
+    re-fetching immediately
+  - ~100-150 calls in one burst is well under the 120/min UEX limit; this is
+    a deliberate, bounded, one-time cost per click, not background polling
+- **FIND MOST PROFITABLE** — instant and purely local:
+  - Reads the already-downloaded `_all_commodity_data` and the Best
+    Sell/Best Buy system filters' current state at click time — no API call
+  - Stock-aware ranking (see above) applied over whatever was last
+    retrieved; re-run it as many times as you like after changing filters
+    with no additional cost
 
 ## Settings (modules.commodity_prices in config.json)
 
@@ -129,5 +152,6 @@ comparison, same reasoning.
 - Live data pulled from UEX API with the shared host HTTP client (not its own) — done
 - Survives a bad/empty API response without crashing the host — done
 - Independent per-row system filtering — done
-- Find Most Profitable scan with progress, caching, and clear rate-limit
-  errors — done, not yet human-tested (built this session)
+- Retrieve Data scan with progress, caching, and clear rate-limit errors;
+  Find Most Profitable as a separate instant/local, stock-aware ranking
+  step — done, verified end-to-end (live scan + selection)

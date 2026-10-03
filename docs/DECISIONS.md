@@ -2,17 +2,17 @@
 
 
 
-Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
+Append-only. Newest at bottom. Short entries — rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Pivoted from Game.log combat overlay to UEX-API trading overlay.**
+- **2026-09-03 — Pivoted from Game.log combat overlay to UEX-API trading overlay.**
 
   Investigated Game.log on current patch (4.10, build ~12545750) across 51
 
   real sessions covering ~1 week of the user's actual PvE combat. Found no
 
-  attacker/weapon/kill-attribution data at all ΓÇö only signal was a bare
+  attacker/weapon/kill-attribution data at all — only signal was a bare
 
   `[ActorState] Dead` line for the player's own death, no cause info. Concept
 
@@ -22,7 +22,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö PySide6/Qt chosen over CustomTkinter and pywebview.**
+- **2026-09-03 — PySide6/Qt chosen over CustomTkinter and pywebview.**
 
   A prior overlay (pygame + Tkinter, different SC tool) hit packaging
 
@@ -34,17 +34,17 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Modules are folder-per-module, auto-discovered.**
+- **2026-09-03 — Modules are folder-per-module, auto-discovered.**
 
   Chosen over an explicit registry list so adding a module is purely
 
-  additive ΓÇö drop a folder in `modules/`, zero edits to host code or other
+  additive — drop a folder in `modules/`, zero edits to host code or other
 
   modules.
 
 
 
-- **2026-09-03 ΓÇö Project name: mobiOverlay.**
+- **2026-09-03 — Project name: mobiOverlay.**
 
   Nods to Star Citizen's in-game MobiGlas UI, generic enough for public
 
@@ -52,7 +52,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Visual design approved.**
+- **2026-09-03 — Visual design approved.**
 
   Mockup at https://claude.ai/code/artifact/63a18572-a046-4045-aa3c-caa8dfa0f4bc
 
@@ -62,7 +62,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   - Fonts: Orbitron (headers, 600/800/900 weight) + Share Tech Mono (data/body),
 
-    both via Google Fonts ΓÇö must be bundled as files for the packaged exe,
+    both via Google Fonts — must be bundled as files for the packaged exe,
 
     not linked at runtime
 
@@ -78,7 +78,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   - Text: `#dff5f2` primary, `#7fa3a1` muted, `#3f5c5a` dim/labels
 
-  - Sharp corners everywhere ΓÇö no border-radius
+  - Sharp corners everywhere — no border-radius
 
   - Card header: small circular status dot + Orbitron label (letter-spaced,
 
@@ -94,15 +94,15 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Modules ship external, not bundled into the packaged exe.**
+- **2026-09-03 — Modules ship external, not bundled into the packaged exe.**
 
   Decided before a third module made this expensive to reverse. Two
 
   reasons: (1) preserves the original "drop a folder in `modules/`, zero
 
-  rebuild" goal ΓÇö bundling would've quietly broken that; (2) directly helps
+  rebuild" goal — bundling would've quietly broken that; (2) directly helps
 
-  the exe-trust-skepticism problem raised in conversation ΓÇö a `modules/`
+  the exe-trust-skepticism problem raised in conversation — a `modules/`
 
   folder of plain readable `.py` sitting next to the exe is auditable in a
 
@@ -128,13 +128,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Project's own git repo initialized separately from the
+- **2026-09-03 — Project's own git repo initialized separately from the
 
   home-directory repo.** Found that `C:\Users\mhoward` itself is a git repo
 
   (tracking the whole home directory, including things like `.ssh/` and
 
-  `NTUSER.DAT` ΓÇö no commits made there by this project). Initialized an
+  `NTUSER.DAT` — no commits made there by this project). Initialized an
 
   independent `git init` inside `mobiOverlay/` instead, since a GitHub
 
@@ -144,7 +144,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö CI release build verified end-to-end before wiring up
+- **2026-09-03 — CI release build verified end-to-end before wiring up
 
   automation.** Built `mobiOverlay.exe` locally with PyInstaller
 
@@ -160,7 +160,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   **onefile** build's visible top-level window belongs to a **child
 
-  process** the bootloader spawns, not the process you launched ΓÇö checking
+  process** the bootloader spawns, not the process you launched — checking
 
   `Get-Process`/window enumeration against the original PID shows nothing
 
@@ -176,15 +176,15 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Repo pushed to GitHub, public: github.com/h2mCoreAi/mobiOverlay.**
+- **2026-09-03 — Repo pushed to GitHub, public: github.com/h2mCoreAi/mobiOverlay.**
 
   License: MIT (matches the user's prior ThrottleWatch project). Bundled
 
-  fonts (Orbitron, Share Tech Mono) stay separately licensed under SIL OFL ΓÇö
+  fonts (Orbitron, Share Tech Mono) stay separately licensed under SIL OFL —
 
-  see `host/assets/fonts/LICENSE.txt` ΓÇö not superseded by the root MIT
+  see `host/assets/fonts/LICENSE.txt` — not superseded by the root MIT
 
-  LICENSE. No release tag pushed yet ΓÇö user is still heavily testing;
+  LICENSE. No release tag pushed yet — user is still heavily testing;
 
   `.github/workflows/release.yml` only fires on a `v*.*.*` tag, so nothing
 
@@ -192,15 +192,15 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Card hide/show renamed to Stow/Deploy, dropdown replaced
+- **2026-09-03 — Card hide/show renamed to Stow/Deploy, dropdown replaced
 
   with a themed tray panel.** User's own instinct: generic desktop "hide/
 
   add" language didn't fit, asked how SC itself would handle it. SC already
 
-  has the exact concept under different words ΓÇö stowing a weapon/tool,
+  has the exact concept under different words — stowing a weapon/tool,
 
-  deploying it again ΓÇö so reused that vocabulary throughout, not just in
+  deploying it again — so reused that vocabulary throughout, not just in
 
   UI text: `Card.stowed` signal (was `closed`), `CardContainer.stow_card`/
 
@@ -216,7 +216,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Hit and fixed a real bug while building this: `Card.isVisible()` is
 
-  unreliable for tracking stow state ΓÇö Qt's `isVisible()` reflects
+  unreliable for tracking stow state — Qt's `isVisible()` reflects
 
   ancestor visibility too, so every card read as "not visible" (and the
 
@@ -234,7 +234,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   buttons, `BoundingRectangle`-derived clicks for the plain-QWidget tray
 
-  rows) ΓÇö not coordinate-guessed clicks, which proved unreliable on this
+  rows) — not coordinate-guessed clicks, which proved unreliable on this
 
   multi-window desktop (a "click" can land on whatever window is actually
 
@@ -242,19 +242,19 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   don't reveal since they capture by window handle, not screen region).
 
-  Testing stayed entirely on the secondary monitor throughout ΓÇö never
+  Testing stayed entirely on the secondary monitor throughout — never
 
   touched the user's active game session on the primary display.
 
 
 
-- **2026-09-03 ΓÇö Clicking anywhere in a card raises it to front.**
+- **2026-09-03 — Clicking anywhere in a card raises it to front.**
 
   User-requested. Implemented as an application-wide event filter in
 
   `CardContainer` (`QApplication.instance().installEventFilter(self)`)
 
-  rather than a `mousePressEvent` override on `Card` ΓÇö a press on a child
+  rather than a `mousePressEvent` override on `Card` — a press on a child
 
   widget (combo box, button, label) never bubbles up to the parent Card's
 
@@ -270,7 +270,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Never embed our own UEX token; "most profitable" done as
+- **2026-09-03 — Never embed our own UEX token; "most profitable" done as
 
   a client-side brute-force scan instead.** User asked how to make
 
@@ -278,7 +278,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   drew a hard line on distribution: no shared app token baked into the
 
-  exe, ever ΓÇö it'd get extracted from the public repo immediately and
+  exe, ever — it'd get extracted from the public repo immediately and
 
   either get abused by randoms or revoked by UEX, breaking the feature for
 
@@ -288,7 +288,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   documented replacement `commodities_averages` requires a bearer token
 
-  AND is still per-commodity (`id_commodity` required) ΓÇö not actually a
+  AND is still per-commodity (`id_commodity` required) — not actually a
 
   ranking/discovery query even with a token. With per-user tokens ruled
 
@@ -306,9 +306,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Price Lookup renamed to Commodity Prices.** User noticed
+- **2026-09-03 — Price Lookup renamed to Commodity Prices.** User noticed
 
-  it only covers commodities (ore, agricultural goods) ΓÇö the old name
+  it only covers commodities (ore, agricultural goods) — the old name
 
   implied broader scope (items, ship components) it never had. Renamed
 
@@ -324,7 +324,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   existed only because that's what got typed in while first building the
 
-  module ΓÇö not tied to profitability or any real signal. Removing it
+  module — not tied to profitability or any real signal. Removing it
 
   surfaced a latent bug (see PROGRESS.md): the new alphabetical-first
 
@@ -338,7 +338,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Settings menu added; Window/Card Opacity split, Text Size
+- **2026-09-03 — Settings menu added; Window/Card Opacity split, Text Size
 
   added.** User: opacity slider belonged in a real settings surface, not
 
@@ -348,7 +348,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Window Opacity (existing slider, relocated) and the new Card Opacity
 
-  (card background alpha, independent of the window ΓÇö lets you see through
+  (card background alpha, independent of the window — lets you see through
 
   cards without making window chrome/text transparent too) both apply
 
@@ -358,7 +358,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `CardContainer.set_all_card_opacity` broadcasts a change to every
 
-  existing card immediately. Text Size does NOT apply live ΓÇö every
+  existing card immediately. Text Size does NOT apply live — every
 
   font-size in the app is a literal baked into a stylesheet string built
 
@@ -374,7 +374,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (`main.py`) before `MainWindow` is constructed and before modules are
 
-  imported ΓÇö `host/main_window.py`'s top-level `STYLESHEET` constant had
+  imported — `host/main_window.py`'s top-level `STYLESHEET` constant had
 
   to be converted from a module-level string (frozen at import time, i.e.
 
@@ -384,7 +384,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Dropped real-time text scaling; kept everything else from
+- **2026-09-03 — Dropped real-time text scaling; kept everything else from
 
   that request.** Considered actually attempting live font rescaling
 
@@ -398,13 +398,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   to point at the new Relaunch button rather than building a separate
 
-  toast/notice ΓÇö the panel already had a persistent description line, no
+  toast/notice — the panel already had a persistent description line, no
 
   new UI needed.
 
 
 
-- **2026-09-03 ΓÇö Find Most Profitable split into Retrieve Data +
+- **2026-09-03 — Find Most Profitable split into Retrieve Data +
 
   Find Most Profitable; user caught a real correctness bug.** The
 
@@ -412,7 +412,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   systems, silently ignoring the Best Sell/Best Buy system filters right
 
-  above it on the same card ΓÇö a real bug the user found by asking "does
+  above it on the same card — a real bug the user found by asking "does
 
   it take into account the selected system filters?" rather than one
 
@@ -424,7 +424,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   separate, instant, local-only action that reads `sell_system`/
 
-  `buy_system` filter state at click time ΓÇö same filter logic already
+  `buy_system` filter state at click time — same filter logic already
 
   proven correct in `_apply_filters`, just applied across every cached
 
@@ -436,13 +436,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Countdown + "FORCE UPDATE?" confirm on Retrieve Data.**
+- **2026-09-03 — Countdown + "FORCE UPDATE?" confirm on Retrieve Data.**
 
   User-specified UX: after retrieving, the button counts down (MM:SS) to
 
   the next recommended refresh (reuses the existing 30-min cache window).
 
-  Clicking mid-countdown doesn't immediately re-fetch ΓÇö it swaps to
+  Clicking mid-countdown doesn't immediately re-fetch — it swaps to
 
   "FORCE UPDATE?" as a confirm step (auto-reverts after 4s if ignored,
 
@@ -456,7 +456,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   two separate tool-call round-trips (each has real latency exceeding 4s)
 
-  ΓÇö had to combine "click, verify prompt, click again" into one atomic
+  — had to combine "click, verify prompt, click again" into one atomic
 
   script to test it at all. Same underlying lesson as the earlier
 
@@ -468,7 +468,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Settings > Relaunch button; found and fixed a real
+- **2026-09-03 — Settings > Relaunch button; found and fixed a real
 
   process-leak bug while verifying it.** Spawns a fresh instance via the
 
@@ -482,7 +482,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   lives, and it's a separate top-level `Qt.Popup` widget still open at
 
-  the moment it's clicked ΓÇö `self.close()` only closes `MainWindow`, not
+  the moment it's clicked — `self.close()` only closes `MainWindow`, not
 
   that popup, so Qt's `quitOnLastWindowClosed` never fires and the old
 
@@ -500,11 +500,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Trade Route Optimizer: "Admin -" terminal names fixed;
+- **2026-09-03 — Trade Route Optimizer: "Admin -" terminal names fixed;
 
   terminal picker made searchable.** User asked why so many terminals
 
-  showed as "Admin" ΓÇö checked the raw API response directly rather than
+  showed as "Admin" — checked the raw API response directly rather than
 
   guessing: `name` really is `"Admin - Baijini Point"` (that's genuinely
 
@@ -520,7 +520,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Also made the terminal combo editable with a filtering `QCompleter`
 
-  (`Qt.MatchContains`) per explicit request ΓÇö type to narrow a 100+ item
+  (`Qt.MatchContains`) per explicit request — type to narrow a 100+ item
 
   list, or still scroll the full dropdown. Had to switch its signal
 
@@ -538,7 +538,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   change its content), but couldn't cleanly demonstrate the completer's
 
-  filtered dropdown popup itself through UI Automation in this session ΓÇö
+  filtered dropdown popup itself through UI Automation in this session —
 
   `SendKeys` timing produced garbled input (`"arcbbbbb..."`) rather than
 
@@ -550,7 +550,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (`QCompleter` + `MatchContains` on an editable `QComboBox`) is
 
-  standard, well-tested Qt behavior ΓÇö left for the user to confirm
+  standard, well-tested Qt behavior — left for the user to confirm
 
   directly rather than over-investing further in fighting the test
 
@@ -558,13 +558,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Trade Route Optimizer: added a "Sell In" destination
+- **2026-09-04 — Trade Route Optimizer: added a "Sell In" destination
 
   filter and clearer buy/sell labeling.** User had to ask what a route
 
   row actually meant (origin terminal = buy, each row's destination =
 
-  sell) ΓÇö real signal the layout wasn't self-explanatory. Added "Γû▓ BUY
+  sell) — real signal the layout wasn't self-explanatory. Added "Γû▓ BUY
 
   HERE" above the origin picker and changed each row's destination text
 
@@ -576,7 +576,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   filtering (populate the dropdown from systems seen in the fetched
 
-  routes, filter+resort before slicing to the top 5) ΓÇö identical pattern
+  routes, filter+resort before slicing to the top 5) — identical pattern
 
   to Commodity Prices' sell/buy filters, no new API call.
 
@@ -586,7 +586,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   by extracting it into a standalone script with sample data (no Qt
 
-  involved) ΓÇö Pyro-only and Stanton-only both returned exactly the right
+  involved) — Pyro-only and Stanton-only both returned exactly the right
 
   rows. Could NOT get UI Automation to actually change the destination
 
@@ -596,7 +596,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   .SetValue()`, and real keyboard nav (`{F4}{DOWN}{DOWN}{ENTER}` after
 
-  `SetForegroundWindow`) ΓÇö all three reported success but the combo's
+  `SetForegroundWindow`) — all three reported success but the combo's
 
   value never actually changed on readback, even within one atomic
 
@@ -606,11 +606,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `InvokePattern` have been reliable all session) rather than an app bug
 
-  ΓÇö logged as a general lesson, not just for this feature.
+  — logged as a general lesson, not just for this feature.
 
 
 
-- **2026-09-04 ΓÇö Whole-app minimize-to-pill, Collapse All, and a
+- **2026-09-04 — Whole-app minimize-to-pill, Collapse All, and a
 
   system-wide Stow/Deploy hotkey.** All user-requested, implemented
 
@@ -620,7 +620,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   - **Minimize-to-pill** reuses `MainWindow` itself rather than spawning
 
-    a second window ΓÇö hides `card_container`/size grip, hides
+    a second window — hides `card_container`/size grip, hides
 
     Tray/Settings/minimize in the title bar (keeps wordmark + close),
 
@@ -630,7 +630,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     ignores), and remembers the pre-stow geometry to restore exactly.
 
-    Avoided a second top-level window on purpose ΓÇö it would've resurrected
+    Avoided a second top-level window on purpose — it would've resurrected
 
     the "which window is actually on top" z-order/focus fights this
 
@@ -638,7 +638,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   - **Global hotkey required real Win32 API access** (`ctypes`,
 
-    `RegisterHotKey`/`WM_HOTKEY`), not a Qt `QShortcut` ΓÇö shortcuts only
+    `RegisterHotKey`/`WM_HOTKEY`), not a Qt `QShortcut` — shortcuts only
 
     fire while the app itself has focus, useless for "toggle while I'm
 
@@ -654,7 +654,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     that accepted a bare key would let someone accidentally register,
 
-    say, plain `M` as a system-wide hotkey ΓÇö hijacking that key
+    say, plain `M` as a system-wide hotkey — hijacking that key
 
     everywhere, including normal typing in the game. Rejected before
 
@@ -672,9 +672,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     `MOD_CONTROL|MOD_SHIFT` + `VK_M`, using real `Qt` constants, no GUI
 
-    involved). But actual keystroke capture ΓÇö pressing the combo while
+    involved). But actual keystroke capture — pressing the combo while
 
-    the field is armed ΓÇö could not be verified at all: `SendKeys`,
+    the field is armed — could not be verified at all: `SendKeys`,
 
     even after `SetForegroundWindow` on the main window, never visibly
 
@@ -684,19 +684,19 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     panel is its own `Qt.Popup` HWND, and focusing the *owner* window
 
-    doesn't necessarily focus the popup's own HWND ΓÇö `NativeWindowHandle`
+    doesn't necessarily focus the popup's own HWND — `NativeWindowHandle`
 
     came back empty for the field too, so there wasn't even a handle to
 
     route input to directly as a workaround. This is a real, flagged gap
 
-    in PROGRESS.md, not a "probably fine" ΓÇö a human needs to actually
+    in PROGRESS.md, not a "probably fine" — a human needs to actually
 
     click the field and press a real combo before trusting it works.
 
 
 
-- **2026-09-03 ΓÇö The hotkey field's real bug was a PySide6/Qt6 API
+- **2026-09-03 — The hotkey field's real bug was a PySide6/Qt6 API
 
   mismatch, not focus routing.** The previous entry's "SendKeys never
 
@@ -706,7 +706,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   documented in memory). `_HotkeyField.keyPressEvent` built its display
 
-  string with `QKeySequence(int(event.modifiers()) | key)` ΓÇö but in
+  string with `QKeySequence(int(event.modifiers()) | key)` — but in
 
   PySide6/Qt6's new-style enums, `event.modifiers()` returns a
 
@@ -716,7 +716,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   modifier. The exception was thrown and silently swallowed by Qt's event
 
-  loop before `set_stow_hotkey()` was ever reached ΓÇö so the field had
+  loop before `set_stow_hotkey()` was ever reached — so the field had
 
   *never* worked, for anyone, the entire time it existed. Fixed with
 
@@ -730,7 +730,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Window background transparency decoupled from card
+- **2026-09-03 — Window background transparency decoupled from card
 
   opacity; `WINDOW OPACITY` now controls only the empty space.**
 
@@ -738,7 +738,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   at the compositor level, so cards could never look more opaque than the
 
-  window they sit in ΓÇö the two opacity sliders were coupled despite
+  window they sit in — the two opacity sliders were coupled despite
 
   looking independent in the UI. Switched to `Qt.WA_TranslucentBackground`
 
@@ -750,7 +750,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   background alpha. Title bar and panels keep their own solid/gradient
 
-  backgrounds, unaffected by this slider ΓÇö that's a visible behavior
+  backgrounds, unaffected by this slider — that's a visible behavior
 
   change from before (previously lowering window opacity dimmed the
 
@@ -760,7 +760,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Pill and deployed-window positions are tracked and
+- **2026-09-03 — Pill and deployed-window positions are tracked and
 
   persisted independently.** Previously the pill always reopened wherever
 
@@ -780,7 +780,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Both hotkey and transparency fixes above shipped broken;
+- **2026-09-03 — Both hotkey and transparency fixes above shipped broken;
 
   root causes were different from what they looked like.** Caught by the
 
@@ -790,7 +790,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   - The hotkey "fix" (`QKeyCombination(event.modifiers(), key)`) still
 
-    threw `TypeError` on every keystroke ΓÇö `QKeyCombination` needs an
+    threw `TypeError` on every keystroke — `QKeyCombination` needs an
 
     actual `Qt.Key` enum for its key argument, and `event.key()` returns
 
@@ -798,7 +798,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     first fix used `Qt.Key_F3` directly, which is already the right
 
-    type, so the test couldn't have caught this even in principle ΓÇö it
+    type, so the test couldn't have caught this even in principle — it
 
     wasn't testing the real code path. Fixed with `Qt.Key(key)`, and this
 
@@ -812,7 +812,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     was missing `Qt.WA_StyledBackground`, without which a plain `QWidget`
 
-    doesn't paint a QSS `background` property at all ΓÇö so the window was
+    doesn't paint a QSS `background` property at all — so the window was
 
     permanently fully transparent no matter the slider, not "decoupled
 
@@ -836,13 +836,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     exact runtime types the real code path produces (e.g. `event.key()`
 
-    is `int`, not `Qt.Key`) ΓÇö reproducing the shape of the call, not just
+    is `int`, not `Qt.Key`) — reproducing the shape of the call, not just
 
     its intent, is what makes a regression test meaningful here.
 
 
 
-- **2026-09-03 ΓÇö Window opacity fix #3: QSS `background:` on a
+- **2026-09-03 — Window opacity fix #3: QSS `background:` on a
 
   `WA_TranslucentBackground` top-level widget doesn't reliably work at
 
@@ -850,7 +850,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `WA_StyledBackground` (the previous fix) was a real, necessary
 
-  requirement but not sufficient ΓÇö the user reported no visible change
+  requirement but not sufficient — the user reported no visible change
 
   from the slider at any position. Live debug output proved the Python
 
@@ -864,7 +864,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the bug was in Qt's own QSS-background-to-layered-window compositing
 
-  path specifically ΓÇö a real, if obscure, rough edge, not a code mistake
+  path specifically — a real, if obscure, rough edge, not a code mistake
 
   this time. Fix: paint the void directly with `QPainter` in
 
@@ -876,15 +876,15 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   just another unverified guess): sampling the same screen pixel at
 
-  100% vs. 40% opacity went from `(6, 9, 11)` ΓÇö exactly `theme.BG_VOID`,
+  100% vs. 40% opacity went from `(6, 9, 11)` — exactly `theme.BG_VOID`,
 
-  correctly rendered ΓÇö down to `(2, 4, 4)`, matching premultiplied-alpha
+  correctly rendered — down to `(2, 4, 4)`, matching premultiplied-alpha
 
   scaling by ~0.4 almost exactly. The *previous* (QSS) attempt sampled as
 
-  flat `(0, 0, 0)` at both settings ΓÇö not even the right color, let alone
+  flat `(0, 0, 0)` at both settings — not even the right color, let alone
 
-  reactive to the slider ΓÇö which is hard confirmation the QSS path was
+  reactive to the slider — which is hard confirmation the QSS path was
 
   never really working, not just hard to verify.
 
@@ -894,7 +894,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   correct, opacity-reactive premultiplied pixel data, not what DWM does
 
-  with it against the desktop) ΓÇö needs the user's own eyes as the final
+  with it against the desktop) — needs the user's own eyes as the final
 
   check, same as before, but now with much stronger evidence the
 
@@ -902,13 +902,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Replaced RegisterHotKey with a low-level keyboard hook
+- **2026-09-03 — Replaced RegisterHotKey with a low-level keyboard hook
 
   (the `keyboard` library), because RegisterHotKey doesn't fire while
 
   Star Citizen has focus.** The hotkey field's capture bug (int vs
 
-  Qt.Key) was fixed and confirmed working ΓÇö but the user then reported
+  Qt.Key) was fixed and confirmed working — but the user then reported
 
   the hotkey still didn't actually toggle stow/deploy while the game was
 
@@ -924,7 +924,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the same author, at `D:\Documents\Mitch\Star Citizen\ThrottleWatch\
 
-  throttle_watch.py`) handles this ΓÇö its hotkey reliably works with the
+  throttle_watch.py`) handles this — its hotkey reliably works with the
 
   game focused. It uses the `keyboard` Python library, which installs a
 
@@ -942,7 +942,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   whose shared cross-hotkey pressed-keys dict can get a modifier stuck
 
-  "held" forever if a single key-up event is ever lost ΓÇö e.g. a UAC
+  "held" forever if a single key-up event is ever lost — e.g. a UAC
 
   prompt stealing focus mid-combo, which happens easily alt-tabbing out
 
@@ -950,7 +950,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   watchdog that self-heals exactly that stuck-state case. Also ported the
 
-  capture mechanism ΓÇö `keyboard.read_hotkey()` in a background thread ΓÇö
+  capture mechanism — `keyboard.read_hotkey()` in a background thread —
 
   replacing the Qt-keyPressEvent-based capture entirely, which
 
@@ -962,7 +962,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `keyboard.hook()`'s callback runs on the `keyboard` library's own
 
-  dispatch thread, not the Qt/GUI thread ΓÇö `GlobalHotkey` is a `QObject`
+  dispatch thread, not the Qt/GUI thread — `GlobalHotkey` is a `QObject`
 
   with a `Signal`, and emitting a Qt signal from a non-GUI thread is the
 
@@ -992,7 +992,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   replaced by a single `hotkey_combo` string (the `keyboard` library's
 
-  own canonical form, e.g. `"f3"` or `"ctrl+alt+p"`) ΓÇö simpler, and
+  own canonical form, e.g. `"f3"` or `"ctrl+alt+p"`) — simpler, and
 
   matches what `keyboard.read_hotkey()` already returns with no
 
@@ -1002,7 +1002,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Fixed a real race in pill-position persistence: a
+- **2026-09-03 — Fixed a real race in pill-position persistence: a
 
   shared debounce timer read stow-state at fire time, not per-event.**
 
@@ -1018,13 +1018,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   drag the pill, then deploy shortly after (an entirely natural thing to
 
-  do ΓÇö most people don't pause half a second after dragging something
+  do — most people don't pause half a second after dragging something
 
   before clicking it) restarts the same timer from the deploy's own
 
   `move()`/`resize()` calls, so when it finally fires it reads
 
-  `self._app_stowed == False` and saves `pre_stow_geometry` ΓÇö the pill's
+  `self._app_stowed == False` and saves `pre_stow_geometry` — the pill's
 
   just-dragged position is never written to disk at all, silently.
 
@@ -1034,13 +1034,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   actually finishes: `_TitleBar.mouseReleaseEvent` (covers both pill and
 
-  deployed-window dragging ΓÇö the same handler drives both, distinguished
+  deployed-window dragging — the same handler drives both, distinguished
 
   by `is_app_stowed()`) and the end of `stow_app()`/`deploy_app()`'s own
 
   programmatic repositioning. `resizeEvent` keeps a debounce (resizing is
 
-  naturally bursty ΓÇö dozens of events for one drag of the corner grip)
+  naturally bursty — dozens of events for one drag of the corner grip)
 
   but no longer branches on stow state at all, since the grip is hidden
 
@@ -1048,7 +1048,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Deploying via the hotkey now takes real OS foreground
+- **2026-09-03 — Deploying via the hotkey now takes real OS foreground
 
   focus, via AttachThreadInput, not the "tap Alt" heuristic.** User
 
@@ -1064,11 +1064,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Star Citizen genuinely holding foreground focus (confirmed via
 
-  `GetForegroundWindow` before the test) ΓÇö `SetForegroundWindow` reported
+  `GetForegroundWindow` before the test) — `SetForegroundWindow` reported
 
   success and, checked immediately from inside the same process, the
 
-  window *was* foreground ΓÇö but a separate follow-up check (a new
+  window *was* foreground — but a separate follow-up check (a new
 
   PowerShell process, one tool-call round-trip later) found focus back
 
@@ -1076,7 +1076,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (~300-500ms from spawning a new process to run the check), not the fix
 
-  failing ΓÇö an atomic single-script test (press F3, then sample
+  failing — an atomic single-script test (press F3, then sample
 
   `GetForegroundWindow` at 20/200/800ms, all in one script with no
 
@@ -1092,7 +1092,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   restriction checks against, rather than relying on a lock-timeout
 
-  heuristic ΓÇö more robust than the Alt-tap trick even though that one
+  heuristic — more robust than the Alt-tap trick even though that one
 
   turned out to work too once measured correctly. Also caught and fixed
 
@@ -1100,7 +1100,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `SetForegroundWindow`/`GetForegroundWindow` without declaring
 
-  `ctypes` `argtypes`/`restype`, which defaults to 32-bit `c_int` ΓÇö on
+  `ctypes` `argtypes`/`restype`, which defaults to 32-bit `c_int` — on
 
   64-bit Windows an `HWND` is a 64-bit pointer, so window handles could
 
@@ -1110,7 +1110,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-03 ΓÇö Commodity Prices had the same raw-kiosk-label bug Trade
+- **2026-09-03 — Commodity Prices had the same raw-kiosk-label bug Trade
 
   Route Optimizer already had fixed; fixed the same way.** User spotted
 
@@ -1120,7 +1120,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   has `terminal_name` (always the raw label) and `id_terminal`, but no
 
-  nickname field of its own ΓÇö unlike `terminals`, which has both `name`
+  nickname field of its own — unlike `terminals`, which has both `name`
 
   (raw) and `nickname` (clean, e.g. `"MIC-L2"`) for the same terminal.
 
@@ -1132,15 +1132,15 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `terminal_name` if a terminal isn't in that map. Same `nickname` field
 
-  the trade route picker already uses ΓÇö not a new pattern, just applied
+  the trade route picker already uses — not a new pattern, just applied
 
   to the one place it was missed.
 
 
 
-- **2026-09-03 ΓÇö UEX's `commodity_name` query param is a substring match,
+- **2026-09-03 — UEX's `commodity_name` query param is a substring match,
 
-  not exact ΓÇö filter results client-side or the wrong commodity can win
+  not exact — filter results client-side or the wrong commodity can win
 
   "best price."** User flagged Diamond's reported sell price (80,000
 
@@ -1148,7 +1148,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (~7,800) and the raw API directly: `commodity_name=Diamond` returns
 
-  rows for both `"Diamond"` (id 25) and `"Diamond Laminate"` (id 119) ΓÇö
+  rows for both `"Diamond"` (id 25) and `"Diamond Laminate"` (id 119) —
 
   a different commodity that happens to contain "Diamond" as a substring.
 
@@ -1164,7 +1164,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `refresh()` and the Retrieve Data loop. Worth remembering for any
 
-  future UEX endpoint call using a `*_name` filter param ΓÇö this API
+  future UEX endpoint call using a `*_name` filter param — this API
 
   doesn't appear to support exact-match filtering, so assume substring
 
@@ -1172,7 +1172,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Small border-radius added everywhere, `theme.RADIUS = 4`.**
+- **2026-09-04 — Small border-radius added everywhere, `theme.RADIUS = 4`.**
 
   User wanted the 90┬░ corners softened globally, not just on one widget.
 
@@ -1182,7 +1182,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `host/main_window.py`, `host/card.py`, `host/card_container.py`, and
 
-  all three module files ΓÇö cards, buttons, combos, line edits, the tray/
+  all three module files — cards, buttons, combos, line edits, the tray/
 
   settings popups, the title bar. Skipped `border: none` rules with no
 
@@ -1196,7 +1196,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö The radius pass above missed the window's own true outer
+- **2026-09-04 — The radius pass above missed the window's own true outer
 
   shape, including the pill.** User asked directly whether the pill got a
 
@@ -1204,7 +1204,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   with a plain `fillRect` (sharp corners), and that rect *is* the window's
 
-  actual outer edge in both deployed and stowed-to-pill mode ΓÇö the
+  actual outer edge in both deployed and stowed-to-pill mode — the
 
   previous pass's `border-radius` only rounded the title bar's own QSS
 
@@ -1212,7 +1212,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the window boundary itself. Fixed by painting a `QPainterPath` rounded
 
-  rect instead of a plain rect, using the same `theme.RADIUS` constant ΓÇö
+  rect instead of a plain rect, using the same `theme.RADIUS` constant —
 
   since `paintEvent` is shared by both deployed and pill states, this
 
@@ -1220,7 +1220,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Had to clear the whole rect to transparent first before filling the
 
-  rounded path ΓÇö `fillPath` alone only touches pixels inside the shape,
+  rounded path — `fillPath` alone only touches pixels inside the shape,
 
   so without the clear the four corners cut off by the rounding would
 
@@ -1234,13 +1234,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Checked mobiOverlay's styling directly against a live
+- **2026-09-04 — Checked mobiOverlay's styling directly against a live
 
   MobiGlas (in-game device menu) screenshot, not memory/guesswork.**
 
   User asked for this explicitly. Captured the actual Star Citizen window
 
-  via `PrintWindow` (found by window title, not by trusting a stale PID ΓÇö
+  via `PrintWindow` (found by window title, not by trusting a stale PID —
 
   the game had restarted since it was last checked this session) while
 
@@ -1248,7 +1248,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   cyan borders already matched our palette closely, no color changes
 
-  needed ΓÇö but MobiGlas's panels use a visibly larger, softer corner
+  needed — but MobiGlas's panels use a visibly larger, softer corner
 
   radius than ours, and each panel is clearly two-tier: a separate,
 
@@ -1258,7 +1258,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `_DragHeader` (card.py) its own background fill with only the top
 
-  corners rounded and a bottom border separating it from the body ΓÇö
+  corners rounded and a bottom border separating it from the body —
 
   `theme.BG_PANEL_HEADER` already existed for exactly this in `theme.py`
 
@@ -1268,7 +1268,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Shifted the whole color palette from teal-black to
+- **2026-09-04 — Shifted the whole color palette from teal-black to
 
   MobiGlas's actual blue-gray, sampled from the live screenshot pixel by
 
@@ -1282,7 +1282,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   earlier visual inspection. Findings: `BG_VOID` (deep space background)
 
-  already matched almost exactly (sampled `#03080d` vs. our `#06090b`) ΓÇö
+  already matched almost exactly (sampled `#03080d` vs. our `#06090b`) —
 
   no change needed there. Everything else was off: MobiGlas panel bodies
 
@@ -1298,7 +1298,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   app's old accent) but only for a secondary "tracked/active" status
 
-  indicator, not as the dominant chrome color ΓÇö keeping our primary
+  indicator, not as the dominant chrome color — keeping our primary
 
   accent teal would have kept the app looking like a HUD sitting next to
 
@@ -1314,15 +1314,15 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `SNAP_BORDER`/`SNAP_FILL` (purple grid-snap) and `ACCENT_AMBER` (error/
 
-  retry) alone ΓÇö unrelated to this pass. Confirmed visually after
+  retry) alone — unrelated to this pass. Confirmed visually after
 
   relaunch.
 
 
 
-- **2026-09-04 ΓÇö Named the `host/` package "mobiOverlay Core."** Docs/naming
+- **2026-09-04 — Named the `host/` package "mobiOverlay Core."** Docs/naming
 
-  only ΓÇö no folder rename, no import changes. `host/` remains the actual
+  only — no folder rename, no import changes. `host/` remains the actual
 
   package path; "mobiOverlay Core" is the name used in docs and
 
@@ -1338,13 +1338,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö v1.0-readiness review fixes, Critical items (C1-C4).**
+- **2026-09-04 — v1.0-readiness review fixes, Critical items (C1-C4).**
 
   A senior-dev-style review of mobiOverlay Core flagged 4 critical gaps
 
   in module fault isolation before a public v1.0. Fixed:
 
-  - **C1** (no fault isolation for hung/blocking modules) ΓÇö modules run
+  - **C1** (no fault isolation for hung/blocking modules) — modules run
 
     synchronously on the GUI thread by design (see "Module contract"
 
@@ -1358,7 +1358,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     visible in the log instead of just "the app feels laggy."
 
-  - **C2** (no contract validation) ΓÇö `module_loader.py`'s new
+  - **C2** (no contract validation) — `module_loader.py`'s new
 
     `_validate_module_contract()` checks `module_id`/`display_name` are
 
@@ -1368,17 +1368,17 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     `safe_create_card()` also now guards `create_card()` (previously
 
-    unguarded ΓÇö an exception there crashed the whole app before other
+    unguarded — an exception there crashed the whole app before other
 
     modules loaded) and validates it returns an actual `Card`.
 
-  - **C3** (duplicate module_id) ΓÇö `discover_modules()` now tracks
+  - **C3** (duplicate module_id) — `discover_modules()` now tracks
 
     claimed `module_id`s and skips (with a logged error naming both
 
     folders) any module trying to reuse one already claimed.
 
-  - **C4** (`settings_schema` documented but never implemented) ΓÇö
+  - **C4** (`settings_schema` documented but never implemented) —
 
     removed from the documented contract in ARCHITECTURE.md and
 
@@ -1390,7 +1390,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Logistics Hub (OCR module) ships as an optional,
+- **2026-09-04 — Logistics Hub (OCR module) ships as an optional,
 
   manual-install module; its deps are not bundled into the exe.**
 
@@ -1402,7 +1402,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   deliberately kept external/unfrozen so it's editable without a
 
-  rebuild ΓÇö but that also means PyInstaller never bundles a module's
+  rebuild — but that also means PyInstaller never bundles a module's
 
   dependencies, only `host/`'s. A user who drops this module folder
 
@@ -1416,7 +1416,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Considered instead bundling this module's deps into the exe as an
 
-  exception to the external-modules rule ΓÇö rejected for now: it would
+  exception to the external-modules rule — rejected for now: it would
 
   bloat every user's download by hundreds of MB even if they never use
 
@@ -1430,13 +1430,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Superseded same-day: distribution is all-inclusive,
+- **2026-09-04 — Superseded same-day: distribution is all-inclusive,
 
   every module always bundled together.** The "optional, manual-install
 
   module" framing above (same day, Logistics Hub's own deps) no longer
 
-  reflects how the project ships ΓÇö user decided to keep the modular
+  reflects how the project ships — user decided to keep the modular
 
   *architecture* (folder-per-module stays valuable for adding/changing
 
@@ -1446,7 +1446,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Pillow) should be treated as part of the app's real dependency set
 
-  going forward, not an opt-in extra ΓÇö packaging work should fold it
+  going forward, not an opt-in extra — packaging work should fold it
 
   into whatever the standard install path becomes, not keep it
 
@@ -1454,9 +1454,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Logistics Hub built: OCR mission-board reader + UEX-
+- **2026-09-04 — Logistics Hub built: OCR mission-board reader + UEX-
 
-  backed route planner.** `modules/logistics_hub/` ΓÇö originally scaffolded
+  backed route planner.** `modules/logistics_hub/` — originally scaffolded
 
   by Aider (DeepSeek V4 Flash, see below) then substantially hardened by
 
@@ -1466,7 +1466,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   - **Contracts, not a flat stop list.** A contract holds `pickups: []`
 
-    and `dropoffs: []` (symmetric, either can have more than one ΓÇö real
+    and `dropoffs: []` (symmetric, either can have more than one — real
 
     contracts use both "DROP OFF LOCATIONS (ANY ORDER)" and "PICK UP
 
@@ -1502,7 +1502,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     place, "MIC-L1 Shallow Frontier Station"). Deduping by raw `id`
 
-    silently dropped one of every colliding pair ΓÇö fixed by tagging
+    silently dropped one of every colliding pair — fixed by tagging
 
     each row with its source endpoint at index-build time and keying
 
@@ -1518,7 +1518,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     scoped to only apply to lines that actually look like a location row
 
-    (contain "at") ΓÇö otherwise it kept bleeding into trailing footer/
+    (contain "at") — otherwise it kept bleeding into trailing footer/
 
     signature text and misclassifying the contractor's own name as a
 
@@ -1526,7 +1526,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   - **Commodities** ("Waste", "Silicon", ...) are extracted the same
 
-    way ΓÇö "Collect X from Y"/"Deliver...of X to Y" ΓÇö and attached per
+    way — "Collect X from Y"/"Deliver...of X to Y" — and attached per
 
     pickup/drop-off, matched by substring against every name the
 
@@ -1536,9 +1536,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     LOCATION picker (searchable combo over the same UEX location data,
 
-    labeled with both name and short code ΓÇö e.g. "Shallow Frontier
+    labeled with both name and short code — e.g. "Shallow Frontier
 
-    Station (MIC-L1)" ΓÇö since search-by-code silently found nothing
+    Station (MIC-L1)" — since search-by-code silently found nothing
 
     before this). Falls back to "start at the first stop" only if no
 
@@ -1546,11 +1546,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     a drop-off is ineligible until every pickup on its own contract has
 
-    been visited ΓÇö cargo can't be delivered before it's collected.
+    been visited — cargo can't be delivered before it's collected.
 
     Travel cost is currently a coarse same-terminal/same-body/same-
 
-    system/different-system tier, not real distance ΓÇö see the Next
+    system/different-system tier, not real distance — see the Next
 
     section, this is a known near-term follow-up (`terminals_distances`
 
@@ -1564,7 +1564,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     nickname as the station itself, producing a spurious duplicate stop
 
-    ΓÇö fixed by suppressing the bare-code candidate specifically when a
+    — fixed by suppressing the bare-code candidate specifically when a
 
     fuller phrase immediately follows it on the same line (the common
 
@@ -1578,13 +1578,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Aider (DeepSeek V4 Flash) added as a secondary dev
+- **2026-09-04 — Aider (DeepSeek V4 Flash) added as a secondary dev
 
   tool for new-module work, with a hard boundary.** Configured via
 
   `.aider.conf.yml` (`openai/deepseek-v4-flash`, DeepSeek's OpenAI-
 
-  compatible endpoint ΓÇö LiteLLM's built-in `deepseek/` provider doesn't
+  compatible endpoint — LiteLLM's built-in `deepseek/` provider doesn't
 
   know this model id) + a gitignored `.env` for the key. Used to
 
@@ -1592,19 +1592,19 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   worth keeping for any future use: **only create files under one new
 
-  module's folder ΓÇö never edit `host/` or another module.** Observed
+  module's folder — never edit `host/` or another module.** Observed
 
   behavior worth remembering: it iterates against its own mistakes more
 
   than a stronger model would (multiple fix-commits in a row on the same
 
-  file ΓÇö pytesseract, then easyocr, then several follow-up fixes, all
+  file — pytesseract, then easyocr, then several follow-up fixes, all
 
-  same session) ΓÇö review its diffs rather than trusting a single pass.
+  same session) — review its diffs rather than trusting a single pass.
 
 
 
-- **2026-09-04 ΓÇö Decided: a shared Location service belongs in Core
+- **2026-09-04 — Decided: a shared Location service belongs in Core
 
   (`host/`), not as a module other modules depend on.** All three real
 
@@ -1612,13 +1612,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   independently fetch `star_systems`/`terminals` and build their own
 
-  system/terminal pickers ΓÇö duplicate API calls and, in Logistics Hub's
+  system/terminal pickers — duplicate API calls and, in Logistics Hub's
 
   case, a lot of endpoint-safe-dedup logic that the other two modules
 
   don't have and would benefit from. Considered making it a "location
 
-  module" other modules pull from ΓÇö rejected: `module_loader.py` has no
+  module" other modules pull from — rejected: `module_loader.py` has no
 
   mechanism for one module to depend on another (each is loaded
 
@@ -1630,7 +1630,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   instead of building a fake "module" that's actually Core-shaped.
 
-  Not implemented yet ΓÇö planned as a phased rollout (Core service ->
+  Not implemented yet — planned as a phased rollout (Core service ->
 
   migrate Logistics Hub -> migrate the other two -> swap Logistics
 
@@ -1644,13 +1644,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Location-service phases 1-3 complete; reordered the
+- **2026-09-04 — Location-service phases 1-3 complete; reordered the
 
   remaining plan.** Built `host/locations.py` (Phase 1), migrated
 
   Logistics Hub onto it (Phase 2), then moved the real-distance route-
 
-  cost swap ahead of migrating the other two modules ΓÇö new order:
+  cost swap ahead of migrating the other two modules — new order:
 
   Phase 3 = real distance data (done), Phase 4 = migrate Trade Route
 
@@ -1658,7 +1658,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   concept. Phase 3 turned into a much longer live-test-driven
 
-  hardening pass than expected ΓÇö every fix was verified against real
+  hardening pass than expected — every fix was verified against real
 
   captured Star Citizen contracts, several rounds catching genuine
 
@@ -1672,7 +1672,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Location-service Phase 4 complete: Trade Route
+- **2026-09-04 — Location-service Phase 4 complete: Trade Route
 
   Optimizer and Commodity Prices migrated onto `host/locations.py`.**
 
@@ -1706,7 +1706,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     Optimizer) intentionally stays a hand-rolled `Admin -` prefix strip
 
-    ΓÇö that endpoint returns no `id_terminal` for the destination, so
+    — that endpoint returns no `id_terminal` for the destination, so
 
     there's no id to resolve through the shared service; not a gap in
 
@@ -1720,13 +1720,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     a live `commodities_prices` and `commodities_routes` call cross-
 
-    checked against the new nickname map) ΓÇö not through the Qt UI.
+    checked against the new nickname map) — not through the Qt UI.
 
   Phase 5 (shared current-location concept) is next and last.
 
 
 
-- **2026-09-04 ΓÇö Logistics Hub UI/UX polish batch: auto-rescan removed,
+- **2026-09-04 — Logistics Hub UI/UX polish batch: auto-rescan removed,
 
   route popout added, ROUTE renamed from "SUGGESTED VISITING ORDER".**
 
@@ -1738,7 +1738,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   no minimize button) that's just an alternate render target for the same
 
-  underlying `_route_order`/`route_done` state the card already owns ΓÇö
+  underlying `_route_order`/`route_done` state the card already owns —
 
   closing it doesn't lose anything, it just switches `_render_results()`
 
@@ -1756,7 +1756,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Logistics Hub CONTRACTS list moved out of the card into
+- **2026-09-04 — Logistics Hub CONTRACTS list moved out of the card into
 
   its own detached window.** Follow-up to the polish batch above: the
 
@@ -1766,7 +1766,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   landed the user's view in the ROUTE section instead of showing the new
 
-  contract ΓÇö a shared-scroll-position problem, not a data bug (contracts
+  contract — a shared-scroll-position problem, not a data bug (contracts
 
   were always saved and correct; a restart showed them fine). Rather than
 
@@ -1784,13 +1784,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Reverted the CONTRACTS detached-window popup; found and
+- **2026-09-04 — Reverted the CONTRACTS detached-window popup; found and
 
   fixed a real app-quit bug in the host along the way.** Two problems
 
   surfaced in live testing of the previous entry's popup:
 
-  1. The CONTRACTS list still "disappeared" after a scan ΓÇö because the
+  1. The CONTRACTS list still "disappeared" after a scan — because the
 
      button opening it lived inside the same shared QScrollArea as the
 
@@ -1800,7 +1800,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      own independent `QScrollArea` on the card (separate from ROUTE's),
 
-     not a popup at all ΓÇö the user explicitly didn't want the popup
+     not a popup at all — the user explicitly didn't want the popup
 
      approach either.
 
@@ -1808,7 +1808,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      cause: `host/main.py`'s `QApplication` never set
 
-     `quitOnLastWindowClosed`, so Qt's default (`True`) applied ΓÇö and
+     `quitOnLastWindowClosed`, so Qt's default (`True`) applied — and
 
      `MainWindow` (`host/main_window.py`) uses `Qt.Tool`, which Qt
 
@@ -1822,7 +1822,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      Qt.Tool main window. Fixed generally in `host/main.py` with
 
-     `app.setQuitOnLastWindowClosed(False)` ΓÇö this was latent and would
+     `app.setQuitOnLastWindowClosed(False)` — this was latent and would
 
      have hit the ROUTE popout (or any future module window) too, not
 
@@ -1830,13 +1830,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Standardized "mobi<Name>" branding across all 4 module
+- **2026-09-04 — Standardized "mobi<Name>" branding across all 4 module
 
   card titles; found and fixed a case bug this exposed.** User request:
 
   every card title reads "mobi" in white (`theme.TEXT_PRIMARY`) + the
 
-  rest in the current blue accent (`theme.ACCENT_CYAN`) ΓÇö mobiOverlay
+  rest in the current blue accent (`theme.ACCENT_CYAN`) — mobiOverlay
 
   (main window wordmark), mobiTrade (was "Trade Routes"), mobiAim (was
 
@@ -1850,7 +1850,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Logistics Hub's title was already rich HTML and already all-uppercase,
 
-  so `.upper()` was a harmless no-op there ΓÇö but the target branding is
+  so `.upper()` was a harmless no-op there — but the target branding is
 
   **mixed case** (lowercase "mobi"), so `.upper()` would have silently
 
@@ -1864,13 +1864,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   already rendered correctly while the card header right next to it
 
-  showed "MOBILOGISTICS" in full caps ΓÇö a real, pre-existing mismatch.
+  showed "MOBILOGISTICS" in full caps — a real, pre-existing mismatch.
 
   Fixed by removing the `.upper()` call entirely; every module's
 
   `display_name` is now the rich-text HTML directly. The stow Tray needed
 
-  no separate change ΓÇö `CardContainer.stowed_cards()` reads back
+  no separate change — `CardContainer.stowed_cards()` reads back
 
   `card.header.title_label.text()` (whatever HTML the header ended up
 
@@ -1880,7 +1880,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Renamed Logistics Hub's "SELECT REGION" button to "SET
+- **2026-09-04 — Renamed Logistics Hub's "SELECT REGION" button to "SET
 
   SCAN AREA".** User flagged real ambiguity: "region" reads as an
 
@@ -1888,7 +1888,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   configured for OCR capture. Renamed the button, its status message
 
-  ("No capture region set ΓÇö use SET SCAN AREA..."), and the matching
+  ("No capture region set — use SET SCAN AREA..."), and the matching
 
   code comments/docstring in `modules/logistics_hub/module.py`. No
 
@@ -1896,13 +1896,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Fixed dropdown text clipping on the right edge in
+- **2026-09-04 — Fixed dropdown text clipping on the right edge in
 
   Logistics Hub's location combo and Trade Route Optimizer's terminal/
 
   system combos.** User-reported. Root cause: none of the project's
 
-  `QComboBox` QSS blocks styled the `QComboBox::drop-down` subcontrol ΓÇö
+  `QComboBox` QSS blocks styled the `QComboBox::drop-down` subcontrol —
 
   once a stylesheet sets custom padding/border on `QComboBox`, Qt no
 
@@ -1918,7 +1918,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the arrow) to every combo style block in `modules/logistics_hub/module.py`
 
-  and `modules/trade_route_optimizer/module.py` ΓÇö the user only reported
+  and `modules/trade_route_optimizer/module.py` — the user only reported
 
   Logistics Hub's combo, but Trade Route Optimizer's terminal/system/
 
@@ -1928,13 +1928,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Added a startup splash screen instead of speeding up the
+- **2026-09-04 — Added a startup splash screen instead of speeding up the
 
   slow import.** User reported a "significant delay" on launch; added
 
   diagnostic timing first rather than guessing (see the log in this
 
-  conversation) and confirmed it's NOT the UEX API ΓÇö `discover_modules()`
+  conversation) and confirmed it's NOT the UEX API — `discover_modules()`
 
   took 2.80s of a 3.64s total startup, and 2.79s of that was Logistics
 
@@ -1946,7 +1946,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   existing >2s watchdog. Offered to make the `easyocr` import genuinely
 
-  lazy (deferred to first SCAN CONTRACT click) instead ΓÇö user chose a
+  lazy (deferred to first SCAN CONTRACT click) instead — user chose a
 
   splash screen over that fix. New `host/splash.py`: a themed
 
@@ -1956,7 +1956,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   wordmark baked into the pixmap and a status line via `showMessage()`
 
-  updated at each startup stage ΓÇö including per-module ("Loading
+  updated at each startup stage — including per-module ("Loading
 
   Logistics Hub...") via a new `on_module_loading` callback param on
 
@@ -1976,15 +1976,15 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   diagnostic timing log lines added for this investigation
 
-  (`main.py`/`module_loader.py`) were left in place ΓÇö cheap, and useful
+  (`main.py`/`module_loader.py`) were left in place — cheap, and useful
 
   if startup regresses again later.
 
 
 
-- **2026-09-04 ΓÇö Added a "Debug Console" toggle to Settings** (`ui.show_console`,
+- **2026-09-04 — Added a "Debug Console" toggle to Settings** (`ui.show_console`,
 
-  default off, applies on next relaunch ΓÇö same pattern as Text Size).
+  default off, applies on next relaunch — same pattern as Text Size).
 
   Mainly matters for the packaged exe: `mobioverlay.spec` builds
 
@@ -2000,7 +2000,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   window and rebind `sys.stdout`/`stderr`/`stdin` to it when the setting
 
-  is on ΓÇö must run before `logging.basicConfig()` (which grabs
+  is on — must run before `logging.basicConfig()` (which grabs
 
   `sys.stderr` at call time) and before any other import that might log,
 
@@ -2010,11 +2010,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   console (`GetConsoleWindow()` catches that) so the toggle is a no-op
 
-  there ΓÇö it only changes anything for a windowed/no-console launch.
+  there — it only changes anything for a windowed/no-console launch.
 
 
 
-- **2026-09-04 ΓÇö Added a "by Kestryl" byline to the splash screen,
+- **2026-09-04 — Added a "by Kestryl" byline to the splash screen,
 
   centered below the wordmark.** User request: same two-tone split as
 
@@ -2036,7 +2036,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Bug fix: Logistics Hub was auto-scanning on its own,
+- **2026-09-04 — Bug fix: Logistics Hub was auto-scanning on its own,
 
   appending garbage contracts.** User-reported symptom: new contracts
 
@@ -2050,7 +2050,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `refresh()` only no-ops on the very first call (`self._started` guard,
 
-  meant for main.py's one-time initial-fetch call) ΓÇö every subsequent
+  meant for main.py's one-time initial-fetch call) — every subsequent
 
   timer tick ran a real OCR capture of whatever was on screen at that
 
@@ -2060,7 +2060,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   documented on-demand-only design (docs/modules/logistics-hub.md: "No
 
-  auto-rescan ΓÇö on-demand SCAN CONTRACT only"), which had only ever
+  auto-rescan — on-demand SCAN CONTRACT only"), which had only ever
 
   disabled the module's own now-removed opt-in auto-rescan toggle, not
 
@@ -2078,7 +2078,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Bug fix: Logistics Hub reversed pickup/dropoff for a
+- **2026-09-04 — Bug fix: Logistics Hub reversed pickup/dropoff for a
 
   real contract** (user pasted a real COPY ROUTE export: "Everus Harbor"
 
@@ -2096,7 +2096,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   resolved later via an unrelated, unhinted repeat mention two lines
 
-  later ΓÇö and the existing lookback heuristic (nearest keyword within 2
+  later — and the existing lookback heuristic (nearest keyword within 2
 
   lines back) grabbed a coincidentally-adjacent "Collect...from Seraphim"
 
@@ -2108,7 +2108,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   came directly from its own text (`own_line`, not `lookback`/`section`)
 
-  ΓÇö trying this unconditionally first backfired: it let a lookback-hinted
+  — trying this unconditionally first backfired: it let a lookback-hinted
 
   line's contamination reach one line further and wrongly hinted
 
@@ -2122,17 +2122,17 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   regression). Does not retroactively fix contracts already saved in
 
-  `contracts` config ΓÇö needs a rescan.
+  `contracts` config — needs a rescan.
 
 
 
-- **2026-09-04 ΓÇö Two Logistics Hub route/display fixes, user-requested
+- **2026-09-04 — Two Logistics Hub route/display fixes, user-requested
 
   after reviewing a real (now-correct) route export.**
 
   1. **SCU quantity now shown alongside every commodity** ("13 SCU
 
-     Agricultural Supplies" instead of a bare name) ΓÇö the module extracted
+     Agricultural Supplies" instead of a bare name) — the module extracted
 
      commodity names but silently dropped the SCU count that was sitting
 
@@ -2142,7 +2142,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      once per contract (the "Collect X from Y" pickup line never carries a
 
-     quantity itself ΓÇö it's the same cargo moving through both ends, so
+     quantity itself — it's the same cargo moving through both ends, so
 
      the map is looked up for both roles). `_extract_commodities()` now
 
@@ -2156,19 +2156,19 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      genuine two-commodity contract (Waste 6 SCU + Scrap 7 SCU, same
 
-     pickup/dropoff pair) ΓÇö both quantities correct on both ends.
+     pickup/dropoff pair) — both quantities correct on both ends.
 
   2. **Drop-off now wins ties over pickup in route ordering.** When a
 
      station has both a due pickup and a due drop-off at equal travel
 
-     cost (most commonly "same stop, cost 0" ΓÇö already standing there),
+     cost (most commonly "same stop, cost 0" — already standing there),
 
      `_plan_route`'s nearest-neighbour `min()` previously picked whichever
 
      came first in `nodes`, which happened to always be pickups (built
 
-     before drop-offs per contract in `_stop_nodes`) ΓÇö an accident of
+     before drop-offs per contract in `_stop_nodes`) — an accident of
 
      internal ordering, not a deliberate choice. Per user direction
 
@@ -2180,7 +2180,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-04 ΓÇö Settings > Relaunch review, user-reported "the old
+- **2026-09-04 — Settings > Relaunch review, user-reported "the old
 
   process isn't always fully dead before the new one starts."** Found
 
@@ -2190,7 +2190,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      `keyboard.hook()` in `self._hook` but never actually called
 
-     `keyboard.unhook()` on it anywhere ΓÇö `clear()` (used both by
+     `keyboard.unhook()` on it anywhere — `clear()` (used both by
 
      Settings' own Clear button and, previously, by shutdown) only reset
 
@@ -2200,7 +2200,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      restarting. That's correct for the Settings Clear case but wrong for
 
-     process exit ΓÇö added a separate `GlobalHotkey.shutdown()` that stops
+     process exit — added a separate `GlobalHotkey.shutdown()` that stops
 
      the reconcile `QTimer` and actually `keyboard.unhook()`s the hook,
 
@@ -2214,7 +2214,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   2. `relaunch()` started the new process (`subprocess.Popen`) *before*
 
-     tearing this instance down (`self.close()` / `quit()`) ΓÇö meaning
+     tearing this instance down (`self.close()` / `quit()`) — meaning
 
      both instances could be briefly alive together: two global keyboard
 
@@ -2234,7 +2234,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      listener thread is daemon (verified in the installed package,
 
-     `_generic.py`), so it isn't the risk ΓÇö but easyocr/torch's native
+     `_generic.py`), so it isn't the risk — but easyocr/torch's native
 
      (non-Python) thread pools are a known source of slow/stuck CPython
 
@@ -2262,7 +2262,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   holding up. Scoped with the user before building rather than assumed:
 
-  - Always-on, no Settings toggle ΓÇö simplest, and avoids forgetting to
+  - Always-on, no Settings toggle — simplest, and avoids forgetting to
 
     enable it before a session worth capturing.
 
@@ -2272,7 +2272,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
     build's wiped temp extraction dir).
 
-  - No size cap/rotation ΓÇö user manages the file manually; scan-triggered
+  - No size cap/rotation — user manages the file manually; scan-triggered
 
     logging won't grow large quickly.
 
@@ -2294,7 +2294,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   so a log-write failure can never break a scan. Code-reviewed and
 
-  syntax-checked only ΓÇö not yet live-tested (needs a real scan to confirm
+  syntax-checked only — not yet live-tested (needs a real scan to confirm
 
   the file actually gets written and is valid JSONL).
 
@@ -2306,7 +2306,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (never persisted) and was only ever recomputed by `_plan_route()` inside
 
-  a scan, a location change, or CLEAR ΓÇö `create_card()` rendered whatever
+  a scan, a location change, or CLEAR — `create_card()` rendered whatever
 
   contracts config.json restored without ever recomputing the route for
 
@@ -2314,11 +2314,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   after loading, before the first `_render_results()`, when there are any
 
-  persisted contracts. Code-reviewed and syntax-checked only ΓÇö not yet
+  persisted contracts. Code-reviewed and syntax-checked only — not yet
 
   live-tested (needs a relaunch with existing contracts to confirm ROUTE
 
-  now shows immediately). **User confirmed 2026-09-04: fixed** ΓÇö relaunch
+  now shows immediately). **User confirmed 2026-09-04: fixed** — relaunch
 
   with existing contracts now shows ROUTE immediately.
 
@@ -2336,7 +2336,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   hint but zero exact/substring matches in `LocationService.resolve_all()`
 
-  was silently dropped ΓÇö no stop, no warning ΓÇö whenever OCR garbled a name
+  was silently dropped — no stop, no warning — whenever OCR garbled a name
 
   enough to miss substring matching too (a dropped/altered letter, e.g.
 
@@ -2346,7 +2346,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `difflib.SequenceMatcher` ratio against the same in-memory name index
 
-  `resolve_all` already uses) as a deliberately separate, opt-in method ΓÇö
+  `resolve_all` already uses) as a deliberately separate, opt-in method —
 
   never folded into `resolve()`/`resolve_all()` themselves, since every
 
@@ -2360,7 +2360,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   only when `resolve_all` found nothing **and** the candidate's hint isn't
 
-  `neutral` (same gating already used for the ambiguous-match note path) ΓÇö
+  `neutral` (same gating already used for the ambiguous-match note path) —
 
   on a hit, the stop resolves normally (`merge_resolved`, so it still
 
@@ -2372,7 +2372,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   ambiguity, e.g. `"'Baijni Point' (pickup) fuzzy-matched to Baijini Point
 
-  (96% confidence) ΓÇö please verify"`.
+  (96% confidence) — please verify"`.
 
   **Cutoff tuned from an initial 0.75 to 0.85 after live verification
 
@@ -2382,7 +2382,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   found OCR debris "Tech's Ll" (mangled from "microTech's Ll Lagrange
 
-  point" ΓÇö not a location mention at all) scoring 0.77 against an
+  point" — not a location mention at all) scoring 0.77 against an
 
   unrelated real shop named "Teach's", which would have added a spurious
 
@@ -2390,7 +2390,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the same replay (dropped/altered letters, not debris) scored 0.87+, so
 
-  0.85 cleanly separates the two without losing any real catch ΓÇö confirmed
+  0.85 cleanly separates the two without losing any real catch — confirmed
 
   by re-running the same 7 contracts: identical pickups/dropoffs list for
 
@@ -2402,7 +2402,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   alias set) rather than adding a new stop. Locations-only for this pass,
 
-  per the phased plan ΓÇö commodity extraction and an editable
+  per the phased plan — commodity extraction and an editable
 
   correction-combo UI (so a user can override a wrong or low-confidence
 
@@ -2420,17 +2420,17 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   exact/substring match *and* the fuzzy cutoff still vanishes with zero
 
-  trace ΓÇö no record it was ever considered, or how close it came; (2) which
+  trace — no record it was ever considered, or how close it came; (2) which
 
   of `_build_contract`'s five resolution paths (exact/substring match,
 
   suffix disambiguation, "already confirmed elsewhere," fuzzy match) won for
 
-  a resolved candidate wasn't recorded ΓÇö only the final outcome was visible.
+  a resolved candidate wasn't recorded — only the final outcome was visible.
 
   `LocationService.best_fuzzy_match()` (`host/locations.py`) was split out
 
-  of `resolve_fuzzy()` ΓÇö same scoring loop, no cutoff applied ΓÇö so a caller
+  of `resolve_fuzzy()` — same scoring loop, no cutoff applied — so a caller
 
   can see the *near-miss* score for a dropped candidate; `resolve_fuzzy()`
 
@@ -2440,7 +2440,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   None = None` out-parameter (only one call site, `refresh()`, so a safe
 
-  additive signature change) ΓÇö a trace entry gets appended at each of the
+  additive signature change) — a trace entry gets appended at each of the
 
   six places a candidate's fate is decided across Pass 1/Pass 2, recording
 
@@ -2448,7 +2448,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   for `resolved`, which `method` won. Deliberately an out-parameter rather
 
-  than changing `_build_contract`'s return type ΓÇö keeps the change purely
+  than changing `_build_contract`'s return type — keeps the change purely
 
   additive/observational with zero risk to the actual resolution logic,
 
@@ -2462,7 +2462,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (`outcome == "resolved" and method == "fuzzy"`) instead of string-matching
 
-  "fuzzy-matched" in the ambiguous-notes text ΓÇö same field, sturdier source.
+  "fuzzy-matched" in the ambiguous-notes text — same field, sturdier source.
 
   **Verified via backend replay of all 7 real contracts in
 
@@ -2480,7 +2480,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   existing neutral-hint gating. Locations-only, same phased scope as the
 
-  fuzzy-match feature ΓÇö a runner-up score on a *successful* fuzzy match and
+  fuzzy-match feature — a runner-up score on a *successful* fuzzy match and
 
   a schema/build-version stamp per log entry were both considered and
 
@@ -2498,7 +2498,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   above answers "did it resolve locations correctly" but not "did it route
 
-  them well" ΓÇö the debug log only ever showed the *final* route, giving no
+  them well" — the debug log only ever showed the *final* route, giving no
 
   way to tell from the log alone whether `_two_opt` actually improved on the
 
@@ -2510,7 +2510,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the greedy route and its cost (via the existing `_route_cost()` helper)
 
-  *before* handing off to `_two_opt`, alongside the final route/cost after ΓÇö
+  *before* handing off to `_two_opt`, alongside the final route/cost after —
 
   threaded through `_add_contract` (also gains the same optional param) and
 
@@ -2524,7 +2524,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   backend replay**: 2-opt genuinely improved 6 of the 7 scans (savings of
 
-  5-19 cost units), one had nothing to improve (0.0) ΓÇö confirms the
+  5-19 cost units), one had nothing to improve (0.0) — confirms the
 
   optimization pass is doing real work, not a no-op, on real captured data.
 
@@ -2534,7 +2534,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- 2026-09-05: **Or-opt added alongside 2-opt ΓÇö a real routing gap found on
+- 2026-09-05: **Or-opt added alongside 2-opt — a real routing gap found on
 
   live data, planned and fixed the same session.** Reviewing the
 
@@ -2542,9 +2542,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   showed the same real terminal (Everus Harbor) visited twice in one
 
-  route ΓÇö once as a pickup for one contract, once as a dropoff for
+  route — once as a pickup for one contract, once as a dropoff for
 
-  another ΓÇö instead of merging into a single stop, even though merging was
+  another — instead of merging into a single stop, even though merging was
 
   legal (precedence-respecting) and cheaper. Root cause: `_plan_route`
 
@@ -2552,19 +2552,19 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   contiguous sub-segment) structurally cannot express "relocate one node
 
-  past several others without reversing anything between them" ΓÇö that's a
+  past several others without reversing anything between them" — that's a
 
   different move type (Or-opt), not a bug in 2-opt itself. Measured impact
 
   on the live case was modest (~5 of ~153 cost units, Γëê3%) but structural,
 
-  not incidental ΓÇö confirmed it'll recur any time a hub location plays
+  not incidental — confirmed it'll recur any time a hub location plays
 
   both roles across contracts. New `_or_opt()` (mirrors `_two_opt`'s exact
 
   style: repeatedly try one move, keep it if `_route_cost` drops and
 
-  `_respects_precedence` still holds, run until a full pass finds nothing ΓÇö
+  `_respects_precedence` still holds, run until a full pass finds nothing —
 
   both existing helpers reused unchanged). `_plan_route` now alternates
 
@@ -2580,7 +2580,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `rounds_run` count. **Verified**: replayed the exact live 4-contract
 
-  scenario that exposed the gap ΓÇö final cost dropped 153 ΓåÆ 148 (matching
+  scenario that exposed the gap — final cost dropped 153 ΓåÆ 148 (matching
 
   the manual live-distance calculation done during the original review),
 
@@ -2592,7 +2592,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   move (`break` out of both loops) rather than continuing against a stale
 
-  pre-move sequence ΓÇö an early draft didn't do this and could have
+  pre-move sequence — an early draft didn't do this and could have
 
   silently discarded an improvement it had just found.
 
@@ -2604,7 +2604,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   useful to see in a few seconds without reading the whole scrollable
 
-  list). All three reuse data already computed ΓÇö no new state, no new API
+  list). All three reuse data already computed — no new state, no new API
 
   calls: (1) a summary line ("4 contracts ┬╖ 268,750 aUEC ┬╖ 143 SCU peak
 
@@ -2614,7 +2614,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   *planned route* (`+SCU` on pickup, `-SCU` on dropoff, tracked via a new
 
-  `_peak_cargo_scu()`), not a flat sum of every pickup ΓÇö a flat sum
+  `_peak_cargo_scu()`), not a flat sum of every pickup — a flat sum
 
   overstates the hold size needed whenever some cargo gets delivered
 
@@ -2626,7 +2626,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (new `_next_stop_banner()`, distinct from the existing amber
 
-  `_ambiguous_row`) ΓÇö the first not-yet-done stop, verified to correctly
+  `_ambiguous_row`) — the first not-yet-done stop, verified to correctly
 
   advance once that stop is marked done. `_describe_stop()`/`_stop_entry()`
 
@@ -2638,7 +2638,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (`_total_reward`/`_peak_cargo_scu` cross-checked against a hand-computed
 
-  trace of the same live scenario, both matched exactly) ΓÇö the actual
+  trace of the same live scenario, both matched exactly) — the actual
 
   widgets (`_summary_label`, `_next_stop_banner`) construct real `QLabel`s
 
@@ -2654,7 +2654,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the Tracker popout was opened at least once** (same box also made the
 
-  route stop done/skip toggle look broken ΓÇö nothing to click, since the
+  route stop done/skip toggle look broken — nothing to click, since the
 
   rows themselves weren't visible). First attempt: theorized a stale
 
@@ -2664,9 +2664,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   it to 0 at the end of every `_render_results()` call. **User confirmed
 
-  live: did not fix it.** Root cause was never actually pinned down ΓÇö no
+  live: did not fix it.** Root cause was never actually pinned down — no
 
-  way to run the real Qt UI in this environment to inspect it further ΓÇö
+  way to run the real Qt UI in this environment to inspect it further —
 
   and continuing to guess blind wasn't converging.
 
@@ -2676,7 +2676,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   a feature that'll get used, and the Tracker popout (confirmed working
 
-  throughout) is the actual tool for working a route ΓÇö so the card's
+  throughout) is the actual tool for working a route — so the card's
 
   ROUTE area now shows only a stop count + "click TRACKER" prompt, no
 
@@ -2692,13 +2692,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   route." `_next_stop_banner()` removed entirely (unused);
 
-  `_describe_stop()`/`_stop_entry()` kept ΓÇö still shared between
+  `_describe_stop()`/`_stop_entry()` kept — still shared between
 
   `_populate_route_rows` (popout only, now) and `_peak_cargo_scu()`.
 
   Also fielded in the same review: no way to confirm/edit a fuzzy-matched
 
-  or ambiguous location from the card ΓÇö this is the already-scoped-out
+  or ambiguous location from the card — this is the already-scoped-out
 
   correction-combo UI (see the 2026-09-05 fuzzy-match entry above, "later
 
@@ -2714,7 +2714,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   that the same contract also delivers 52 SCU of Titanium to a second
 
-  station (Seraphim) ΓÇö the pickup actually needs 102 SCU total, not 50.
+  station (Seraphim) — the pickup actually needs 102 SCU total, not 50.
 
   Root cause: `_commodity_quantities()` mapped commodity name -> quantity
 
@@ -2724,7 +2724,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the same commodity name silently overwrote the first instead of adding
 
-  to it ΓÇö and `_extract_commodities`'s dedup-by-commodity-name then
+  to it — and `_extract_commodities`'s dedup-by-commodity-name then
 
   dropped the second occurrence entirely once resolving the pickup entry.
 
@@ -2740,7 +2740,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   exact amount instead of looking it up in the (now summed, and therefore
 
-  wrong for a single delivery) shared dict ΓÇö otherwise summing would have
+  wrong for a single delivery) shared dict — otherwise summing would have
 
   fixed the pickup but broken every drop-off into showing the combined
 
@@ -2752,7 +2752,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   bug: pickup now correctly shows `('Titanium', '102')`, the two drop-offs
 
-  still correctly show `52` and `50` independently ΓÇö and the peak-cargo
+  still correctly show `52` and `50` independently — and the peak-cargo
 
   summary (2026-09-05, earlier the same day) was silently under-reporting
 
@@ -2762,7 +2762,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- 2026-09-05: **New REPROCESS button ΓÇö re-parse saved contracts without
+- 2026-09-05: **New REPROCESS button — re-parse saved contracts without
 
   rescanning.** Direct follow-up to the commodity-quantity fix above: fixing
 
@@ -2774,7 +2774,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   it later), and the only existing option was CLEAR + rescan everything
 
-  from the game ΓÇö wasteful when every contract's own `raw_text` is already
+  from the game — wasteful when every contract's own `raw_text` is already
 
   persisted (same text the debug log/COPY ROUTE export already use).
 
@@ -2784,7 +2784,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   saved contract's own `raw_text` and swaps in the freshly-parsed result,
 
-  then replans the route ΓÇö no OCR, no rescan, no additional UEX API calls
+  then replans the route — no OCR, no rescan, no additional UEX API calls
 
   beyond what `_build_contract` already does (location index is already
 
@@ -2796,7 +2796,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   keeping the same id is what lets an already-marked-done stop stay
 
-  correctly matched after reprocessing ΓÇö this only holds as long as the
+  correctly matched after reprocessing — this only holds as long as the
 
   fix being picked up doesn't change how many pickups/dropoffs a contract
 
@@ -2808,7 +2808,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   failure mode. Wrapped in `_safe_reprocess()`, matching `_safe_scan()`'s
 
-  try/except-and-status pattern ΓÇö no busy-button treatment needed since
+  try/except-and-status pattern — no busy-button treatment needed since
 
   this is pure in-memory regex/lookup work, not OCR or a network call.
 
@@ -2824,7 +2824,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   wiring itself (not the underlying logic) can't be click-tested without a
 
-  live `QApplication` ΓÇö needs a human check in the real running app, same
+  live `QApplication` — needs a human check in the real running app, same
 
   as this session's other UI-only changes.
 
@@ -2832,7 +2832,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 - 2026-09-05: **REPROCESS now writes a debug log entry too.** User changed
 
-  CURRENT LOCATION and ran REPROCESS, then asked to verify it worked ΓÇö
+  CURRENT LOCATION and ran REPROCESS, then asked to verify it worked —
 
   found nothing in `logistics_hub_debug.jsonl` to check, since only
 
@@ -2840,7 +2840,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `_log_reprocess_debug()` (`modules/logistics_hub/module.py`) writes one
 
-  entry per REPROCESS run ΓÇö same shape as a scan's entry, but `contracts`/
+  entry per REPROCESS run — same shape as a scan's entry, but `contracts`/
 
   `resolution_traces` cover every reprocessed contract at once (a list per
 
@@ -2884,7 +2884,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   **terminals-only**, not `LocationService.all_locations()` (which
 
-  Logistics Hub's combo does use) ΓÇö `commodities_routes` (the endpoint
+  Logistics Hub's combo does use) — `commodities_routes` (the endpoint
 
   `refresh()` calls) requires a real `id_terminal_origin`; space stations/
 
@@ -2906,7 +2906,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- 2026-09-05: **`LocationService.friendly_label()` added** ΓÇö user reported
+- 2026-09-05: **`LocationService.friendly_label()` added** — user reported
 
   typing "Glen" found mobiLogistics' CURRENT LOCATION (CRU-L5 Beautiful
 
@@ -2918,7 +2918,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   entry above) and the `terminals` record for that same physical place
 
-  (`id` 22, "Admin - CRU-L5") has no descriptive name of its own ΓÇö its
+  (`id` 22, "Admin - CRU-L5") has no descriptive name of its own — its
 
   `name`/`nickname` are both just the bare "CRU-L5" code. The friendly name
 
@@ -2932,7 +2932,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   and borrows its fuller name when the terminal's own name isn't as
 
-  descriptive ΓÇö built as a shared `LocationService` helper (not a local
+  descriptive — built as a shared `LocationService` helper (not a local
 
   mobiTrade-only fix) per user direction, so any current/future
 
@@ -2942,7 +2942,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   facility like "Landing Services - CRU-L5" is textually longer than the
 
-  real place name but isn't the place's name ΓÇö an earlier version of this
+  real place name but isn't the place's name — an earlier version of this
 
   fix picked exactly that facility name by mistake before restricting the
 
@@ -2962,7 +2962,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 - 2026-09-05: **mobiCommodities' "Find Most Profitable" (and Best Sell/Best
 
-  Buy) made stock-aware ΓÇö user caught a real mobiTrade/mobiCommodities
+  Buy) made stock-aware — user caught a real mobiTrade/mobiCommodities
 
   disagreement.** mobiCommodities said Compboard was most profitable to buy
 
@@ -2974,11 +2974,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   does return Distilled Spirits ΓåÆ MIC-L5 as the top route by total profit
 
-  (3,156,000 aUEC) from Rayari Kaltag ΓÇö mobiTrade was correct. Compboard is
+  (3,156,000 aUEC) from Rayari Kaltag — mobiTrade was correct. Compboard is
 
   in that same route list, worth only 15,080 aUEC total, because Rayari
 
-  Kaltag has just 2 SCU (`scu_buy: 2`) of it in stock ΓÇö huge per-unit
+  Kaltag has just 2 SCU (`scu_buy: 2`) of it in stock — huge per-unit
 
   margin, negligible achievable total. Root cause:
 
@@ -2992,7 +2992,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   commodity), capped by source stock only. **First pass of this fix also
 
-  gated the SELL side on `scu_sell > 0` and was wrong** ΓÇö caught before
+  gated the SELL side on `scu_sell > 0` and was wrong** — caught before
 
   shipping by live-checking the fix against the real data that started
 
@@ -3002,7 +3002,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   checked broadly across 5 commodities, `scu_sell` is 0 despite a real
 
-  sell price 75-95% of the time ΓÇö UEX just doesn't reliably track
+  sell price 75-95% of the time — UEX just doesn't reliably track
 
   sell-side demand capacity the way it tracks source stock (confirmed via
 
@@ -3012,7 +3012,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   gate only on `scu_buy` (BUY side, confirmed live to be 0 only when
 
-  `price_buy` is also 0 ΓÇö reliable) and leave the SELL side as a pure
+  `price_buy` is also 0 — reliable) and leave the SELL side as a pure
 
   price comparison, both in `find_most_profitable()` and the regular Best
 
@@ -3028,13 +3028,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- 2026-09-05: **mobiTrade's origin picker made optional ΓÇö "Any Location"
+- 2026-09-05: **mobiTrade's origin picker made optional — "Any Location"
 
   search, with a per-system BUY IN filter.** User's ask: a real trader
 
   often doesn't have a fixed starting terminal and wants the best trade
 
-  *anywhere* (or anywhere in a system), then decides where to fly ΓÇö not
+  *anywhere* (or anywhere in a system), then decides where to fly — not
 
   the other way around. Requested semantics: no filter + no location =
 
@@ -3044,7 +3044,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   before designing anything: `commodities_routes` has **no bulk-origin
 
-  query** ΓÇö `id_star_system_origin` alone returns
+  query** — `id_star_system_origin` alone returns
 
   `missing_one_required_inputs`; it strictly requires one of
 
@@ -3052,7 +3052,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   per call. So "Any Location"/BUY IN genuinely means one API call per
 
-  candidate terminal (up to 114 for the whole game) and merging results ΓÇö
+  candidate terminal (up to 114 for the whole game) and merging results —
 
   no server-side shortcut exists. Implemented as a manual **SCAN** button
 
@@ -3066,7 +3066,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   30-min cache-countdown + "FORCE UPDATE?" confirm) rather than inventing
 
-  a new mechanism ΓÇö confirmed with user this should be an explicit manual
+  a new mechanism — confirmed with user this should be an explicit manual
 
   action, not automatic, since `refresh()` runs synchronously on the
 
@@ -3080,7 +3080,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   carries its own `origin_terminal_name`/`origin_star_system_name`/
 
-  `origin_planet_name` (confirmed live) ΓÇö no extra tagging needed to merge
+  `origin_planet_name` (confirmed live) — no extra tagging needed to merge
 
   rows from many different scanned terminals into one sorted pool.
 
@@ -3088,7 +3088,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (confirmed with user) since origin is no longer implied by a single
 
-  picker selection in scan mode ΓÇö kept in single-terminal mode too, for
+  picker selection in scan mode — kept in single-terminal mode too, for
 
   consistency. Verified the merge/sort logic against real live data: 3
 
@@ -3106,7 +3106,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   after using it for real.**
 
-  1. **Origin combo's dropdown arrow was clipped/invisible** ΓÇö the BUY IN
+  1. **Origin combo's dropdown arrow was clipped/invisible** — the BUY IN
 
      filter was placed in the same row as the origin combo, squeezing it
 
@@ -3116,7 +3116,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      plain text field. Fixed by moving BUY IN to its own row below the
 
-     origin combo, restoring its full width ΓÇö same root-cause class as the
+     origin combo, restoring its full width — same root-cause class as the
 
      right-edge combo clipping already fixed once before (PROGRESS.md,
 
@@ -3130,7 +3130,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      figure on screen. Confirmed live this profit is real API-level
 
-     impossible at that cap ΓÇö scanned 15 real terminals with
+     impossible at that cap — scanned 15 real terminals with
 
      `investment=1000000`, best genuine result was 447,600; confirmed the
 
@@ -3140,7 +3140,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      $1M). Root cause: unlike SELL IN, which re-slices already-fetched
 
-     data client-side, `investment` changes what the API itself returns ΓÇö
+     data client-side, `investment` changes what the API itself returns —
 
      but nothing invalidated a prior SCAN's rows when investment (or BUY
 
@@ -3152,13 +3152,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      field, which reads as "this is what $1M gets you" when it isn't.
 
-     Fixed with `_invalidate_scan_results()` ΓÇö clears displayed rows and
+     Fixed with `_invalidate_scan_results()` — clears displayed rows and
 
      sets "RESCAN NEEDED" whenever investment changes (Any Location mode),
 
      BUY IN changes, or origin switches back to Any Location from a
 
-     specific terminal ΓÇö a fresh SCAN click is required rather than
+     specific terminal — a fresh SCAN click is required rather than
 
      silently trusting stale numbers.
 
@@ -3166,7 +3166,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 - 2026-09-06: **Fixed the logistics-hub role-assignment KNOWN BUG (logged
 
-  2026-09-04) ΓÇö two distinct mechanisms in `_candidate_phrases()`
+  2026-09-04) — two distinct mechanisms in `_candidate_phrases()`
 
   (`modules/logistics_hub/module.py`), found together auditing a fresh
 
@@ -3178,7 +3178,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Ambitious Dream Station).** App output showed "Ambitious Dream Station"
 
-  as a *pickup* ΓÇö it's actually a drop-off, printed under the contract's
+  as a *pickup* — it's actually a drop-off, printed under the contract's
 
   own "DROP OFF LOCATIONS (ANY ORDER)" section header.
 
@@ -3194,7 +3194,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      elevator at Ambitious Dream Station at Crusader's Ll" line purely by
 
-     two-column OCR reordering coincidence ΓÇö the joined re-scan picked up
+     two-column OCR reordering coincidence — the joined re-scan picked up
 
      "Ambitious Dream Station" from that second line whole and tagged it
 
@@ -3208,7 +3208,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      match to actually straddle the line join (real characters on both
 
-     sides of the inserted space) before accepting it ΓÇö a genuinely
+     sides of the inserted space) before accepting it — a genuinely
 
      wrapped name always does; an unrelated phrase sitting entirely
 
@@ -3228,7 +3228,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      found the same nearby "Collect Processed Food from Seraphim
 
-     Station." pickup line and wrongly inherited its hint ΓÇö even though
+     Station." pickup line and wrongly inherited its hint — even though
 
      the line is clearly under the active "DROP OFF LOCATIONS (ANY
 
@@ -3242,19 +3242,19 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      section signal. Fixed by checking section first whenever one is
 
-     active and the line looks like a real section row (contains "at" ΓÇö
+     active and the line looks like a real section row (contains "at" —
 
      the same qualifier the section fallback already used); lookback now
 
      only runs when no section applies. `HINT_PRIORITY` itself (which
 
-     hint wins when the *same* phrase is seen twice) is unchanged ΓÇö this
+     hint wins when the *same* phrase is seen twice) is unchanged — this
 
      only reorders which check computes a fresh line's *first* hint.
 
   **Verified** via a standalone backend script (no QApplication, no
 
-  network ΓÇö `LocationService.ensure_loaded()` read the on-disk
+  network — `LocationService.ensure_loaded()` read the on-disk
 
   `locations_cache.json`) against the exact real OCR text of the
 
@@ -3264,7 +3264,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   session's other two real contracts (Everus Harbor ΓåÆ Baijini Point, and
 
-  the MIC-L2 Long Forest Station 4-drop-off contract) ΓÇö both produced
+  the MIC-L2 Long Forest Station 4-drop-off contract) — both produced
 
   identical pickups/dropoffs to their pre-fix output, no change.
 
@@ -3272,7 +3272,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   stop's own commodity came back empty (should be 5 SCU Pressurized Ice)
 
-  ΓÇö its source line is split across *three* OCR lines ("Deliver 0/5 SCU
+  — its source line is split across *three* OCR lines ("Deliver 0/5 SCU
 
   of Pressurized" / "to Ambitious Dream" / "Station...") with the word
 
@@ -3282,7 +3282,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   regexes. Confirmed already wrong before this session's role-assignment
 
-  fix too (same value, unrelated bug). **Fixed later the same session ΓÇö
+  fix too (same value, unrelated bug). **Fixed later the same session —
 
   see the next entry below.**
 
@@ -3306,7 +3306,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      line, "to Ambitious Dream"), so `pattern.search(line)` simply never
 
-     matched ΓÇö the whole delivery vanished, not just its tail. Fixed with
+     matched — the whole delivery vanished, not just its tail. Fixed with
 
      a new shared helper, `_find_delivery_match()`: starting from a line,
 
@@ -3324,11 +3324,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      as a location" guard, and now also the completion vocabulary below)
 
-     deliberately keeps its own single-line-only matching ΓÇö see #2.
+     deliberately keeps its own single-line-only matching — see #2.
 
   2. **Even once the delivery line resolves, its commodity name itself
 
-     can still be truncated with no reachable fix** ΓÇö "Pressurized" ends
+     can still be truncated with no reachable fix** — "Pressurized" ends
 
      up alone (missing "Ice"), because "Ice" isn't on the very next line
 
@@ -3344,7 +3344,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      *fuller mention of the same commodity already confirmed elsewhere in
 
-     the same contract* ΓÇö "Pressurized Ice" is spelled out intact
+     the same contract* — "Pressurized Ice" is spelled out intact
 
      earlier in this very contract, on lines that never got split
 
@@ -3356,7 +3356,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      when the candidate is a whole-word prefix of *exactly one* longer
 
-     known name ΓÇö anything else (already complete, no match, more than
+     known name — anything else (already complete, no match, more than
 
      one candidate) is left untouched rather than guessed.
 
@@ -3364,7 +3364,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      lowercase set to a `{lowercase: original-cased}` dict specifically
 
-     so the completion has real, correctly-cased text to substitute in ΓÇö
+     so the completion has real, correctly-cased text to substitute in —
 
      its one existing call site (`_build_contract`'s fallback-dropoff
 
@@ -3392,7 +3392,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   updated from 6 to 11 (6 to Beautiful Glen + 5 to Ambitious Dream) as a
 
-  direct consequence ΓÇö both were wired through the same
+  direct consequence — both were wired through the same
 
   `_commodity_quantities()`/`_extract_commodities()` pipeline, so fixing
 
@@ -3400,7 +3400,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   contracts 1 and 3 from the same session (Everus Harbor/Baijini Point;
 
-  the MIC-L2 Long Forest Station 4-commodity contract) ΓÇö identical
+  the MIC-L2 Long Forest Station 4-commodity contract) — identical
 
   commodity output to pre-fix, no change.
 
@@ -3412,7 +3412,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Seraphim") instead of the `space_stations` record ("Seraphim Station")
 
-  that every actual pickup/dropoff at that place resolves to ΓÇö same real
+  that every actual pickup/dropoff at that place resolves to — same real
 
   place, two different UEX records. `terminal_key()` equality (used for
 
@@ -3422,7 +3422,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   came back empty (UEX doesn't track a kiosk-to-its-own-station
 
-  distance), falling back to the coarse "+5 estimate" instead of 0 ΓÇö that
+  distance), falling back to the coarse "+5 estimate" instead of 0 — that
 
   fake cost made a genuinely farther stop (Ambitious Dream Station, real
 
@@ -3436,7 +3436,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `space_stations`/`outposts`/`cities` record it structurally belongs to
 
-  (via `id_space_station`/`id_outpost`/`id_city`) ΓÇö a real FK link
+  (via `id_space_station`/`id_outpost`/`id_city`) — a real FK link
 
   already present in the data, not a name guess. Wired into
 
@@ -3470,7 +3470,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Tressler drop-off showed 13 SCU Corundum; the raw text clearly says 11
 
-  ("Deliver 0/11 SCU of Corundum to Port Tressler above microTech:") ΓÇö
+  ("Deliver 0/11 SCU of Corundum to Port Tressler above microTech:") —
 
   13 is actually Everus Harbor's own Corundum amount from a different
 
@@ -3486,7 +3486,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   interleaving, by an unrelated "Freight elevator at Port Tressler..."
 
-  listing line ΓÇö so Port Tressler's own extraction pass wrongly claimed
+  listing line — so Port Tressler's own extraction pass wrongly claimed
 
   this Everus-Harbor-bound delivery (stealing its 13 SCU), which also
 
@@ -3494,7 +3494,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the dedup-by-commodity-name check. The pickup-side total (which sums
 
-  across every delivery line regardless of destination) was unaffected ΓÇö
+  across every delivery line regardless of destination) was unaffected —
 
   only the per-stop breakdown was wrong. Fixed the same way as the
 
@@ -3504,7 +3504,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   straddles the line boundary (part of it already in this line's own
 
-  destination text) ΓÇö a match sitting entirely inside the next,
+  destination text) — a match sitting entirely inside the next,
 
   unrelated line no longer counts. A same-line match (the common case)
 
@@ -3522,7 +3522,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 - 2026-09-06: **Added `tests/test_logistics_hub_parsing.py`, a permanent
 
-  regression suite of real captured contracts** ΓÇö direct response to
+  regression suite of real captured contracts** — direct response to
 
   this session's pattern of fixing one bug, then finding a second,
 
@@ -3536,7 +3536,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   against its own text during this session, asserting exact pickups/
 
-  dropoffs/commodities ΓÇö so a future change can't silently reintroduce
+  dropoffs/commodities — so a future change can't silently reintroduce
 
   an earlier fix's bug without a visible test failure. No framework
 
@@ -3550,13 +3550,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   found this session (`seraphim_4stop_v1_role_tiebreak_bug`,
 
-  `mic_l2_long_forest_v2_port_tressler_theft_bug`) ΓÇö deliberately named
+  `mic_l2_long_forest_v2_port_tressler_theft_bug`) — deliberately named
 
   so a future failure names which historical bug came back. One
 
   additional verified-correct contract (Baijini Point -> Seraphim, 103
 
-  Stims) was NOT added ΓÇö its raw OCR text was never captured before the
+  Stims) was NOT added — its raw OCR text was never captured before the
 
   source debug log entry was wiped, and reconstructing it from memory
 
@@ -3566,7 +3566,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   every time a new bug is found and fixed, not just at the end of a
 
-  session ΓÇö that's what keeps it actually protective.
+  session — that's what keeps it actually protective.
 
 
 
@@ -3578,7 +3578,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (`kiosk.get("id_space_station") == structural.get("id")`, etc.) never
 
-  verified `structural` actually came from the endpoint that FK names ΓÇö
+  verified `structural` actually came from the endpoint that FK names —
 
   so a `terminals` kiosk with `id_space_station=27` would wrongly match
 
@@ -3588,13 +3588,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   terminal 259 ("Admin - Seraphim", `id_space_station=27`) wrongly
 
-  matched `outposts` id 27 ("HDMS-Woodruff") ΓÇö a completely unrelated
+  matched `outposts` id 27 ("HDMS-Woodruff") — a completely unrelated
 
   real place. This is exactly the cross-endpoint id-collision class of
 
   bug `host/locations.py`'s own module docstring exists to warn about
 
-  (see 2026-09-04) ΓÇö introduced by the same-place fix earlier today
+  (see 2026-09-04) — introduced by the same-place fix earlier today
 
   despite that. Fixed by also requiring `structural.get("_endpoint") ==
 
@@ -3604,7 +3604,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `tests/test_logistics_hub_parsing.py`'s `DISTANCE_FIXTURES` using this
 
-  exact real pair ΓÇö confirmed it fails on the pre-fix code and passes
+  exact real pair — confirmed it fails on the pre-fix code and passes
 
   after. Four other findings from the same review pass were triaged and
 
@@ -3620,13 +3620,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   redundant-recomputation findings (correct but negligible at this
 
-  project's actual data scale ΓÇö single-contract text, 4-8 stops per
+  project's actual data scale — single-contract text, 4-8 stops per
 
   route).
 
 
 
-- 2026-09-06: **New module: Refinery Finder ΓÇö picked up BACKLOG.md's Tier
+- 2026-09-06: **New module: Refinery Finder — picked up BACKLOG.md's Tier
 
   1.3 "Refinery Yield Calculator," but narrowed scope after live API
 
@@ -3648,11 +3648,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   quantity_yield + quantity_inert out) has only **3 rows total** across
 
-  the whole live dataset ΓÇö checked directly, not assumed. Also checked
+  the whole live dataset — checked directly, not assumed. Also checked
 
   `commodities` itself for any base yield%/purity field on a raw
 
-  commodity record ΓÇö none exists; raw/refined pairs link only via
+  commodity record — none exists; raw/refined pairs link only via
 
   `id_parent`. Building "enter N SCU, get exact output" would require
 
@@ -3666,7 +3666,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   entries), show each terminal's capacity, and a static methods
 
-  comparison table ΓÇö all real UEX data, nothing invented. Confirmed live
+  comparison table — all real UEX data, nothing invented. Confirmed live
 
   that `refineries_yields`' `id_commodity` query param does **not**
 
@@ -3674,7 +3674,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   don't assume" lesson as Commodity Prices' `commodity_name` substring
 
-  surprise) ΓÇö filtered client-side instead. Also confirmed terminal
+  surprise) — filtered client-side instead. Also confirmed terminal
 
   names from these endpoints ("Refinement Center - Nyx Gateway (Pyro)")
 
@@ -3684,7 +3684,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   needed here. A terminal can report more than one yield value for the
 
-  same commodity over time (confirmed live) ΓÇö kept only each terminal's
+  same commodity over time (confirmed live) — kept only each terminal's
 
   best reported value before ranking, so the top-5 list isn't dominated
 
@@ -3738,7 +3738,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   **Found and fixed a second-order regression from this same fix before
 
-  shipping it**: two existing regression fixtures broke immediately ΓÇö
+  shipping it**: two existing regression fixtures broke immediately —
 
   not because the merge was wrong, but because it now *also* correctly
 
@@ -3760,7 +3760,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   pass. That 7th fixture is explicitly labeled **synthetic** in the test
 
-  file, not a real capture ΓÇö the original real contract that exposed
+  file, not a real capture — the original real contract that exposed
 
   this bug (2026-09-05, "Seraphim The"/"Seraphim Station") predates this
 
@@ -3772,7 +3772,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   259 "Admin - Seraphim", both verified via a live `resolve_all()` call
 
-  before writing the fixture, not guessed) ΓÇö add the real capture for
+  before writing the fixture, not guessed) — add the real capture for
 
   real if this shape ever recurs in a live scan.
 
@@ -3780,7 +3780,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   preprocessing/easyocr settings) hasn't been reviewed against the
 
-  user's actual real-world screenshots ΓÇö logged in PROGRESS.md's Next
+  user's actual real-world screenshots — logged in PROGRESS.md's Next
 
   section as a future pass, not started.
 
@@ -3796,7 +3796,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   location named with one word (real example: "...Teasa Spaceport in
 
-  Lorville." ΓÇö "Lorville" is a real city) never became a candidate at
+  Lorville." — "Lorville" is a real city) never became a candidate at
 
   all; only the 2-word "Teasa Spaceport" was tried, which is genuinely
 
@@ -3808,9 +3808,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   rejected before implementation**: confirmed live that bare planet
 
-  names ΓÇö which appear constantly via "above PLANET" in every real
+  names — which appear constantly via "above PLANET" in every real
 
-  template ("above Hurston:", "above Crusader.") ΓÇö collide with
+  template ("above Hurston:", "above Crusader.") — collide with
 
   unrelated real shops (`resolve_all("Hurston")` wrongly substring-
 
@@ -3820,7 +3820,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `LocationService`'s indexed endpoints at all, so nothing already
 
-  filters them out ΓÇö a broad single-word pass would have flooded
+  filters them out — a broad single-word pass would have flooded
 
   contracts with false planet-name candidates, a worse regression than
 
@@ -3828,7 +3828,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   only fires after "in " specifically (never "at "/"above "), since
 
-  every real template seen introduces a planet via "above", never "in" ΓÇö
+  every real template seen introduces a planet via "above", never "in" —
 
   this targets the reported bug shape while structurally avoiding the
 
@@ -3846,7 +3846,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   honestly flagged ambiguous (a real ambiguity this fix was never meant
 
-  to resolve, not a lingering bug) ΓÇö confirmed via `_build_contract`
+  to resolve, not a lingering bug) — confirmed via `_build_contract`
 
   directly, and via a live re-check that "Hurston"/"Crusader"/"ArcCorp"
 
@@ -3854,7 +3854,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   after the fix. Added `single_word_city_lorville_synthetic` to
 
-  `tests/test_logistics_hub_parsing.py` (labeled synthetic ΓÇö the
+  `tests/test_logistics_hub_parsing.py` (labeled synthetic — the
 
   original 2026-09-05 real capture was never saved, same as the
 
@@ -3872,7 +3872,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   change, confirm, then proceed to the next).** Investigated the full
 
-  `_grab_region`/`_ocr` pipeline (`modules/logistics_hub/module.py`) ΓÇö it
+  `_grab_region`/`_ocr` pipeline (`modules/logistics_hub/module.py`) — it
 
   was minimal: grayscale + autocontrast, then
 
@@ -3880,7 +3880,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `raw_text`. `detail=0` discards each result's bounding box, so text
 
-  comes back in whatever order EasyOCR's own internal sort produces ΓÇö
+  comes back in whatever order EasyOCR's own internal sort produces —
 
   this doesn't know about or respect the in-game contract panel's real
 
@@ -3890,7 +3890,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   majority of this session's parsing bug fixes (role-assignment,
 
-  commodity-misattribution, orphaned words) ΓÇö every one of them was
+  commodity-misattribution, orphaned words) — every one of them was
 
   really a downstream symptom of reading both columns interleaved by
 
@@ -3900,7 +3900,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   heuristics: switched to `readtext(..., detail=1)` (keeps bounding
 
-  boxes) and added `_order_ocr_boxes()` ΓÇö sorts all detected text boxes
+  boxes) and added `_order_ocr_boxes()` — sorts all detected text boxes
 
   by horizontal position, finds the single largest gap, and splits into
 
@@ -3918,7 +3918,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   any non-two-column capture) finds no wide-enough gap and degrades to
 
-  one column sorted top-to-bottom ΓÇö never worse than the previous
+  one column sorted top-to-bottom — never worse than the previous
 
   behavior.
 
@@ -3926,7 +3926,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   box data mimicking a real two-column layout (narrative text
 
-  interleaved by vertical position with a PICK UP LOCATIONS list) ΓÇö
+  interleaved by vertical position with a PICK UP LOCATIONS list) —
 
   confirmed it correctly reads the left column in full before the right
 
@@ -3934,7 +3934,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   capture (no wide gap) stays in plain top-to-bottom order, unchanged.
 
-  Ran the full existing regression suite (13/13) ΓÇö unaffected, since
+  Ran the full existing regression suite (13/13) — unaffected, since
 
   those fixtures feed hand-written `raw_text` directly to
 
@@ -3942,7 +3942,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   **Known limitation, stated plainly**: this only verifies the
 
-  reordering *algorithm* in isolation ΓÇö there is no way to verify the
+  reordering *algorithm* in isolation — there is no way to verify the
 
   full real end-to-end improvement (actual game screenshot -> actual
 
@@ -3966,15 +3966,15 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   a checkpoint after each (will test the whole batch together once
 
-  done). In-game UI text captured at native resolution is often small ΓÇö
+  done). In-game UI text captured at native resolution is often small —
 
-  a single contract line can be well under 20px tall ΓÇö and OCR engines
+  a single contract line can be well under 20px tall — and OCR engines
 
   read text substantially more reliably above a certain pixel-height
 
   floor. Added a 2x LANCZOS resize of the grayscale capture before
 
-  `readtext()` runs (`modules/logistics_hub/module.py`'s `_ocr()`) ΓÇö
+  `readtext()` runs (`modules/logistics_hub/module.py`'s `_ocr()`) —
 
   this happens *before* EasyOCR's own detection pass, not the same
 
@@ -3990,7 +3990,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   *upscaled* width (`gray.width`), not the original pre-upscale capture
 
-  width (`pil_rgb.width`) ΓÇö bounding boxes from EasyOCR are in the
+  width (`pil_rgb.width`) — bounding boxes from EasyOCR are in the
 
   upscaled image's coordinate space.
 
@@ -3998,7 +3998,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   16px-tall image, PIL-rendered to sidestep an unrelated headless-Qt
 
-  font-rendering issue found while testing ΓÇö offscreen `QPainter` text
+  font-rendering issue found while testing — offscreen `QPainter` text
 
   rendered as empty glyph boxes in this environment, not a real bug,
 
@@ -4008,15 +4008,15 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   unusable pieces ("Delver 037 SCU _", "Ontr", "Pontesh"); with 2x
 
-  upscaling, it stayed as one coherent line (still character-garbled ΓÇö
+  upscaling, it stayed as one coherent line (still character-garbled —
 
-  "Delver 037 SCU 01 Cuarz *0 Pon Tresskr" ΓÇö but the structure/word-
+  "Delver 037 SCU 01 Cuarz *0 Pon Tresskr" — but the structure/word-
 
   boundaries survived, which is what the downstream line-based parsing
 
   in `_candidate_phrases` actually depends on). This is real evidence
 
-  of the intended benefit, not just "didn't break anything" ΓÇö a larger,
+  of the intended benefit, not just "didn't break anything" — a larger,
 
   easier test case had shown no visible difference either way, which
 
@@ -4028,7 +4028,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 - 2026-09-06: **OCR pipeline optimization #3: investigated, NOT
 
-  implemented ΓÇö thresholding/sharpening didn't hold up under real
+  implemented — thresholding/sharpening didn't hold up under real
 
   testing.** The original ranked idea was "preprocessing tuned to this
 
@@ -4038,7 +4038,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   mid-investigation ("rather than guessing or over testing, how are the
 
-  results compared to the old model?") ΓÇö a direct comparison against
+  results compared to the old model?") — a direct comparison against
 
   the true pre-session baseline (no upscale, plain grayscale +
 
@@ -4046,7 +4046,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   **Otsu binarization** (auto-thresholding to pure black/white, computed
 
-  per-image from its own histogram ΓÇö implemented as a small pure-Python
+  per-image from its own histogram — implemented as a small pure-Python
 
   helper, no new dependency): tested against 4 synthetic cases. Result:
 
@@ -4062,7 +4062,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   reliably benefit from hard thresholding the way a classic engine like
 
-  Tesseract does ΓÇö unlike Tesseract, forcing pure black/white can
+  Tesseract does — unlike Tesseract, forcing pure black/white can
 
   introduce jagged edges unlike anything in its training distribution.
 
@@ -4070,7 +4070,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   risk alternative: meaningfully helped the hardest case (correctly
 
-  recovered "0/37", "of", and "Tressler" in full ΓÇö the single best
+  recovered "0/37", "of", and "Tressler" in full — the single best
 
   result across every technique tried), had zero effect on a second
 
@@ -4086,7 +4086,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Tressler" into 3 disjoint, unusable pieces ("Dewver 037 SCU", "Ontz",
 
-  "PotTes" ΓÇö half the real content gone); 2x upscale alone kept it as
+  "PotTes" — half the real content gone); 2x upscale alone kept it as
 
   one coherent line. Same pattern on a second case (original split
 
@@ -4100,7 +4100,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   benefit. Decision: skip this item as originally scoped rather than
 
-  ship something the data doesn't actually support ΓÇö consistent with
+  ship something the data doesn't actually support — consistent with
 
   this project's standing rule to verify before implementing, not just
 
@@ -4112,7 +4112,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   EasyOCR character allowlist.** New `OCR_ALLOWLIST` constant
 
-  (`modules/logistics_hub/module.py`) ΓÇö letters, digits, and every
+  (`modules/logistics_hub/module.py`) — letters, digits, and every
 
   punctuation mark observed across this session's real captures
 
@@ -4120,9 +4120,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   slashes for "0/37", parens, brackets for "[BP]*", asterisks,
 
-  underscores ΓÇö a documented real OCR artifact standing in for a period
+  underscores — a documented real OCR artifact standing in for a period
 
-  ΓÇö plus basic sentence punctuation), passed as `readtext(...,
+  — plus basic sentence punctuation), passed as `readtext(...,
 
   allowlist=OCR_ALLOWLIST)`.
 
@@ -4130,7 +4130,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   since `[BP]*` is a real recurring pattern in captures): **identical
 
-  output with and without the allowlist in every case** ΓÇö a genuinely
+  output with and without the allowlist in every case** — a genuinely
 
   inconclusive result, not a validated win, and said so plainly rather
 
@@ -4138,11 +4138,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   change: synthetic PIL-rendered text can't reproduce the actual failure
 
-  mode an allowlist targets ΓÇö genuine OCR hallucination into an
+  mode an allowlist targets — genuine OCR hallucination into an
 
   impossible character (a reward-icon glyph misread as a stray currency
 
-  symbol, a UI decoration read as a letter) ΓÇö because there's no real
+  symbol, a UI decoration read as a letter) — because there's no real
 
   icon/compression/anti-aliasing noise in a clean synthetic render for
 
@@ -4154,7 +4154,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   never introduce a new error, *provided the list is genuinely complete*
 
-  ΓÇö the only real risk is an incomplete list suppressing a legitimate
+  — the only real risk is an incomplete list suppressing a legitimate
 
   character, which is why the list was built generously (every
 
@@ -4164,7 +4164,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   runs end-to-end without error with the new parameter wired in.
 
-  **This is the last of the 4 ranked OCR optimizations ΓÇö the user will
+  **This is the last of the 4 ranked OCR optimizations — the user will
 
   test the full batch together against real scans next**, which is the
 
@@ -4178,13 +4178,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 - 2026-09-07: **First live scans after the OCR pipeline optimization
 
-  batch ΓÇö both parsed correctly overall, but one exposed a real
+  batch — both parsed correctly overall, but one exposed a real
 
   commodity-extraction gap, fixed same day.** Two real contracts
 
   scanned: a 3-commodity Everus Harbor -> Faithful Dream Station haul
 
-  (Quantum Fuel/Hydrogen Fuel/Ship Ammunition, all correct ΓÇö added as
+  (Quantum Fuel/Hydrogen Fuel/Ship Ammunition, all correct — added as
 
   `real_faithful_dream_station_three_commodities`, the first fixture in
 
@@ -4196,7 +4196,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   a real dropoff while "Teasa Spaceport" correctly stayed flagged as a
 
-  genuine ambiguity (New Deal vs. Kel-To) ΓÇö exactly as predicted when
+  genuine ambiguity (New Deal vs. Kel-To) — exactly as predicted when
 
   that fix shipped, first real confirmation outside synthetic testing.
 
@@ -4204,9 +4204,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   for that same bug never caught. Root cause: the real contract phrases
 
-  the destination as "Deliver...to Teasa Spaceport" / "in Lorville:" ΓÇö
+  the destination as "Deliver...to Teasa Spaceport" / "in Lorville:" —
 
-  split across the line break ΓÇö and the straddle check added for the
+  split across the line break — and the straddle check added for the
 
   Port Tressler theft bug (2026-09-06) can *never* pass for a single-
 
@@ -4222,7 +4222,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the single-word-city fix and the Port-Tressler-theft fix, not a
 
-  coincidental edge case ΓÇö it would have failed for every single-word-
+  coincidental edge case — it would have failed for every single-word-
 
   city dropoff's commodities, every time. Fixed by adding a narrow
 
@@ -4230,7 +4230,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   followed by the same word as the candidate's own loc_key, trust the
 
-  widened match even without straddling ΓÇö that pattern is a direct
+  widened match even without straddling — that pattern is a direct
 
   grammatical continuation of the same destination ("X in CITY"), never
 
@@ -4246,7 +4246,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   necessary (reverted it, watched the real capture fail again, restored
 
-  it). Confirmed the Port Tressler fixture still passes ΓÇö this carve-out
+  it). Confirmed the Port Tressler fixture still passes — this carve-out
 
   doesn't reopen that bug, since it only fires for the specific "in "-
 
@@ -4256,7 +4256,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (`real_lorville_in_continuation_commodity_gap`,
 
-  `real_faithful_dream_station_three_commodities`) ΓÇö the first fixtures
+  `real_faithful_dream_station_three_commodities`) — the first fixtures
 
   in this suite sourced from live post-fix scans rather than reconstructed
 
@@ -4268,9 +4268,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   list** (was a single "N stops planned, click TRACKER" placeholder since
 
-  2026-09-05 ΓÇö see that entry above). User reported the card "doesn't
+  2026-09-05 — see that entry above). User reported the card "doesn't
 
-  seem to be displaying correctly" ΓÇö everything past the CONTRACTS list
+  seem to be displaying correctly" — everything past the CONTRACTS list
 
   needed the Tracker popout to see any detail, when the card is supposed
 
@@ -4278,7 +4278,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   2026-09-05 revert was genuinely never found (no way to run the real Qt
 
-  UI in that pass, per its own writeup) ΓÇö this time it was: launched the
+  UI in that pass, per its own writeup) — this time it was: launched the
 
   app from source with two real fixture-derived contracts seeded into
 
@@ -4286,7 +4286,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the full 4-stop route list rendered correctly the very first try. The
 
-  2026-09-05 "invisible rows" symptom did not reproduce ΓÇö most likely
+  2026-09-05 "invisible rows" symptom did not reproduce — most likely
 
   cause, never fully isolated since it wasn't reproduced either: the
 
@@ -4308,7 +4308,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   queued contracts needed 612 SCU combined but their ship only holds 512
 
-  ΓÇö nothing in the app would have caught that before undocking. Considered
+  — nothing in the app would have caught that before undocking. Considered
 
   a UEX-vehicle-data ship picker vs. manual entry; user explicitly
 
@@ -4330,7 +4330,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `ValuePattern.SetValue`, which set the field's text but never fired
 
-  `editingFinished` since Qt's own focus-loss signal never ran ΓÇö the
+  `editingFinished` since Qt's own focus-loss signal never ran — the
 
   first attempt silently didn't trigger the warning for exactly that
 
@@ -4338,7 +4338,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   CAPACITY BY 100".
 
-- 2026-09-07: **Freight Manifest added** ΓÇö a running list of every
+- 2026-09-07: **Freight Manifest added** — a running list of every
 
   commodity being hauled across all active contracts, new card section
 
@@ -4372,7 +4372,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   app alongside the two real seeded fixture contracts (no overlap in that
 
-  particular pair, so no flag fired there ΓÇö the flagging logic itself was
+  particular pair, so no flag fired there — the flagging logic itself was
 
   checked separately, above). New regression check
 
@@ -4382,7 +4382,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 - 2026-09-07: The debug log (`logistics_hub_debug.jsonl`) was deleted at
 
-  user request after a game crash lost their in-progress contracts ΓÇö
+  user request after a game crash lost their in-progress contracts —
 
   it's always-on and regenerates fresh on the next scan, nothing lost
 
@@ -4400,7 +4400,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   (pickupsΓåÆdropoffs summary, reward, SCU, an inline duplicate warning when
 
-  relevant, ACCEPT/REJECT) ΓÇö one popup path instead of two.
+  relevant, ACCEPT/REJECT) — one popup path instead of two.
 
   `_pending_duplicate` renamed `_pending_scan`; `refresh()` always shows
 
@@ -4408,7 +4408,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `_add_contract()` directly. Grading (letter grade + reason) is a
 
-  separate, later part of the same plan ΓÇö this popup already has a slot
+  separate, later part of the same plan — this popup already has a slot
 
   for it once the Hauler Profile + compatibility DB land.
 
@@ -4416,7 +4416,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   **Caught two real bugs building this, both fixed before shipping:**
 
-  1. `_show_review_popup()` formatted `reward` with `f"{reward:,}"` ΓÇö
+  1. `_show_review_popup()` formatted `reward` with `f"{reward:,}"` —
 
      `reward` is the raw OCR-extracted *string* (e.g. `"87,250"`, already
 
@@ -4426,7 +4426,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      it because they called `_on_review_accept`/`_on_review_reject`
 
-     directly, never actually building the popup widget ΓÇö only a live
+     directly, never actually building the popup widget — only a live
 
      launch surfaced it. Fixed (drop the `:,` format spec, same pattern
 
@@ -4442,7 +4442,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      `review_popup_accept_adds_pending_contract`) used the default
 
-     `Config()`, which points at the real `config.json` ΓÇö since
+     `Config()`, which points at the real `config.json` — since
 
      `_on_review_accept()` saves to disk, running the test suite silently
 
@@ -4452,11 +4452,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      giving `run_ui_state_checks()` its own isolated temp-file `Config`
 
-     instead (deleted at the end of the function) ΓÇö the real config.json
+     instead (deleted at the end of the function) — the real config.json
 
      is never touched by this test file again. User's real contracts
 
-     (there weren't any at the time ΓÇö already empty from earlier cleanup)
+     (there weren't any at the time — already empty from earlier cleanup)
 
      and `cargo_capacity_scu: 512` were verified intact by hash-comparing
 
@@ -4472,7 +4472,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   top-level widget (not visible in a `PrintWindow` capture of the main
 
-  window ΓÇö it's a separate `Qt.Popup` top-level, captured separately),
+  window — it's a separate `Qt.Popup` top-level, captured separately),
 
   screenshotted it directly showing real theme/fonts with the ACCEPT/
 
@@ -4488,11 +4488,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `_HaulerProfilePopup` (same `Qt.Popup` shell as `_ReviewPopup`): five
 
-  fields ΓÇö Ship (free text, no reliable static ship-data source exists to
+  fields — Ship (free text, no reliable static ship-data source exists to
 
   validate against, and this doubles as the compatibility-DB key in Part
 
-  3), Goal, Risk Tolerance, Session Time, Region ΓÇö the last four are fixed
+  3), Goal, Risk Tolerance, Session Time, Region — the last four are fixed
 
   `QComboBox` choices (`PROFILE_GOAL_CHOICES` etc.) rather than free text,
 
@@ -4502,7 +4502,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   whenever, never re-asked per scan. New regression check
 
-  `profile_popup_saves_all_five_fields` ΓÇö actually constructs and saves
+  `profile_popup_saves_all_five_fields` — actually constructs and saves
 
   the real popup (not just the save handler), same lesson as the Part 1
 
@@ -4522,7 +4522,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   The four `QComboBox` selections did **not** visibly change via UI
 
-  Automation's `ExpandCollapsePattern`/`SelectionItemPattern` ΓÇö this
+  Automation's `ExpandCollapsePattern`/`SelectionItemPattern` — this
 
   matches a pre-existing, already-documented tooling limitation in this
 
@@ -4548,7 +4548,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   static source exists for which real locations physically support which
 
-  ships (established earlier this session ΓÇö an AI-generated compatibility
+  ships (established earlier this session — an AI-generated compatibility
 
   table was checked against real sources and found partly fabricated), so
 
@@ -4560,13 +4560,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   inline on `_ReviewPopup` for any pickup/dropoff it hasn't seen yet for
 
-  the profile's current ship ΓÇö never re-asked once answered.
+  the profile's current ship — never re-asked once answered.
 
 
 
   `_grade_contract()` (new): reward/SCU, marginal route cost (two
 
-  `_plan_route()` calls ΓÇö with and without the candidate ΓÇö reusing the
+  `_plan_route()` calls — with and without the candidate — reusing the
 
   existing 2-opt planner rather than new distance math), and profile-
 
@@ -4582,7 +4582,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   another queued contract (via the existing `_freight_manifest()`,
 
-  reused). Per explicit user direction, a cap **never blocks ACCEPT** ΓÇö
+  reused). Per explicit user direction, a cap **never blocks ACCEPT** —
 
   it only warns, visibly. No Hauler Profile set yet ΓåÆ `(None, "Set your
 
@@ -4592,13 +4592,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   **Caught two real bugs building this, both found only by actually
 
-  looking at a live screenshot with real fonts loaded ΓÇö logic-only
+  looking at a live screenshot with real fonts loaded — logic-only
 
   regression checks couldn't have caught either:**
 
   1. `_show_profile_popup()` used `self.settings.get("hauler_profile",
 
-     {})` ΓÇö that default only applies when the key is *absent*, not when
+     {})` — that default only applies when the key is *absent*, not when
 
      it's present with value `None` (which config.json legitimately had,
 
@@ -4614,7 +4614,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      one* whenever the cap still landed in a normal-looking letter band
 
-     (e.g. B, since `GRADE_CAP_ON_WARNING` sits inside the B range) ΓÇö
+     (e.g. B, since `GRADE_CAP_ON_WARNING` sits inside the B range) —
 
      defeating the entire point of the feature: a hard-no needs to be
 
@@ -4630,7 +4630,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      glyph embedded in the BAD-location reason string rendered as a tofu
 
-     box ΓÇö it's on a label styled with the Orbitron display font, which
+     box — it's on a label styled with the Orbitron display font, which
 
      doesn't cover that character (the mono font used elsewhere in the
 
@@ -4644,7 +4644,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   loaded (`host/main.py`'s `load_fonts()` pattern, replicated in an
 
-  isolated-temp-config script ΓÇö a full windowed launch can't produce a
+  isolated-temp-config script — a full windowed launch can't produce a
 
   real parseable contract without an actual game screen behind the
 
@@ -4660,7 +4660,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   amber, named the specific bad location in the reason text, and only
 
-  asked about the *other*, still-unrated location ΓÇö not the one already
+  asked about the *other*, still-unrated location — not the one already
 
   answered. This is the literal Hull C-at-an-incompatible-station scenario
 
@@ -4674,7 +4674,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 - 2026-09-07: **Debug log extended to cover the confirm-gate/grading
 
-  feature** ΓÇö per user request, so a live-testing report is actually
+  feature** — per user request, so a live-testing report is actually
 
   diagnosable from the log instead of relying on a description after the
 
@@ -4686,7 +4686,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `review_rejected`, keyed by `contract_id`) when ACCEPT/REJECT is
 
-  actually clicked ΓÇö the scan-time entry can't know the outcome yet, since
+  actually clicked — the scan-time entry can't know the outcome yet, since
 
   that happens later, asynchronously, once the user has actually looked at
 
@@ -4696,7 +4696,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   ones actually got rated during that popup (`compatibility_ratings_given`,
 
-  `[{"location": ..., "rating": "good"|"bad"}, ...]`) ΓÇö so "why did it ask
+  `[{"location": ..., "rating": "good"|"bad"}, ...]`) — so "why did it ask
 
   me about X again" or "did my BAD rating actually save" are answerable
 
@@ -4710,7 +4710,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   capped)` tuple, so the popup and the log entry can never disagree about
 
-  what was actually shown ΓÇö `_show_review_popup()`'s signature changed to
+  what was actually shown — `_show_review_popup()`'s signature changed to
 
   take this precomputed tuple instead of calling `_grade_contract()`
 
@@ -4724,7 +4724,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `_append_debug_log()` writes to `paths.app_root() / DEBUG_LOG_FILENAME`
 
-  unconditionally ΓÇö it doesn't go through `Config` at all, so the
+  unconditionally — it doesn't go through `Config` at all, so the
 
   isolated temp-`Config` pattern `run_ui_state_checks()` already used
 
@@ -4734,7 +4734,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `logistics_hub_debug.jsonl` on every run. Lower stakes than the
 
-  config.json case (this file is explicitly disposable ΓÇö the user has
+  config.json case (this file is explicitly disposable — the user has
 
   already asked to delete it once this session with no concern raised),
 
@@ -4742,7 +4742,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `mod._append_debug_log = debug_log_entries.append` in
 
-  `run_ui_state_checks()` ΓÇö an in-memory list instead of the real file ΓÇö
+  `run_ui_state_checks()` — an in-memory list instead of the real file —
 
   and adding `review_outcome_logs_grade_and_ratings`, a new regression
 
@@ -4764,7 +4764,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   location with an empty ratings-given list (nothing was rated during
 
-  that particular run) ΓÇö then deleted the disposable log file. 26/26
+  that particular run) — then deleted the disposable log file. 26/26
 
   regression checks pass; `config.json` confirmed untouched throughout
 
@@ -4782,7 +4782,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   confirm anything happened, and (2) leaving the review popup open and
 
-  clicking elsewhere (e.g. this chat) made it silently vanish ΓÇö explaining
+  clicking elsewhere (e.g. this chat) made it silently vanish — explaining
 
   the 4 scans before one was actually accepted, since each earlier popup
 
@@ -4792,13 +4792,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      `Qt.Popup` window flag**, which auto-closes on any outside click or
 
-     focus loss ΓÇö fine for the old duplicate-confirm popup (answered
+     focus loss — fine for the old duplicate-confirm popup (answered
 
      immediately) but wrong for a decision that might need the user to
 
      look elsewhere first. Switched both to a real `Qt.Window |
 
-     FramelessWindowHint | WindowStaysOnTopHint` window ΓÇö only ACCEPT/
+     FramelessWindowHint | WindowStaysOnTopHint` window — only ACCEPT/
 
      REJECT (or SAVE) closes it now.
 
@@ -4808,7 +4808,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      implicit reference keeping it alive (`Qt.Popup` apparently did, via
 
-     Qt's internal active-popup tracking) ΓÇö the popup was garbage-
+     Qt's internal active-popup tracking) — the popup was garbage-
 
      collected by Python immediately after the showing method returned,
 
@@ -4856,7 +4856,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   cargo capacity (612 SCU combined vs. a 512 SCU ship) still scored a
 
-  "B" ΓÇö `_grade_contract()` had never once checked `cargo_capacity_scu`/
+  "B" — `_grade_contract()` had never once checked `cargo_capacity_scu`/
 
   `_peak_cargo_scu()` at all. Root cause: capacity checking already
 
@@ -4864,13 +4864,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   an earlier part of this session) and was never wired into grading when
 
-  grading was added later ΓÇö an oversight, not a scoring judgment call.
+  grading was added later — an oversight, not a scoring judgment call.
 
 
 
   Two changes:
 
-  1. **Percentage instead of letter** ΓÇö per user preference, stated
+  1. **Percentage instead of letter** — per user preference, stated
 
      directly: "I would prefer a % based grade scale from 0-100%." The
 
@@ -4878,7 +4878,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      (`GRADE_THRESHOLDS` just bucketed it into 5 bands); now shown
 
-     directly as `N%` instead. `GRADE_THRESHOLDS` removed ΓÇö nothing
+     directly as `N%` instead. `GRADE_THRESHOLDS` removed — nothing
 
      buckets the score into letters anymore.
 
@@ -4894,7 +4894,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      complete (annoying or risky, not impossible); exceeding your actual
 
-     cargo hold means you cannot complete the run as queued at all ΓÇö a
+     cargo hold means you cannot complete the run as queued at all — a
 
      harder constraint deserves a harder ceiling, not the same one.
 
@@ -4902,7 +4902,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      "can I run this given what's already queued" question, not the
 
-     candidate in isolation ΓÇö confirmed this framing with the user first),
+     candidate in isolation — confirmed this framing with the user first),
 
      reusing the same candidate route already being planned for the
 
@@ -4924,9 +4924,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   overflow` (27 total checks now, all pass). Live-verified against the
 
-  literal scenario that surfaced this ΓÇö two real fixture contracts
+  literal scenario that surfaced this — two real fixture contracts
 
-  combining to 612 SCU against a 512 SCU capacity ΓÇö scored 20% (capped,
+  combining to 612 SCU against a 512 SCU capacity — scored 20% (capped,
 
   amber), reason correctly leads with "612 SCU peak exceeds 512 SCU
 
@@ -4938,7 +4938,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 - 2026-09-07: **CARGO CAPACITY moved from its own row on the card into the
 
-  Hauler Profile popup, directly beneath SHIP** ΓÇö per user request. A hold
+  Hauler Profile popup, directly beneath SHIP** — per user request. A hold
 
   size only means anything in the context of a specific ship, so it reads
 
@@ -4946,7 +4946,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   unrelated standalone row on the card face. Same settings key
 
-  (`cargo_capacity_scu`, top-level, not nested under `hauler_profile`) ΓÇö
+  (`cargo_capacity_scu`, top-level, not nested under `hauler_profile`) —
 
   only the UI location changed, not the data model, so grading and the
 
@@ -4974,7 +4974,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- 2026-09-07: **aUEC/SCU grading thresholds made user-editable ΓÇö the
+- 2026-09-07: **aUEC/SCU grading thresholds made user-editable — the
 
   hardcoded 500/200/80 numbers were checked against this project's own 10
 
@@ -4988,7 +4988,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   scale, per user direction this is now the user's own call: a new
 
-  **GRADING SCALE** table in the Hauler Profile popup (three fields ΓÇö
+  **GRADING SCALE** table in the Hauler Profile popup (three fields —
 
   GREAT ΓëÑ / GOOD ΓëÑ / OK ΓëÑ, defaulting to the original 500/200/80 via
 
@@ -5006,7 +5006,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   call (same as `hauler_profile`/`cargo_capacity_scu`) rather than caching
 
-  anything ΓÇö saving a new threshold just changes what the *next* scan's
+  anything — saving a new threshold just changes what the *next* scan's
 
   `self.settings.get("grading_thresholds")` read returns. New regression
 
@@ -5028,7 +5028,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   button, then called `_grade_contract()` again on the same real fixture
 
-  contract in the same running module instance ΓÇö 522 aUEC/SCU scored 90%
+  contract in the same running module instance — 522 aUEC/SCU scored 90%
 
   ("great") before, 65% ("ok") immediately after, no restart. 28/28
 
@@ -5050,7 +5050,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   still the discard-without-a-trace action (wrong scan, duplicate,
 
-  mistake) ΓÇö kept deliberately separate so the completed log only ever
+  mistake) — kept deliberately separate so the completed log only ever
 
   contains contracts the user is explicitly saying they delivered, never
 
@@ -5066,7 +5066,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `grade_at_accept`/`grade_reason_at_accept` directly onto the contract
 
-  dict before it's added to the queue ΓÇö persists with the contract itself
+  dict before it's added to the queue — persists with the contract itself
 
   through `config.json`, so it survives even a relaunch, not just the
 
@@ -5078,7 +5078,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   entry)` (both logs are the same append-only JSON-lines pattern, just
 
-  different files/purposes) ΓÇö `_append_debug_log` is now a one-line
+  different files/purposes) — `_append_debug_log` is now a one-line
 
   wrapper over it.
 
@@ -5092,7 +5092,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `_append_jsonl` (so `_complete_contracts()`'s direct call is covered
 
-  too, not just debug-log calls) ΓÇö same "never let a test touch a real
+  too, not just debug-log calls) — same "never let a test touch a real
 
   log file" discipline as the config.json fix earlier this session.
 
@@ -5104,7 +5104,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   location names, full commodity breakdown, and the grade/reason exactly
 
-  as shown at accept time ΓÇö then deleted (disposable verification file,
+  as shown at accept time — then deleted (disposable verification file,
 
   same as other live checks this session). `config.json` confirmed
 
@@ -5112,9 +5112,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-08 ΓÇö Game.log verification added on top of OCR (not instead
+- **2026-09-08 — Game.log verification added on top of OCR (not instead
 
-  of it) ΓÇö new branch `logistics-hub-gamelog-verify`.** User found
+  of it) — new branch `logistics-hub-gamelog-verify`.** User found
 
   github.com/SubliminalsTV-Projects/sc-overlay, which reads hauling
 
@@ -5136,7 +5136,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Considered a full pivot away from OCR. Rejected: the log only has data
 
-  *after* in-game ACCEPT ΓÇö no pre-accept board browse, unlike OCR ΓÇö and
+  *after* in-game ACCEPT — no pre-accept board browse, unlike OCR — and
 
   per-box manifests for SCU commodity hauls (Covalex/RedWind/GoblinG)
 
@@ -5148,7 +5148,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   primary data source; Game.log is a one-shot verification pass run when
 
-  ACCEPT is clicked** (not at scan time ΓÇö the log has nothing to check
+  ACCEPT is clicked** (not at scan time — the log has nothing to check
 
   against before the in-game accept happens), correcting whatever it can
 
@@ -5158,23 +5158,23 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   to <destination>` line); OCR's own extraction is left untouched for
 
-  everything else (reward ΓÇö never in the log until the later, unrelated
+  everything else (reward — never in the log until the later, unrelated
 
-  `MissionEnded`/payout lines this pass doesn't touch ΓÇö and per-box
+  `MissionEnded`/payout lines this pass doesn't touch — and per-box
 
-  detail). No live tracking, no payout confirmation ΓÇö that's the much
+  detail). No live tracking, no payout confirmation — that's the much
 
   larger surface sc-overlay covers and is explicitly out of scope here.
 
 
 
-  Implementation: new `modules/logistics_hub/gamelog_verify.py` ΓÇö pure
+  Implementation: new `modules/logistics_hub/gamelog_verify.py` — pure
 
   functions, no Qt/host dependency, so testable with synthetic log text.
 
   `find_recent_haul_events()` tails the last 500KB of Game.log (never the
 
-  whole file ΓÇö sessions run to hundreds of MB), regex-parses
+  whole file — sessions run to hundreds of MB), regex-parses
 
   `Contract Accepted`/`Deliver` lines within a 180s window of "now",
 
@@ -5182,7 +5182,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   OCR-built contract by normalized name-overlap scoring on
 
-  origin/destination text (never an exact string match ΓÇö OCR's resolved
+  origin/destination text (never an exact string match — OCR's resolved
 
   UEX display name and the log's raw in-game text are not guaranteed to
 
@@ -5192,7 +5192,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `importlib.util.spec_from_file_location` file-path mechanism
 
-  `host/module_loader.py` uses for `module.py` itself ΓÇö a plain `from
+  `host/module_loader.py` uses for `module.py` itself — a plain `from
 
   modules.logistics_hub import gamelog_verify` would break once packaged,
 
@@ -5206,7 +5206,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the debug log alongside the existing grade/rating outcome entry, then
 
-  `_add_contract()` proceeds exactly as before) ΓÇö REJECT is untouched, no
+  `_add_contract()` proceeds exactly as before) — REJECT is untouched, no
 
   point verifying a contract that's about to be discarded. Never raises
 
@@ -5222,13 +5222,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   via `default_game_log_path()` when unset) with a GAME.LOG PATH field +
 
-  BROWSE button added to the Hauler Profile popup ΓÇö the natural home for
+  BROWSE button added to the Hauler Profile popup — the natural home for
 
   a "set once" field, same as CARGO CAPACITY and the GRADING SCALE.
 
 
 
-  New regression check group `run_gamelog_verify_checks()` (4 checks) ΓÇö
+  New regression check group `run_gamelog_verify_checks()` (4 checks) —
 
   synthetic Game.log text modeled on the real captured line shapes,
 
@@ -5242,7 +5242,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   exception). Existing UI-state checks (`run_ui_state_checks()`) updated
 
-  to point `game_log_path` at a deliberately nonexistent file ΓÇö otherwise
+  to point `game_log_path` at a deliberately nonexistent file — otherwise
 
   `_on_review_accept()`'s new verification step would fall through to
 
@@ -5262,13 +5262,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   contract, scan it, confirm the debug log's `gamelog_verify` entry and
 
-  any correction against what actually happened) ΓÇö code-reviewed and
+  any correction against what actually happened) — code-reviewed and
 
   unit-tested against synthetic data only so far.
 
 
 
-- **2026-09-08 ΓÇö Game.log verify diagnostics, after the first live test
+- **2026-09-08 — Game.log verify diagnostics, after the first live test
 
   raised a real expectation gap.** User ran the first real scan on this
 
@@ -5276,11 +5276,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Game.log to have prevented it. Root cause: that message
 
-  (`f"{text!r} ({hint}) could be: {options} ΓÇö not auto-resolved"`,
+  (`f"{text!r} ({hint}) could be: {options} — not auto-resolved"`,
 
   `_build_contract()`) fires on an OCR candidate matching *multiple*
 
-  distinct UEX locations ΓÇö it happens at **scan time**, before the review
+  distinct UEX locations — it happens at **scan time**, before the review
 
   popup, well before Game.log verification (which only runs later, at
 
@@ -5290,7 +5290,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   *already* resolved to one real location. Multi-candidate disambiguation
 
-  is a different, unimplemented capability ΓÇö worth a future look (the
+  is a different, unimplemented capability — worth a future look (the
 
   log's origin/destination text could plausibly pick the right candidate
 
@@ -5298,7 +5298,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-  Fixed the actual ask ΓÇö no way to tell *why* Game.log did or didn't help
+  Fixed the actual ask — no way to tell *why* Game.log did or didn't help
 
   from the debug log before this. `verify_contract()` now always returns
 
@@ -5308,7 +5308,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `candidates_considered` (every log event scored, its title/mission_id/
 
-  score, highest first ΓÇö not just the winner), plus the exact normalized
+  score, highest first — not just the winner), plus the exact normalized
 
   names it tried to match against (`dropoff_names_tried`/
 
@@ -5330,7 +5330,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   verified." / "Game.log: no matching contract found, not verified.")
 
-  instead of only ever mentioning it on a hit ΓÇö a silent skip is exactly
+  instead of only ever mentioning it on a hit — a silent skip is exactly
 
   what produced this confusion.
 
@@ -5354,7 +5354,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Also: real `logistics_hub_debug.jsonl` from the user's one live test
 
-  session inspected directly ΓÇö both real ACCEPTs logged
+  session inspected directly — both real ACCEPTs logged
 
   `gamelog_verify: {"matched": false, ...}` (pre-diagnostics format, no
 
@@ -5370,17 +5370,17 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   scanned twice assigning pickup/dropoff roles inconsistently between the
 
-  two scans ΓÇö both real, unfixed issues worth their own look.
+  two scans — both real, unfixed issues worth their own look.
 
 
 
-- **2026-09-08 ΓÇö CLEAR LOG button added to the card.** Wiping
+- **2026-09-08 — CLEAR LOG button added to the card.** Wiping
 
   `logistics_hub_debug.jsonl` between test scans meant closing the app
 
   and deleting the file by hand. New `_clear_debug_log()` (module.py),
 
-  wired to a CLEAR LOG button next to PROFILE ΓÇö truncates only
+  wired to a CLEAR LOG button next to PROFILE — truncates only
 
   `DEBUG_LOG_FILENAME`, never `COMPLETED_LOG_FILENAME` or the contract
 
@@ -5400,15 +5400,15 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-08 ΓÇö Verify window widened 180s ΓåÆ 1800s, plus a permanent
+- **2026-09-08 — Verify window widened 180s ΓåÆ 1800s, plus a permanent
 
   tracking signal for tuning it further.** First real live test (see
 
-  above) came back `events_in_window: 0` ΓÇö the real in-game accept was
+  above) came back `events_in_window: 0` — the real in-game accept was
 
   ~70 minutes before the app's ACCEPT click (board framed, reviewed,
 
-  decided ΓÇö ordinary play, not an edge case), and 180s never had a
+  decided — ordinary play, not an edge case), and 180s never had a
 
   chance. Raised `DEFAULT_WINDOW_SECONDS` to 1800 (30 min). This doesn't
 
@@ -5424,11 +5424,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Per user direction, this needs to keep being data, not another one-off
 
-  guess: new `gamelog_verify.nearest_haul_event_gap_seconds()` ΓÇö finds
+  guess: new `gamelog_verify.nearest_haul_event_gap_seconds()` — finds
 
   the closest Contract Accepted/Deliver line to "now" ignoring any window
 
-  at all ΓÇö logged into every `gamelog_verify` debug entry alongside the
+  at all — logged into every `gamelog_verify` debug entry alongside the
 
   window size actually used (`window_seconds`), win or lose. Over time
 
@@ -5446,13 +5446,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-08 ΓÇö Verify window made config-editable, and the miss on the
+- **2026-09-08 — Verify window made config-editable, and the miss on the
 
   second test explained.** Two things from the user after the window
 
   widening above: (1) they realized the second test's real miss was
 
-  likely their own workflow, not the window ΓÇö they scanned+accepted in
+  likely their own workflow, not the window — they scanned+accepted in
 
   the app but forgot to accept in-game at all, so there was nothing in
 
@@ -5470,7 +5470,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `self.settings.get("game_log_verify_window_seconds",
 
-  gamelog_verify.DEFAULT_WINDOW_SECONDS)` ΓÇö i.e. straight from
+  gamelog_verify.DEFAULT_WINDOW_SECONDS)` — i.e. straight from
 
   `config.json`'s `modules.logistics_hub.game_log_verify_window_seconds`
 
@@ -5482,7 +5482,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   the key isn't present. New regression check
 
-  `verify_against_gamelog_respects_config_window_override` ΓÇö a real temp
+  `verify_against_gamelog_respects_config_window_override` — a real temp
 
   Game.log with one event at -1000s, proving the default window includes
 
@@ -5494,7 +5494,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-  No UI added for this ΓÇö it's a tuning knob for iterating on the
+  No UI added for this — it's a tuning knob for iterating on the
 
   window size, not a normal per-user setting, and adding a UI field
 
@@ -5504,13 +5504,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-08 ΓÇö Accept reminder added: a click-to-dismiss blinking
+- **2026-09-08 — Accept reminder added: a click-to-dismiss blinking
 
   banner, no game-input automation.** Discussed and rejected an auto-
 
   click "ACCEPT OFFER" idea first (see this same date's conversation
 
-  history) ΓÇö real account/ban risk (synthetic input is flagged by
+  history) — real account/ban risk (synthetic input is flagged by
 
   Windows itself via LLMHF_INJECTED, and any anti-cheat/monitoring
 
@@ -5524,7 +5524,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   New `accept_reminder_seconds` setting (Hauler Profile popup, 0 = off,
 
-  default `DEFAULT_ACCEPT_REMINDER_SECONDS = 30` ΓÇö a placeholder, same
+  default `DEFAULT_ACCEPT_REMINDER_SECONDS = 30` — a placeholder, same
 
   as the verify window, expected to need tuning against real
 
@@ -5536,7 +5536,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `_recheck_accept_reminder()` re-runs `_verify_against_gamelog()` against
 
-  the *current* state of Game.log (a second, later chance ΓÇö most real
+  the *current* state of Game.log (a second, later chance — most real
 
   accepts won't verify instantly since the log line can lag or the
 
@@ -5546,7 +5546,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   banner; still unmatched shows `_reminder_banner`, a blinking (500ms via
 
-  `_reminder_blink_timer`, amber/void swap) `QPushButton` ΓÇö a button, not
+  `_reminder_blink_timer`, amber/void swap) `QPushButton` — a button, not
 
   a label, so any click dismisses it, not just a precise one. Expands
 
@@ -5560,7 +5560,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-  Deliberately does NOT duplicate into the Tracker popout ΓÇö the card
+  Deliberately does NOT duplicate into the Tracker popout — the card
 
   itself is always present regardless of whether the popout is open, so
 
@@ -5580,7 +5580,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   banner, late match is silent) using `isHidden()` rather than
 
-  `isVisible()` to check banner state ΓÇö `isVisible()` depends on the
+  `isVisible()` to check banner state — `isVisible()` depends on the
 
   whole ancestor widget chain being shown, which this test harness's
 
@@ -5594,7 +5594,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   This was explicitly split from the tabbed-card-layout redesign
 
-  requested in the same message ΓÇö two independent changes, easier to
+  requested in the same message — two independent changes, easier to
 
   test/review separately; the tab redesign is a separate commit
 
@@ -5602,7 +5602,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-08 ΓÇö Card redesigned with a tabbed action layout.** Second of
+- **2026-09-08 — Card redesigned with a tabbed action layout.** Second of
 
   two builds split from the same user request (see the accept-reminder
 
@@ -5614,9 +5614,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   that had gotten genuinely noisy. Grouped into a `QTabWidget` with two
 
-  tabs ΓÇö **SCAN** (the workflow row + status label, default/selected tab)
+  tabs — **SCAN** (the workflow row + status label, default/selected tab)
 
-  and **SETUP** (the setup row + region status label) ΓÇö same buttons,
+  and **SETUP** (the setup row + region status label) — same buttons,
 
   same handlers, no behavior changes, purely a layout reorganization.
 
@@ -5626,13 +5626,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   completely untouched. The accept-reminder banner (built in the prior
 
-  commit) also stays outside the tabs on purpose ΓÇö it needs to be visible
+  commit) also stays outside the tabs on purpose — it needs to be visible
 
   regardless of which tab is active.
 
 
 
-  `action_tabs.currentChanged` is wired to `card.apply_size()` ΓÇö a tab
+  `action_tabs.currentChanged` is wired to `card.apply_size()` — a tab
 
   switch changes the visible content's size the same way collapse/error
 
@@ -5658,7 +5658,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   real card standalone (offscreen, with `host/main.py`'s actual
 
-  `load_fonts()` so text isn't tofu boxes ΓÇö same discipline as prior
+  `load_fonts()` so text isn't tofu boxes — same discipline as prior
 
   popup verification this project has needed before) and screenshotted
 
@@ -5670,9 +5670,9 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   itself (the very first `grab()` after a resize comes back at the old,
 
-  pre-layout size regardless of which tab ΓÇö a throwaway warm-up grab
+  pre-layout size regardless of which tab — a throwaway warm-up grab
 
-  first fixes it) ΓÇö a test-script artifact, not a real app bug; not
+  first fixes it) — a test-script artifact, not a real app bug; not
 
   worth writing up further since it doesn't affect the actual running app
 
@@ -5680,7 +5680,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-08 ΓÇö Accept reminder now mirrors onto the Tracker popout.**
+- **2026-09-08 — Accept reminder now mirrors onto the Tracker popout.**
 
   Real gap found by the user: the reminder banner only lived on the main
 
@@ -5688,7 +5688,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   mobiOverlay's main window (a real, fast workflow) made the reminder
 
-  permanently invisible ΓÇö the exact scenario the reminder exists for.
+  permanently invisible — the exact scenario the reminder exists for.
 
 
 
@@ -5698,7 +5698,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   card's banner, plus the popout's own if the Tracker is open) instead of
 
-  a single fixed widget ΓÇö clicking either one dismisses both, since
+  a single fixed widget — clicking either one dismisses both, since
 
   they're the same reminder. New `_reminder_text` instance var holds the
 
@@ -5716,7 +5716,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   header, via `popout.layout().insertWidget(1, ...)`), deliberately NOT
 
-  into `_route_popout_layout` (the route-rows content layout) ΓÇö that one
+  into `_route_popout_layout` (the route-rows content layout) — that one
 
   is fully cleared and rebuilt by `_populate_route_rows()` on every
 
@@ -5730,13 +5730,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   reminder firing while the popout is already open reaches both. 49/49
 
-  total checks pass. Verified visually ΓÇö rendered the popout with an
+  total checks pass. Verified visually — rendered the popout with an
 
   active reminder and confirmed it renders correctly.
 
 
 
-- **2026-09-08 ΓÇö Fixed the real cause of two consecutive live-test
+- **2026-09-08 — Fixed the real cause of two consecutive live-test
 
   misses: the fixed 500KB tail-read, not the time window.** User
 
@@ -5748,7 +5748,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   measuring this project's own real `Game.log`: 4.1MB spanning ~4h43m,
 
-  averaging **~14.5KB/min** ΓÇö a fixed 500KB tail read reliably covers only
+  averaging **~14.5KB/min** — a fixed 500KB tail read reliably covers only
 
   **~34 minutes** of that on average, well short of even the 1800s window
 
@@ -5762,7 +5762,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-  `_tail_lines()`'s `max_bytes` is no longer fixed ΓÇö `find_recent_haul_events()`
+  `_tail_lines()`'s `max_bytes` is no longer fixed — `find_recent_haul_events()`
 
   now computes it via `_estimate_tail_bytes(window_seconds)`:
 
@@ -5786,7 +5786,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   2 new regression checks: `_estimate_tail_bytes()`'s floor/scale/ceiling
 
-  behavior, and a real reproduction of the bug itself ΓÇö an event ~25
+  behavior, and a real reproduction of the bug itself — an event ~25
 
   minutes old followed by >500KB of filler (simulating real gameplay log
 
@@ -5802,7 +5802,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   of the two real accepts *did* find a Contract-Accepted line in-window
 
-  (108s gap) ΓÇö but for an unrelated contract ("Seraphim Station >
+  (108s gap) — but for an unrelated contract ("Seraphim Station >
 
   Baijini Point", score 0), correctly rejected rather than
 
@@ -5810,11 +5810,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   whether it was a genuinely different, separately-accepted contract or
 
-  a sign of something else ΓÇö can't tell from one data point.
+  a sign of something else — can't tell from one data point.
 
 
 
-- **2026-09-08 ΓÇö Fixed the "Covalex Orison" phantom-dropoff bug, confirmed
+- **2026-09-08 — Fixed the "Covalex Orison" phantom-dropoff bug, confirmed
 
   with real evidence from tonight's live test.** "Covalex Shipping" (the
 
@@ -5824,7 +5824,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   "Covalex Orison", producing a phantom dropoff with no real cargo data
 
-  ("cargo unknown") ΓÇö and, worse, blocking Game.log's commodity/tonnage
+  ("cargo unknown") — and, worse, blocking Game.log's commodity/tonnage
 
   correction from ever attaching, since Game.log's own destination text
 
@@ -5838,11 +5838,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `"covalex shippina"` (the same real phrase via a common OCR letter
 
-  typo, added pre-emptively ΓÇö only ever observed failing to match
+  typo, added pre-emptively — only ever observed failing to match
 
   harmlessly so far, but it's the identical underlying noise source) to
 
-  `_PHRASE_STOPWORDS` ΓÇö the same established, narrow, evidence-driven
+  `_PHRASE_STOPWORDS` — the same established, narrow, evidence-driven
 
   exclusion mechanism already used for "PICK UP"/"DROP OFF" false
 
@@ -5850,13 +5850,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   text: the real dropoff, "HDPC-Cassillo", isn't in the cached UEX
 
-  location data at all (confirmed by grepping `locations_cache.json` ΓÇö
+  location data at all (confirmed by grepping `locations_cache.json` —
 
   genuinely absent, not a naming mismatch this project can fix), so with
 
   the phantom Covalex Orison match removed, it now correctly falls back
 
-  to an honest "HDPC-Cassillo" unresolved raw entry ΓÇö **with its correct
+  to an honest "HDPC-Cassillo" unresolved raw entry — **with its correct
 
   commodities attached** (22 SCU Pressurized Ice, 302 SCU Processed
 
@@ -5870,11 +5870,11 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-  New `run_covalex_orison_check()` ΓÇö not a FIXTURES entry, since that
+  New `run_covalex_orison_check()` — not a FIXTURES entry, since that
 
   format's comparison silently drops any dropoff/pickup with no resolved
 
-  terminal (exactly this fix's correct outcome) ΓÇö using tonight's exact
+  terminal (exactly this fix's correct outcome) — using tonight's exact
 
   real captured raw OCR text. 3 checks: the phantom dropoff never
 
@@ -5890,7 +5890,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   contract accepted within ~1-2 seconds of the app's own ACCEPT click) is
 
-  already handled ΓÇö confirmed working for real tonight, not just in
+  already handled — confirmed working for real tonight, not just in
 
   theory.** This was the exact scenario `_schedule_accept_reminder()`/
 
@@ -5902,7 +5902,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   found and matched it (`matched: true`, real mission ID). No further
 
-  change needed here ΓÇö the existing two-stage design (immediate check,
+  change needed here — the existing two-stage design (immediate check,
 
   then a later recheck if it missed) already covers exactly this race by
 
@@ -5912,7 +5912,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-- **2026-09-08 ΓÇö Fixed real cross-contract mismatching in Game.log
+- **2026-09-08 — Fixed real cross-contract mismatching in Game.log
 
   verification, found by reviewing the last 3 accepted missions from a
 
@@ -5924,15 +5924,15 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      from routine repeat hauling) both matched the SAME real Game.log
 
-     mission_id ΓÇö one legitimately (full origin+destination overlap,
+     mission_id — one legitimately (full origin+destination overlap,
 
      score 4), the other only by pickup-name coincidence.
 
   2. A contract whose real dropoff was "Lively Pathway Station" matched a
 
-     real mission whose actual destination was "Everus Harbor" ΓÇö a
+     real mission whose actual destination was "Everus Harbor" — a
 
-     completely different place ΓÇö purely on shared pickup text (score 2,
+     completely different place — purely on shared pickup text (score 2,
 
      accepted as a match with the old `score > 0` bar).
 
@@ -5940,7 +5940,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   Neither corrupted data this time only because neither had a correction
 
-  to apply ΓÇö a near miss, not proof the bug was harmless.
+  to apply — a near miss, not proof the bug was harmless.
 
 
 
@@ -5948,7 +5948,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
 
 
-  1. **`MIN_MATCH_SCORE = 4`** ΓÇö a match now requires BOTH origin and
+  1. **`MIN_MATCH_SCORE = 4`** — a match now requires BOTH origin and
 
      destination overlap (2+2), not just one. A pickup-only or dropoff-
 
@@ -5958,7 +5958,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      weak-but-good-enough.
 
-  2. **`exclude_mission_ids`** ΓÇö `verify_contract()` now takes a set of
+  2. **`exclude_mission_ids`** — `verify_contract()` now takes a set of
 
      mission ids to exclude before scoring at all (so an excluded event
 
@@ -5968,7 +5968,7 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
      contract currently in the queue's own `contract["gamelog_mission_id"]`
 
-     (new field, set on a successful match) ΓÇö so the same real accept can
+     (new field, set on a successful match) — so the same real accept can
 
      never be attached to two different scanned contracts, which #1 alone
 
@@ -5988,13 +5988,13 @@ Append-only. Newest at bottom. Short entries ΓÇö rationale, not essays.
 
   `_verify_against_gamelog()` itself builds the exclude set from queued
 
-  contracts and records its own claim on a match ΓÇö not just
+  contracts and records its own claim on a match — not just
 
   `gamelog_verify.py`'s functions in isolation. 60/60 total checks pass.
 
 
 
-## 2026-09-08 ΓÇö Salvage module shelved; mobiNotes scoped instead
+## 2026-09-08 — Salvage module shelved; mobiNotes scoped instead
 
 
 
@@ -6012,11 +6012,11 @@ incomplete/unreliable for these endpoints):
 
 - RMC (Recycled Material Composite) does not appear as a commodity in
 
-  `commodities` at all ΓÇö confirmed via a live query, not just docs.
+  `commodities` at all — confirmed via a live query, not just docs.
 
 - `refineries_yields` is ore-only (Iron, Gold, Quantainium, Bexalite,
 
-  Corundum, etc. ΓÇö mining outputs) ΓÇö confirmed via a live query. No
+  Corundum, etc. — mining outputs) — confirmed via a live query. No
 
   salvage-material processing/yield data exists to build a "yield
 
@@ -6032,7 +6032,7 @@ incomplete/unreliable for these endpoints):
 
 
 
-**Shelved ΓÇö not a UEX data gap that can be worked around, salvage
+**Shelved — not a UEX data gap that can be worked around, salvage
 
 mechanics simply aren't exposed by the API.** Revisit only if UEX adds
 
@@ -6040,11 +6040,11 @@ salvage-specific endpoints.
 
 
 
-Pivoted instead to **mobiNotes** ΓÇö a lightweight, no-API notes/organization
+Pivoted instead to **mobiNotes** — a lightweight, no-API notes/organization
 
 module (tagged, paged, searchable). Researched three open-source note
 
-apps for ideas (ReText, QOwnNotes, Zim Desktop Wiki) ΓÇö all three are
+apps for ideas (ReText, QOwnNotes, Zim Desktop Wiki) — all three are
 
 GPL-licensed, so decided to borrow **ideas, not code**, to avoid pulling
 
@@ -6062,7 +6062,7 @@ root field for future format migrations. Full scope written to
 
 
 
-- **2026-09-08 ΓÇö mobiNotes built: `NotesStore` (`modules/mobi_notes/store.py`)
+- **2026-09-08 — mobiNotes built: `NotesStore` (`modules/mobi_notes/store.py`)
 
   + card UI (`modules/mobi_notes/module.py`), architected and scaffolded
 
@@ -6070,7 +6070,7 @@ root field for future format migrations. Full scope written to
 
   `QComboBox` (with a `+ New Page...` sentinel that prompts for a name)
 
-  rather than a tab strip ΓÇö scales to any number of pages without layout
+  rather than a tab strip — scales to any number of pages without layout
 
   work; can become real tabs later if that turns out to matter. Tag
 
@@ -6080,13 +6080,13 @@ root field for future format migrations. Full scope written to
 
   `NotesStore.search_text`. Pinned notes sort to the top of the list,
 
-  then most-recently-modified first. `refresh()` is a confirmed no-op ΓÇö
+  then most-recently-modified first. `refresh()` is a confirmed no-op —
 
   there's no remote data, same shape as Crosshair.
 
   Hit and fixed one real bug immediately: the module's first draft used
 
-  `from .store import NotesStore` ΓÇö a normal relative import ΓÇö which
+  `from .store import NotesStore` — a normal relative import — which
 
   throws `ImportError: attempted relative import with no known parent
 
@@ -6094,11 +6094,11 @@ root field for future format migrations. Full scope written to
 
   `module.py` via `importlib.util.spec_from_file_location` (a file-path
 
-  import, not a real package member ΓÇö see the Packaging decision above).
+  import, not a real package member — see the Packaging decision above).
 
   Fixed with the same file-path-import pattern `logistics_hub/module.py`
 
-  already uses to reach its own `gamelog_verify.py` sibling ΓÇö copy the
+  already uses to reach its own `gamelog_verify.py` sibling — copy the
 
   pattern instead of reinventing it, this project already had the answer.
 
@@ -6106,15 +6106,15 @@ root field for future format migrations. Full scope written to
 
   `modules/` for the same reason `config.json` is (see Packaging
 
-  decision) ΓÇö added to `.gitignore` alongside the other per-install data
+  decision) — added to `.gitignore` alongside the other per-install data
 
   files.
 
 
 
-- **2026-09-08 ΓÇö Copy/paste treated as a first-class mobiNotes feature,
+- **2026-09-08 — Copy/paste treated as a first-class mobiNotes feature,
 
-  not an afterthought ΓÇö added per direct user request mid-scope, not
+  not an afterthought — added per direct user request mid-scope, not
 
   in the original mobi-notes.md scoping doc.** Three mechanisms, in
 
@@ -6122,7 +6122,7 @@ root field for future format migrations. Full scope written to
 
   1. The editor's body field is a real `QTextEdit`, title/tags are
 
-     `QLineEdit` ΓÇö native Ctrl+A/Ctrl+C/Ctrl+V/Ctrl+X already work with
+     `QLineEdit` — native Ctrl+A/Ctrl+C/Ctrl+V/Ctrl+X already work with
 
      zero extra code. Worth stating explicitly because it would have
 
@@ -6142,7 +6142,7 @@ root field for future format migrations. Full scope written to
 
      60 chars) as the title and the full text as the body, creates a
 
-     note on the current page in one click ΓÇö the common case being
+     note on the current page in one click — the common case being
 
      "copy a chunk of Discord/Spectrum text, turn it into a note"
 
@@ -6170,7 +6170,7 @@ root field for future format migrations. Full scope written to
 
 
 
-- **2026-09-08 ΓÇö mobiNotes verified end-to-end live, not just unit-style
+- **2026-09-08 — mobiNotes verified end-to-end live, not just unit-style
 
   checks.** Full app launch confirmed all 6 modules (including the new
 
@@ -6184,7 +6184,7 @@ root field for future format migrations. Full scope written to
 
   disk in `mobinotes_data.json` with the multi-line body and
 
-  comma-parsed tags intact ΓÇö then re-screenshotted (`PrintWindow`, this
+  comma-parsed tags intact — then re-screenshotted (`PrintWindow`, this
 
   project's standard technique, run from source so the target PID is
 
@@ -6194,13 +6194,13 @@ root field for future format migrations. Full scope written to
 
   second saved note all rendered correctly. Test note data removed from
 
-  `mobinotes_data.json` afterward ΓÇö it was verification data, not a
+  `mobinotes_data.json` afterward — it was verification data, not a
 
   real user note.
 
 
 
-- **2026-09-08 ΓÇö mobiNotes bug fix: a newly-created empty page vanished
+- **2026-09-08 — mobiNotes bug fix: a newly-created empty page vanished
 
   immediately, found by the user on first real use.** User tried
 
@@ -6208,13 +6208,13 @@ root field for future format migrations. Full scope written to
 
   Root cause: `store.pages()` only returns pages that already have at
 
-  least one note on them (by design ΓÇö pages are a note field, not a
+  least one note on them (by design — pages are a note field, not a
 
   stored entity); a page just created via `+ New Page...` has neither,
 
   so the very next picker rebuild (which reads `store.pages()`) silently
 
-  dropped it and fell back to whatever page was first alphabetically ΓÇö
+  dropped it and fell back to whatever page was first alphabetically —
 
   before the user ever got a chance to save a note onto it. Fixed with a
 
@@ -6228,7 +6228,7 @@ root field for future format migrations. Full scope written to
 
   and fixed at code-review time (traced from the user's description,
 
-  not yet re-verified live at the moment of the fix ΓÇö the live launch to
+  not yet re-verified live at the moment of the fix — the live launch to
 
   confirm it was deliberately deferred because the user was actively
 
@@ -6238,9 +6238,9 @@ root field for future format migrations. Full scope written to
 
 
 
-- **2026-09-08 ΓÇö Added rename-page and delete-page actions, plus removed
+- **2026-09-08 — Added rename-page and delete-page actions, plus removed
 
-  the 5 built-in default pages entirely ΓÇö all three driven directly by
+  the 5 built-in default pages entirely — all three driven directly by
 
   live user feedback in the same session, none from the original
 
@@ -6254,11 +6254,11 @@ root field for future format migrations. Full scope written to
 
     the page's notes along with it, vs. blocking until empty) rather
 
-    than guessing ΓÇö user chose "delete the notes too," matching the
+    than guessing — user chose "delete the notes too," matching the
 
     existing single-note DELETE's confirm-then-destroy pattern.
 
-  - **Rename page** (Γ£Ä button): natural follow-up once delete existed ΓÇö
+  - **Rename page** (Γ£Ä button): natural follow-up once delete existed —
 
     added `NotesStore.rename_page(old, new)`, a bulk field update over
 
@@ -6266,7 +6266,7 @@ root field for future format migrations. Full scope written to
 
     UI wiring to keep `custom_pages` in sync with the new name.
 
-  - **Removed all 5 default pages** (Trade/Fleet/Org/Builds/Missions ΓÇö
+  - **Removed all 5 default pages** (Trade/Fleet/Org/Builds/Missions —
 
     these were just the example list from the original scoping doc,
 
@@ -6276,7 +6276,7 @@ root field for future format migrations. Full scope written to
 
     to do is create our first page." `NotesStore.pages()` no longer
 
-    unions in any hardcoded list ΓÇö it returns only pages that genuinely
+    unions in any hardcoded list — it returns only pages that genuinely
 
     have notes. `module.py` now tracks a real "zero pages" state: the
 
@@ -6292,7 +6292,7 @@ root field for future format migrations. Full scope written to
 
     instead until at least one page exists (via `custom_pages` or a real
 
-    note) ΓÇö checked once right after `create_card` and again after every
+    note) — checked once right after `create_card` and again after every
 
     page create/rename/delete via a new `_update_empty_state()` helper.
 
@@ -6300,7 +6300,7 @@ root field for future format migrations. Full scope written to
 
     empty state rather than reintroducing a fallback default.
 
-  - **Verified entirely headless**, deliberately ΓÇö the user was actively
+  - **Verified entirely headless**, deliberately — the user was actively
 
     playing Star Citizen through this exchange and asked not to have the
 
@@ -6312,9 +6312,9 @@ root field for future format migrations. Full scope written to
 
     `QT_QPA_PLATFORM=offscreen` (no window ever painted to a real
 
-    display) to drive the actual `MobiNotesModule` instance ΓÇö not a
+    display) to drive the actual `MobiNotesModule` instance — not a
 
-    reimplementation ΓÇö through the full lifecycle: fresh install shows
+    reimplementation — through the full lifecycle: fresh install shows
 
     the empty state with `current_page` still `None` and only the
 
@@ -6336,9 +6336,9 @@ root field for future format migrations. Full scope written to
 
     reads ancestor visibility, not just the widget's own `setVisible()`
 
-    call ΓÇö same underlying gotcha as the 2026-09-03 Stow/Deploy tray
+    call — same underlying gotcha as the 2026-09-03 Stow/Deploy tray
 
-    bug ΓÇö so the empty-state/content-widget visibility assertions read
+    bug — so the empty-state/content-widget visibility assertions read
 
     as permanently `False` until the fake card's top-level widget was
 
@@ -6348,17 +6348,17 @@ root field for future format migrations. Full scope written to
 
 
 
-## 2026-09-08 ΓÇö mobiThrottle built: ThrottleWatch ported as a native module
+## 2026-09-08 — mobiThrottle built: ThrottleWatch ported as a native module
 
 
 
 ThrottleWatch (a separate, already-shipping standalone SC overlay by the
 
-same author ΓÇö `throttle_watch.py`, Tkinter) becomes mobiOverlay's 7th
+same author — `throttle_watch.py`, Tkinter) becomes mobiOverlay's 7th
 
 module, per direct user request. Architected first, in
 
-docs/modules/mobi-throttle.md, before writing any code ΓÇö a deliberate
+docs/modules/mobi-throttle.md, before writing any code — a deliberate
 
 rewrite, not a copy/paste port, since a lot of ThrottleWatch's complexity
 
@@ -6370,7 +6370,7 @@ exists only to work around Tkinter limitations Qt doesn't have.
 
 - The two-window transparent-color-key trick + Win32 `SetWindowRgn`/
 
-  `CreateRoundRectRgn` panel-shaping (`RECT`, `_apply_window_shape`) ΓÇö
+  `CreateRoundRectRgn` panel-shaping (`RECT`, `_apply_window_shape`) —
 
   existed only because Tkinter has no real per-pixel alpha compositing on
 
@@ -6386,7 +6386,7 @@ exists only to work around Tkinter limitations Qt doesn't have.
 
 - ThrottleWatch's duplicated `draw_track`/`draw_track_h`,
 
-  `draw_ticks`/`draw_ticks_h` method pairs for vertical vs. horizontal ΓÇö
+  `draw_ticks`/`draw_ticks_h` method pairs for vertical vs. horizontal —
 
   collapsed into one drawing path with an along/cross coordinate swap
 
@@ -6396,13 +6396,13 @@ exists only to work around Tkinter limitations Qt doesn't have.
 
 - The separate Settings `Toplevel` window, ThrottleWatch's own tray icon,
 
-  and its "Open Settings" hotkey ΓÇö all folded into/replaced by the card,
+  and its "Open Settings" hotkey — all folded into/replaced by the card,
 
   since a module lives inside mobiOverlay's own window and hotkey system
 
   rather than being its own standalone app.
 
-- Manual `SetProcessDpiAwareness` ΓÇö Qt6 is per-monitor-DPI-aware by
+- Manual `SetProcessDpiAwareness` — Qt6 is per-monitor-DPI-aware by
 
   default.
 
@@ -6416,7 +6416,7 @@ begin with: the tick/track/knob layout math (`TRACK_MARGIN`, `TICK_COUNT`,
 
 `value_to_color`/`lerp_color` gradient, `list_joysticks`/`find_joystick`
 
-(pure pygame calls) ΓÇö though `find_joystick` dropped ThrottleWatch's
+(pure pygame calls) — though `find_joystick` dropped ThrottleWatch's
 
 hardcoded `DEVICE_NAME_HINT` ("VKBsim Gladiator EVO L") for a generic
 
@@ -6430,7 +6430,7 @@ someone else's rig eventually, not just this machine's throttle.
 
 is already a proven port of ThrottleWatch's own `HotkeyState`/reconcile-
 
-watchdog design (ported earlier for the host's Stow/Deploy hotkey) ΓÇö the
+watchdog design (ported earlier for the host's Stow/Deploy hotkey) — the
 
 module just instantiates two of its own instances (bar toggle, position
 
@@ -6450,7 +6450,7 @@ called for every loaded module from a new `app.aboutToQuit` connection in
 
 to explicitly call `self._hotkey.shutdown()` before spawning the new
 
-process (2026-09-04 fix ΓÇö Windows only reclaims a `WH_KEYBOARD_LL` hook
+process (2026-09-04 fix — Windows only reclaims a `WH_KEYBOARD_LL` hook
 
 when the owning *process* dies, not when a Python object is destroyed, so
 
@@ -6478,11 +6478,11 @@ process-wide resource instead of patching this one call site again.
 
   host's error boundary), grabbed the bar widget's pixmap in both
 
-  orientations, called `shutdown()` ΓÇö all clean.
+  orientations, called `shutdown()` — all clean.
 
 - Then launched the actual packaged entry point (`python host/main.py`)
 
-  alongside all 6 other modules ΓÇö no errors in the log, real
+  alongside all 6 other modules — no errors in the log, real
 
   auto-detected device (a genuinely connected VKB throttle) showed as
 
@@ -6490,7 +6490,7 @@ process-wide resource instead of patching this one call site again.
 
 - Screenshotted both the card and the floating bar via `PrintWindow`
 
-  (same convention as every other module's live verification ΓÇö see the
+  (same convention as every other module's live verification — see the
 
   Environment/process notes in docs/PROGRESS.md; never repositioned a
 
@@ -6514,7 +6514,7 @@ process-wide resource instead of patching this one call site again.
 
   default landed on the primary monitor, which is this machine's active
 
-  gaming display ΓÇö the exact mistake `host/main_window.py`'s own
+  gaming display — the exact mistake `host/main_window.py`'s own
 
   `_default_launch_position()` exists to avoid for the main window. Now
 
@@ -6526,7 +6526,7 @@ process-wide resource instead of patching this one call site again.
 
 
 
-**Not yet verified ΓÇö needs a hand on the actual hardware, not just fed
+**Not yet verified — needs a hand on the actual hardware, not just fed
 
 synthetic values:** the knob tracking a real throttle movement live, and
 
@@ -6540,13 +6540,13 @@ which no amount of automation can substitute for.
 
 
 
-## 2026-09-08 ΓÇö mobiThrottle: tiny spinbox arrows replaced with a stepper
+## 2026-09-08 — mobiThrottle: tiny spinbox arrows replaced with a stepper
 
 
 
 First real user feedback on mobiThrottle, after testing it live with the
 
-real throttle: "working well," with one usability complaint ΓÇö "hard to
+real throttle: "working well," with one usability complaint — "hard to
 
 click on the buttons/arrows... that increment or decrement counts on
 
@@ -6554,7 +6554,7 @@ fields." The card's Axis, Hold time, and Home Chirp count/cooldown fields
 
 were stock `QSpinBox`/`QDoubleSpinBox`, whose native up/down arrows are
 
-only a few px tall (visibly shorter than half the field's own height) ΓÇö
+only a few px tall (visibly shorter than half the field's own height) —
 
 an easy miss, especially at the compact width these fields sit in inside
 
@@ -6566,7 +6566,7 @@ Fixed by replacing all four with a new `_Stepper(QWidget)`: a value label
 
 flanked by explicit `[ΓêÆ]`/`[+]` `QPushButton`s at a fixed 26├ù24px, themed
 
-the same as Crosshair's existing nudge buttons (same precedent ΓÇö that
+the same as Crosshair's existing nudge buttons (same precedent — that
 
 module already solved "give the user a big enough click target for a
 
@@ -6574,7 +6574,7 @@ small increment/decrement action" for its offset nudging). Exposes
 
 `value()`/`setValue()`/`valueChanged` so call sites needed almost no
 
-changes ΓÇö same method names as the QSpinBox API it replaces.
+changes — same method names as the QSpinBox API it replaces.
 
 
 
@@ -6590,7 +6590,7 @@ number. The two settings that must stay integers (`home_chirp_count`,
 
 `position_hold_ms`) now cast with an explicit `int(value)` in their
 
-`_on_*_changed` handlers ΓÇö without it, `config.json` silently drifted to
+`_on_*_changed` handlers — without it, `config.json` silently drifted to
 
 storing `2.0`/`50.0` instead of `2`/`50` for those fields.
 
@@ -6616,7 +6616,7 @@ against the real running app, a second `python host/main.py` instance
 
 was launched for screenshotting *without first checking whether the
 
-user's own instance was already running* ΓÇö it was, mid-session, with
+user's own instance was already running* — it was, mid-session, with
 
 settings the user had already hand-tuned (axis index, opacity, chirp
 
@@ -6624,7 +6624,7 @@ count/cooldown). A `keyboard.send('f3')` sent to test that second
 
 instance's deploy/stow behavior is a real OS-level keyboard event with
 
-no notion of "which process should receive this" ΓÇö a low-level
+no notion of "which process should receive this" — a low-level
 
 `keyboard.hook()` in *every* running instance sees it, so it went to the
 
@@ -6646,7 +6646,7 @@ might be running.
 
 
 
-## 2026-09-08 ΓÇö mobiThrottle: click-through toggle
+## 2026-09-08 — mobiThrottle: click-through toggle
 
 
 
@@ -6664,7 +6664,7 @@ under the SHOW/HIDE BAR button. Enabling it calls a new
 
 `_ThrottleBar.set_click_through()`, which sets
 
-`Qt.WA_TransparentForMouseEvents` on the bar widget ΓÇö the exact mechanism
+`Qt.WA_TransparentForMouseEvents` on the bar widget — the exact mechanism
 
 `modules/crosshair/module.py`'s `_CrosshairOverlay` already uses so its
 
@@ -6674,7 +6674,7 @@ mouse event on the bar's screen area passes straight through to whatever
 
 is underneath (the game) instead of reaching `mousePressEvent`/
 
-`mouseMoveEvent`/`mouseReleaseEvent` at all ΓÇö so drag-to-move and
+`mouseMoveEvent`/`mouseReleaseEvent` at all — so drag-to-move and
 
 right-drag-to-resize are structurally impossible while it's on, not just
 
@@ -6696,7 +6696,7 @@ switched back off and a fresh drag begins.
 
 New setting `click_through` (default `False`, so drag/resize behave
 
-exactly as before out of the box) ΓÇö persists via the same
+exactly as before out of the box) — persists via the same
 
 `self.settings`/`config.set_module_settings()` path as everything else.
 
@@ -6716,7 +6716,7 @@ checkbox and the underlying Qt attribute), toggling the checkbox flips
 
 both directions correctly. Not yet confirmed with a real mouse against
 
-the real running game ΓÇö same category as the axis-tracking/Home-Chirp
+the real running game — same category as the axis-tracking/Home-Chirp
 
 checks still pending a hands-on pass, and per the process-hygiene note
 
@@ -6736,7 +6736,7 @@ Qt's Windows platform plugin only reliably pushes that attribute down
 
 into the native window's real `WS_EX_TRANSPARENT` extended style at
 
-window-*creation* time ΓÇö toggling it later via `setAttribute()` on an
+window-*creation* time — toggling it later via `setAttribute()` on an
 
 already-shown top-level widget doesn't consistently re-push the change
 
@@ -6746,7 +6746,7 @@ click-through checkbox silently no-op'd in practice even though the
 
 Qt-side attribute and the persisted setting were both flipping correctly
 
-(confirmed by the headless test above ΓÇö the bug was invisible to that
+(confirmed by the headless test above — the bug was invisible to that
 
 test precisely because it only checks the Qt-side attribute, not the
 
@@ -6768,7 +6768,7 @@ now reads/writes the `WS_EX_TRANSPARENT` bit directly via
 
 `GetWindowLongW`/`SetWindowLongW` on the widget's real `HWND`
 
-(`int(self.winId())`), which Windows checks live on every hit-test ΓÇö
+(`int(self.winId())`), which Windows checks live on every hit-test —
 
 no window-creation-time dependency, no caching to fight. The Qt
 
@@ -6782,11 +6782,11 @@ depends on it taking effect.
 
 Attempted to verify this the same way as the rest of mobiThrottle's live
 
-checks ΓÇö a standalone test widget plus `WindowFromPoint` to prove a
+checks — a standalone test widget plus `WindowFromPoint` to prove a
 
 screen coordinate's hit-test target genuinely changes when the bit
 
-flips, without touching the user's already-running instance ΓÇö but Star
+flips, without touching the user's already-running instance — but Star
 
 Citizen's own window (`CryENGINE`), running fullscreen-exclusive on the
 
@@ -6798,9 +6798,9 @@ whether the bit was set, making that harness unreliable while the game
 
 is running. The underlying mechanism (`WS_EX_TRANSPARENT`) is the
 
-standard, decades-proven Win32 technique for click-through overlays ΓÇö
+standard, decades-proven Win32 technique for click-through overlays —
 
-correct by construction ΓÇö but this specific instance of it is only
+correct by construction — but this specific instance of it is only
 
 confirmed by the user's own next real-mouse test after relaunching, not
 
@@ -6808,27 +6808,27 @@ by an automated check.
 
 
 
-- **2026-09-08 ΓÇö New module: Multi-Commodity Finder, direct user request.**
+- **2026-09-08 — New module: Multi-Commodity Finder, direct user request.**
 
   User: reducing stops matters more than squeezing the best price on any one
 
-  commodity ΓÇö wanted the ability to cross-reference several commodities at
+  commodity — wanted the ability to cross-reference several commodities at
 
   once and find terminals that trade multiple of them, even at a worse price
 
   each. No UEX endpoint does this kind of cross-referencing (confirmed by
 
-  inspection ΓÇö `commodities_prices` is per-commodity, same endpoint every
+  inspection — `commodities_prices` is per-commodity, same endpoint every
 
   other module already uses), so it's a client-side grouping of
 
   per-commodity price rows by `id_terminal`, ranked by `(coverage_count,
 
-  total_value)` rather than pure price ΓÇö coverage wins first, total value is
+  total_value)` rather than pure price — coverage wins first, total value is
 
   only the tiebreak. Reused Commodity Prices' exact gating rules (BUY side
 
-  requires `scu_buy > 0`, no `scu_sell` gate on SELL ΓÇö see 2026-09-05 entry)
+  requires `scu_buy > 0`, no `scu_sell` gate on SELL — see 2026-09-05 entry)
 
   since it's the same underlying data and the same "quoted price with 0
 
@@ -6848,7 +6848,7 @@ by an automated check.
 
   Verified against live UEX data, not stubs, all headless
 
-  (`QT_QPA_PLATFORM=offscreen`, no window painted ΓÇö same convention
+  (`QT_QPA_PLATFORM=offscreen`, no window painted — same convention
 
   mobiNotes used for a similar reason): module contract loads cleanly
 
@@ -6864,7 +6864,7 @@ by an automated check.
 
   terminal covering 2/5 checked commodities outranked one covering only 1/5
 
-  despite that 1/5 terminal being worth roughly 8x more in raw total value ΓÇö
+  despite that 1/5 terminal being worth roughly 8x more in raw total value —
 
   coverage genuinely wins over price, not just in theory; the Pyro system
 
@@ -6874,7 +6874,7 @@ by an automated check.
 
 
 
-- **2026-09-08 ΓÇö Terminal facility flags (refinery, cargo center, loading
+- **2026-09-08 — Terminal facility flags (refinery, cargo center, loading
 
   dock, etc.) added to the shared `host/locations.py`, not hand-rolled in
 
@@ -6894,7 +6894,7 @@ by an automated check.
 
   `is_jump_point`, `has_loading_dock`, `has_docking_port`,
 
-  `has_freight_elevator` as plain 0/1 flags ΓÇö no new endpoint, no added API
+  `has_freight_elevator` as plain 0/1 flags — no new endpoint, no added API
 
   cost, since `all_locations()` already fetches these rows for every
 
@@ -6926,11 +6926,11 @@ by an automated check.
 
 
 
-- **2026-09-08 ΓÇö Two fixes to Multi-Commodity Finder's COPY button, both
+- **2026-09-08 — Two fixes to Multi-Commodity Finder's COPY button, both
 
   found within a day of shipping it.** (1) User reported the copied text
 
-  said "Mode: BUY" while the app's mode combo was actually set to SELL ΓÇö
+  said "Mode: BUY" while the app's mode combo was actually set to SELL —
 
   `_format_for_clipboard()`'s mode label had index 0/1 backwards relative
 
@@ -6938,13 +6938,13 @@ by an automated check.
 
   `_on_mode_changed`/`_render_results` gating logic was correct the whole
 
-  time ΓÇö only the printed label in the copy text was wrong, so results
+  time — only the printed label in the copy text was wrong, so results
 
   data itself was never affected). Fixed and reverified against a real
 
   scan. (2) User: the commodity search box's filter text shouldn't be in
 
-  the copied summary ΓÇö it's a UI narrowing aid over the checkable list, not
+  the copied summary — it's a UI narrowing aid over the checkable list, not
 
   part of the actual query, so including it was noise for something meant
 
@@ -6964,7 +6964,7 @@ by an automated check.
 
   filter, extra checked commodities) bleeding into what the user saw when
 
-  they next opened the app ΓÇö cleared those back to empty and switched to
+  they next opened the app — cleared those back to empty and switched to
 
   monkeypatching `host.config.CONFIG_PATH` to a scratch file for this kind
 
@@ -6972,13 +6972,13 @@ by an automated check.
 
   PROGRESS.md already flagged once before (Logistics Hub's confirm-gate
 
-  testing writing into the real debug log) ΓÇö worth remembering as a
+  testing writing into the real debug log) — worth remembering as a
 
   standing rule, not a one-off.
 
 
 
-- **2026-09-08 ΓÇö Missing-commodity wording made mode-aware ("doesn't buy
+- **2026-09-08 — Missing-commodity wording made mode-aware ("doesn't buy
 
   from you" / "doesn't sell to you"), replacing the ambiguous "not
 
@@ -6986,7 +6986,7 @@ by an automated check.
 
   (terminal buys from you), seeing "Construction Materials: not available
 
-  here" reads naturally as "out of stock," not its actual meaning ΓÇö this
+  here" reads naturally as "out of stock," not its actual meaning — this
 
   terminal doesn't purchase that commodity at all. The direction (buy vs.
 
@@ -7008,7 +7008,7 @@ by an automated check.
 
 
 
-- **2026-09-20 ΓÇö Full-product PyInstaller build with easyocr/torch/torchvision.**
+- **2026-09-20 — Full-product PyInstaller build with easyocr/torch/torchvision.**
 
   Phase 1 of public release: the packaged exe now bundles the complete OCR
 
@@ -7044,17 +7044,17 @@ by an automated check.
 
     Language models (~100MB) are downloaded to `~/.EasyOCR/` on first-ever
 
-    run, not bundled ΓÇö this is easyocr's standard behavior.
+    run, not bundled — this is easyocr's standard behavior.
 
   `modules/` still ships external (plain .py next to the exe) per existing
 
-  architecture ΓÇö only the host and its heavy deps are frozen into the exe.
+  architecture — only the host and its heavy deps are frozen into the exe.
 
 
 
-- **2026-09-20 ΓÇö pygame-ce collection added after smoke-test failure.**
+- **2026-09-20 — pygame-ce collection added after smoke-test failure.**
 
-  mobiThrottle was missing from the frozen build ΓÇö `discover_modules` skipped
+  mobiThrottle was missing from the frozen build — `discover_modules` skipped
 
   it because `import pygame` failed. pygame-ce bundles SDL2 DLLs that
 
@@ -7066,7 +7066,7 @@ by an automated check.
 
 
 
-- **2026-09-20 ΓÇö Safety hardening after real incident: WH_KEYBOARD_LL hook
+- **2026-09-20 — Safety hardening after real incident: WH_KEYBOARD_LL hook
 
   blocked Star Citizen keyboard input.** Incident: mobiOverlay v0.1.0
 
@@ -7078,7 +7078,7 @@ by an automated check.
 
   Force-killing SC was attempted first but the real problem was the
 
-  overlay's hook ΓÇö a WH_KEYBOARD_LL hook that isn't unhooked before its
+  overlay's hook — a WH_KEYBOARD_LL hook that isn't unhooked before its
 
   owning process dies (or hangs, or is killed improperly) can block
 
@@ -7096,7 +7096,7 @@ by an automated check.
 
      A second instance shows a clear dialog ("mobiOverlay is already
 
-     running") and exits immediately. The lock is process-lifetime ΓÇö no
+     running") and exits immediately. The lock is process-lifetime — no
 
      cleanup code needed, crash/kill releases it automatically.
 
@@ -7158,7 +7158,7 @@ by an automated check.
 
 
 
-- **2026-09-20 ΓÇö Switched to TRUE single-file exe: modules bundled inside.**
+- **2026-09-20 — Switched to TRUE single-file exe: modules bundled inside.**
 
   CEO wanted one double-clickable `mobiOverlay.exe` with no separate
 
@@ -7170,7 +7170,7 @@ by an automated check.
 
     `sys._MEIPASS/modules` at runtime.
 
-  - `host/paths.py`: Added `modules_root()` ΓÇö returns `sys._MEIPASS/modules`
+  - `host/paths.py`: Added `modules_root()` — returns `sys._MEIPASS/modules`
 
     when frozen, `modules/` when running from source. `app_root()` unchanged
 
@@ -7180,7 +7180,7 @@ by an automated check.
 
     "modules"` for discovery.
 
-  - `release.yml`/`BUILD.md`/`README.md`: Simplified ΓÇö no more "copy modules
+  - `release.yml`/`BUILD.md`/`README.md`: Simplified — no more "copy modules
 
     next to exe" step for end users.
 
@@ -7190,11 +7190,11 @@ by an automated check.
 
   **Data files still persist next to exe**: config.json, notes data, cache
 
-  files ΓÇö anything that must survive between launches ΓÇö still use `app_root()`.
+  files — anything that must survive between launches — still use `app_root()`.
 
 
 
-- **2026-09-20 ΓÇö System tray icon added for overlay recovery.**
+- **2026-09-20 — System tray icon added for overlay recovery.**
 
   `host/single_instance.py` already told users to "check your system tray"
 
@@ -7210,7 +7210,7 @@ by an automated check.
 
   `Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint`) specifically to exclude
 
-  it from the Windows taskbar ΓÇö an overlay shouldn't occupy a taskbar slot.
+  it from the Windows taskbar — an overlay shouldn't occupy a taskbar slot.
 
   That's intentional. The system tray (notification area) is the correct
 
@@ -7248,7 +7248,7 @@ by an automated check.
 
 
 
-- **2026-09-20 ΓÇö mobiThrottle home chirp: switched from winsound.Beep to
+- **2026-09-20 — mobiThrottle home chirp: switched from winsound.Beep to
 
   pygame.mixer.Sound.**
 
@@ -7262,7 +7262,7 @@ by an automated check.
 
   `winsound.Beep()` either blocks briefly and produces nothing, or raises
 
-  a `RuntimeError` ΓÇö both swallowed silently in the daemon thread, so no
+  a `RuntimeError` — both swallowed silently in the daemon thread, so no
 
   chirp is audible even though the edge-detection logic fires correctly.
 
@@ -7272,7 +7272,7 @@ by an automated check.
 
   pygame.mixer uses SDL_mixer under the hood, which routes through WASAPI
 
-  shared-mode on Windows ΓÇö this keeps working even when a game has
+  shared-mode on Windows — this keeps working even when a game has
 
   exclusive audio focus, same reason system notifications still play
 
@@ -7286,7 +7286,7 @@ by an automated check.
 
   **Fallback**: If mixer init fails (missing audio device, driver issue),
 
-  `_init_chirp_sound()` returns False and the chirp degrades silently ΓÇö
+  `_init_chirp_sound()` returns False and the chirp degrades silently —
 
   bar tracking/flashing continues unaffected, only audio is lost.
 
@@ -7298,7 +7298,7 @@ by an automated check.
 
 
 
-- **2026-09-20 ΓÇö Fixed: Stow/Deploy hotkey appeared to fully hide the
+- **2026-09-20 — Fixed: Stow/Deploy hotkey appeared to fully hide the
 
   overlay instead of showing a visible pill.**
 
@@ -7312,7 +7312,7 @@ by an automated check.
 
   x=2660), the now-tiny pill (~150├ù60px) kept that same top-left and
 
-  landed mostly or entirely off-screen ΓÇö users saw it "vanish" rather
+  landed mostly or entirely off-screen — users saw it "vanish" rather
 
   than stow to a visible pill.
 
@@ -7332,11 +7332,11 @@ by an automated check.
 
   `_apply_native_click_through()` (WS_EX_TRANSPARENT via Win32) work
 
-  exactly as before ΓÇö when enabled, the pill is visible but unclickable,
+  exactly as before — when enabled, the pill is visible but unclickable,
 
   redeploy via hotkey only.
 
-- **2026-09-20 ΓÇö Pill invisible in multi-monitor gap: fixed.**
+- **2026-09-20 — Pill invisible in multi-monitor gap: fixed.**
 
   **Root cause**: User's dual-monitor setup has a 512px horizontal gap
 
@@ -7346,13 +7346,13 @@ by an automated check.
 
   validation. Qt's `screenAt(QPoint(2660, 100))` returns None for coordinates
 
-  in a gap, and nothing prevented the pill from landing there ΓÇö completely
+  in a gap, and nothing prevented the pill from landing there — completely
 
   invisible, and with `pill_click_through: true` also undraggable.
 
   **Fix**: New `_ensure_on_screen()` helper validates proposed pill position:
 
-  1. Check `QGuiApplication.screenAt(proposed_pos)` ΓÇö if a real screen, use it
+  1. Check `QGuiApplication.screenAt(proposed_pos)` — if a real screen, use it
 
   2. If None (gap), fall back to the screen containing the pre-stow window's
 
@@ -7378,7 +7378,7 @@ by an automated check.
 
   so first-time stow is movable out of the box.
 
-- **2026-09-20 ΓÇö Location resolution fix for hauling contracts.**
+- **2026-09-20 — Location resolution fix for hauling contracts.**
   **Problem (CEO-reported, verified live against UEX API)**: Logistics Hub
   was resolving OCR text to wrong terminal IDs:
     - "Seraphim Station" ΓåÆ id 27 (logged as "Seraphim Station", but live
@@ -7386,7 +7386,7 @@ by an automated check.
     - "Beautiful Glen Station" ΓåÆ id 9 (logged as "CRU-L5 Beautiful Glen
       Station", but live terminals id 9 is "ArcCorp Mining Area 061")
   The local `locations_cache.json` had a stale/mixed ID space that didn't
-  match the live UEX terminal IDs. This was a systemic failure ΓÇö any station
+  match the live UEX terminal IDs. This was a systemic failure — any station
   renamed or re-IDed in UEX could produce the same class of wrong resolution.
   **Root cause**: Multiple issues combined:
     1. **No cache versioning**: Stale caches with wrong ID mappings were
@@ -7432,7 +7432,7 @@ by an automated check.
     - terminals id 22 = "Admin - CRU-L5" (correct for Beautiful Glen)
     - terminals id 9 = "ArcCorp Mining Area 061" (the wrong match we now reject)
 
-- **2026-09-20 ΓÇö Admin terminal promotion fix (CEO follow-up).**
+- **2026-09-20 — Admin terminal promotion fix (CEO follow-up).**
   **Problem (CEO-reported after live PR11 scans):** OCR "Dream Station" resolved
   to `CRU-L1 Ambitious Dream Station` (space_stations id 7) instead of being
   promoted to `Admin - CRU-L1` (terminals id 19). Same for "Pathway Station" ΓåÆ
@@ -7445,7 +7445,7 @@ by an automated check.
   records without promoting them to Admin terminals.
   **Fix (`host/locations.py`):**
     - **`_filter_and_prefer_admin()` deduplication**: Now deduplicates by
-      physical place ΓÇö if both an Admin terminal and its structural record
+      physical place — if both an Admin terminal and its structural record
       match, only the Admin terminal is returned. Non-Admin terminals (shops
       like "New Deal", "Kel-To") keep their distinct identity even if they
       share the same city FK.
@@ -7455,17 +7455,17 @@ by an automated check.
     - Fuzzy fallback now uses `resolve_fuzzy_for_hauling()` instead of
       `resolve_fuzzy()` to ensure OCR typos also get Admin terminal promotion.
   **Tests added (19 total hauling resolution checks):**
-    - `dream_station_resolves_to_admin_cru_l1` ΓÇö "Dream Station" ΓåÆ Admin - CRU-L1
-    - `pathway_station_resolves_to_admin_arc_l2` ΓÇö "Pathway Station" ΓåÆ Admin - ARC-L2
-    - `fields_station_resolves_to_admin_cru_l4` ΓÇö "Fields Station" ΓåÆ Admin - CRU-L4
-    - `ambitious_dream_resolves_to_admin` ΓÇö full name also promotes
+    - `dream_station_resolves_to_admin_cru_l1` — "Dream Station" ΓåÆ Admin - CRU-L1
+    - `pathway_station_resolves_to_admin_arc_l2` — "Pathway Station" ΓåÆ Admin - ARC-L2
+    - `fields_station_resolves_to_admin_cru_l4` — "Fields Station" ΓåÆ Admin - CRU-L4
+    - `ambitious_dream_resolves_to_admin` — full name also promotes
     - Each also verifies bare space_station record is NOT in results
   **Design principle (CEO-mandated):** For hauling contracts, always promote
   stops to the linked Admin commodity terminal using UEX FK. Display can use
   friendly station names, but stored contract terminal for distance/grade must
   be the Admin terminal whenever one exists.
 
-- **2026-09-20 ΓÇö Location picker availability filtering.**
+- **2026-09-20 — Location picker availability filtering.**
   **Problem (CEO-reported)**: User-facing location pickers (Logistics Hub
   CURRENT LOCATION combo, etc.) showed many junk/unavailable locations like
   "Benson Mining Outpost", "Bud's Growery", "Gallete Family Farms", "NT-999-XX"
@@ -7474,7 +7474,7 @@ by an automated check.
   four UEX endpoints without filtering. While the `terminals` endpoint has
   `is_available=0` for decommissioned locations, the `outposts` endpoint marks
   the structural record as `is_available=1` even when the terminal inside has
-  `is_available=0` ΓÇö so the outpost appears but can't actually be used.
+  `is_available=0` — so the outpost appears but can't actually be used.
   **Fix (`host/locations.py`)**:
     - `available_locations()`: New method that filters to usable locations:
       - Terminals: requires `is_available=1`
@@ -7486,11 +7486,11 @@ by an automated check.
       set `include_unavailable=True` for debug/internal tools
   **Module updates**:
     - Logistics Hub: `_populate_location_combo()` now uses `available_locations()`
-      instead of `all_locations()` ΓÇö junk filtered from the CURRENT LOCATION picker
+      instead of `all_locations()` — junk filtered from the CURRENT LOCATION picker
     - Trade Route Optimizer: Already filtered by `is_available_live` (unchanged)
     - Commodity Prices: Uses `all_locations()` for nickname lookup (display only,
-      not a picker) ΓÇö unchanged, acceptable
-    - Multi-Commodity Finder: No location picker ΓÇö unchanged
+      not a picker) — unchanged, acceptable
+    - Multi-Commodity Finder: No location picker — unchanged
   **OCR resolution unchanged**: `resolve_for_hauling()` still uses the full index
   so contracts mentioning unavailable locations can still be parsed. The filter
   is for user-facing pickers only.
@@ -7503,37 +7503,37 @@ by an automated check.
     - 826 terminals ΓåÆ 771 available (55 filtered)
     - 118 outposts ΓåÆ 78 available (40 filtered, including the junk ones)
 
-- **2026-09-20 ΓÇö M2: Background OCR for Logistics Hub.**
+- **2026-09-20 — M2: Background OCR for Logistics Hub.**
   **Problem**: Logistics Hub's SCAN CONTRACT froze the entire UI for 1-3s
   during EasyOCR/PyTorch inference, making the overlay appear unresponsive.
   **Initial fix (crashed)**: Moved OCR to a `QThread` with `OcrWorker`. This
   caused a hard crash (Qt6Core.dll STATUS_STACK_BUFFER_OVERRUN) when
-  `easyocr.Reader()` was constructed inside the QThread ΓÇö PyTorch/OpenMP
+  `easyocr.Reader()` was constructed inside the QThread — PyTorch/OpenMP
   initialization inside a QThread conflicts with Qt's threading model on
   Windows. Additional issues: calling `QThread.quit()/wait()` from signal
   slots was fragile, and `QImage.bits()` returned a view that could become
   invalid before the background thread used it.
   **Working fix**: Use a plain `threading.Thread` instead of QThread:
-    1. **easyocr.Reader created on main thread only** ΓÇö first scan may briefly
+    1. **easyocr.Reader created on main thread only** — first scan may briefly
        block (~2.8s) but avoids the crash entirely. Shows "Loading OCRΓÇª" status.
-    2. **Inference runs in a daemon `threading.Thread`** ΓÇö only the stateless
+    2. **Inference runs in a daemon `threading.Thread`** — only the stateless
        `readtext()` call, which is safe from any thread.
     3. **`_OcrSignalBridge` (QObject on main thread)** marshals results back
        via Qt signals with queued connections.
-    4. **`_pixmap_to_pil()` now uses `bytearray(qimg.bits())`** ΓÇö makes a full
+    4. **`_pixmap_to_pil()` now uses `bytearray(qimg.bits())`** — makes a full
        copy of image bytes before the QImage goes out of scope.
   **Structure**: Extracted pure OCR helpers (`order_ocr_boxes`, `preprocess_image`,
-  `run_ocr`) to `modules/logistics_hub/ocr.py` ΓÇö a minimal slice to keep the
+  `run_ocr`) to `modules/logistics_hub/ocr.py` — a minimal slice to keep the
   worker clean. The rest of `logistics_hub/module.py` delegates to `ocr_module`
   instead of duplicating code. This is NOT the full L1 decomposition (deferred);
   only what M2 needs is extracted.
   **First-scan UX**: The initial Reader creation blocks briefly on the main
   thread (unavoidable to prevent the crash), but subsequent scans run inference
   in the background with full UI responsiveness.
-  **No behavior change**: Contract parsing, review popup, grading ΓÇö all unchanged.
+  **No behavior change**: Contract parsing, review popup, grading — all unchanged.
   Only the threading model for the OCR call itself changed.
 
-- **2026-09-20 ΓÇö M5: UexApiClient request deduplication.**
+- **2026-09-20 — M5: UexApiClient request deduplication.**
   **Problem**: Multiple modules refreshing at once (startup, or user clicking
   several Refresh buttons) could fire duplicate identical GET requests to UEX,
   wasting rate-limit budget (120/min). No in-flight sharing or short-TTL cache
@@ -7547,7 +7547,7 @@ by an automated check.
        network.
   **Key design**: Cache key is `f"{endpoint}|{sorted_params}"`. Errors are
   cached too (re-raised to waiting callers), so a transient failure doesn't
-  trigger a retry storm. Lock is held only briefly around dict lookups ΓÇö the
+  trigger a retry storm. Lock is held only briefly around dict lookups — the
   actual network call runs outside the lock.
   **No behavior change**: Successful unique calls work exactly as before. Only
   redundant calls within the 2s window are deduplicated.

@@ -29,7 +29,7 @@ decisions. The most impactful optimizations center on:
 2. **Network efficiency** — duplicate `LocationService` instances per module,
    repeated API calls across modules
 3. **Main thread blocking** — synchronous OCR and some UEX API calls
-4. **Code structure** — logistics_hub at 4,216 lines needs decomposition
+4. **Code structure** — logistics_hub at 4,350 lines needs decomposition
 
 ---
 
@@ -37,23 +37,15 @@ decisions. The most impactful optimizations center on:
 
 ### Q1. Share a single LocationService instance across all modules ✅ IMPLEMENTED
 
-**Problem**: Every module instantiates its own `LocationService`:
-- `commodity_prices/module.py:69` — `self._locations = LocationService(api_client)`
-- `trade_route_optimizer/module.py:84` — `self._locations = LocationService(api_client)`
-- `logistics_hub/module.py` — creates its own instance
-- `multi_commodity_finder/module.py:79` — `self._locations = LocationService(api_client)`
-- `refinery_finder` reads from API directly (no LocationService)
+**Was**: Every module instantiated its own `LocationService`, each loading the
+same disk cache or fetching the same API data independently — with multiple
+modules active, startup issued several times the needed location fetches.
 
-Each instance loads the same disk cache or fetches the same API data independently.
-With 7 active modules, startup could be issuing 4-7x the needed location fetches.
+**Fixed**: `LocationService` is now created once in `host/main.py` and passed
+to every module alongside `api_client`, the same pattern used for other
+shared services.
 
-**Benefit**: Eliminates duplicate API calls and disk cache reads at startup. ~500ms
-saved if multiple modules load before cache is warm.
-
-**Effort**: Low — add `LocationService` to module constructor signature (same pattern
-as `api_client`), instantiate once in `host/main.py`, pass to all modules.
-
-**Risk**: None — `LocationService` is already stateless beyond its cache.
+**Benefit**: Eliminates duplicate API calls and disk cache reads at startup.
 
 **Project rules**: ✓ No API logic changes, just instance sharing.
 
@@ -61,21 +53,17 @@ as `api_client`), instantiate once in `host/main.py`, pass to all modules.
 
 ### Q2. Deduplicate commodities API call at startup ✅ IMPLEMENTED
 
-**Problem**: Multiple modules fetch the full commodities list independently:
-- `commodity_prices/module.py:178-179` — `self.api.get("commodities")`
-- `refinery_finder/module.py:119-120` — `self.api.get("commodities")`
-- `multi_commodity_finder/module.py:199-200` — `self.api.get("commodities")`
+**Was**: Several modules independently fetched the full commodities list
+(`commodity_prices`, `refinery_finder`, `multi_commodity_finder`), each a
+redundant request to the same endpoint within seconds of startup.
 
-Each call returns ~150-200 items. With 3+ modules doing this at startup, that's
-3 redundant requests to the same endpoint within seconds.
+**Fixed**: `LocationService.commodities()` (`host/locations.py`) fetches the
+list once per session. Commodity Prices and Multi-Commodity Finder read it
+through `visible_commodity_names()`; Refinery Finder through
+`raw_commodities()`. M5 deduplication is a separate change.
 
-**Benefit**: Reduces startup API calls by 2, avoids potential rate-limit pressure
+**Benefit**: Reduces startup API calls, avoids potential rate-limit pressure
 during rapid startup.
-
-**Effort**: Low — add `commodities` to the shared `LocationService` cache, or create
-a parallel `CommoditiesService` in `host/`.
-
-**Risk**: Minimal — commodity list changes infrequently (game patches only).
 
 **Project rules**: ✓ Uses existing UEX endpoints, no invented logic.
 
@@ -83,29 +71,16 @@ a parallel `CommoditiesService` in `host/`.
 
 ### Q3. Add connection pooling/keep-alive to UexApiClient ✅ IMPLEMENTED
 
-**Problem**: `host/api_client.py` uses `requests.Session()` but creates new TCP
-connections for each request due to default session behavior and lack of explicit
-pooling configuration.
+**Was**: `requests.Session()` with no explicit pooling configuration.
 
-```python
-# host/api_client.py:19-22
-def __init__(self, base_url: str, token: str = ""):
-    self.base_url = base_url.rstrip("/") + "/"
-    self.token = token
-    self._session = requests.Session()
-```
-
-**Benefit**: HTTP keep-alive reuses connections, reducing latency by ~50-100ms
-per request after the first (TLS handshake avoidance).
-
-**Effort**: Trivial — `requests.Session` already supports keep-alive; just ensure
-it's actually reused (it is) and consider adding:
+**Fixed**:
 ```python
 from requests.adapters import HTTPAdapter
 self._session.mount('https://', HTTPAdapter(pool_connections=10, pool_maxsize=10))
 ```
 
-**Risk**: None — standard HTTP optimization.
+**Benefit**: HTTP keep-alive reuses connections, reducing latency by ~50-100ms
+per request after the first (TLS handshake avoidance).
 
 **Project rules**: ✓ No API changes.
 
@@ -113,19 +88,13 @@ self._session.mount('https://', HTTPAdapter(pool_connections=10, pool_maxsize=10
 
 ### Q4. Cache refineries_methods (static reference data) ✅ IMPLEMENTED
 
-**Problem**: `refinery_finder/module.py:174` calls `refineries_methods` on every
-`refresh()`, but this is reference data that never changes during a session:
+**Was**: `refinery_finder/module.py` called `refineries_methods` on every
+`refresh()`, re-fetching static reference data that never changes during a
+session.
 
-```python
-self._methods = self.api.get("refineries_methods")
-```
+**Fixed**: Fetched once, cached in an instance variable.
 
 **Benefit**: Eliminates 1 API call per refresh cycle (every 5 minutes by default).
-
-**Effort**: Trivial — fetch once in `__init__` or on first `refresh()`, store in
-instance variable.
-
-**Risk**: None — methods are static game data.
 
 **Project rules**: ✓ No invented logic.
 
@@ -161,26 +130,16 @@ intervals instead of 1 per 120ms).
 
 ### M1. Lazy-load easyocr/PyTorch on first OCR use ✅ IMPLEMENTED
 
-**Problem**: `logistics_hub/module.py:107-109` imports easyocr at module load time:
+**Was**: `logistics_hub/module.py` imported `easyocr` at module load time, during
+`discover_modules()` — before the splash screen could even show which module
+was loading. `import easyocr` alone took 2.79s (measured in HISTORY.md),
+dominating the entire startup.
 
-```python
-try:
-    import easyocr  # type: ignore
-    from PIL import Image, ImageOps  # type: ignore
-    OCR_AVAILABLE = True
-```
-
-This runs during `discover_modules()` — before the splash screen can even show
-which module is loading. `import easyocr` alone takes 2.79s (measured in
-PROGRESS.md), dominating the entire startup.
+**Fixed**: The import moved inside the first scan trigger, with a "loading OCR
+engine..." status message while it loads.
 
 **Benefit**: Startup drops from ~3.6s to ~0.8s. Users who never click SCAN CONTRACT
 never pay the PyTorch load cost at all.
-
-**Effort**: Medium — move the import inside `_run_ocr()` or the first scan trigger,
-guard with a "loading OCR engine..." status message.
-
-**Risk**: First scan has a 2-3s delay. Mitigate with a loading indicator.
 
 **Project rules**: ✓ No functional change.
 
@@ -188,7 +147,7 @@ guard with a "loading OCR engine..." status message.
 
 ### M2. Move OCR processing to a background thread ✅ IMPLEMENTED
 
-**Problem**: OCR ran synchronously on the Qt main thread, blocking the entire
+**Was**: OCR ran synchronously on the Qt main thread, blocking the entire
 UI for 1-3 seconds during each scan.
 
 **Solution implemented**: Uses a plain `threading.Thread` (NOT QThread) for
@@ -270,10 +229,10 @@ doing one module at a time with visual diff testing.
 
 ### M5. Add request deduplication to UexApiClient ✅ IMPLEMENTED
 
-**Problem**: Nothing prevented duplicate identical GET requests when multiple
+**Was**: Nothing prevented duplicate identical GET requests when multiple
 modules refreshed at once (startup, or user clicking several Refresh buttons).
 
-**Solution implemented**: Added two deduplication mechanisms to `UexApiClient.get()`:
+**Fixed**: Added two deduplication mechanisms to `UexApiClient.get()`:
 1. **In-flight sharing**: Concurrent calls for the same endpoint+params share a
    single `Future`. Only one HTTP request fires; others wait on `future.result()`.
 2. **Short-TTL cache**: Completed results are reused for 2 seconds
@@ -293,10 +252,10 @@ outside the lock.
 
 ## Larger Bets (High effort, significant architectural improvement)
 
-### L1. Decompose logistics_hub/module.py (4,216 lines)
+### L1. Decompose logistics_hub/module.py (4,350 lines)
 
-**Problem**: `logistics_hub/module.py` is 4,216 lines — nearly 40% of all Python
-code in the project (11,373 total). It contains:
+**Problem**: `logistics_hub/module.py` is 4,350 lines — nearly 40% of all Python
+code in the project. It contains:
 - OCR pipeline (`_run_ocr`, `_order_ocr_boxes`, `_candidate_phrases`)
 - Contract parsing (`_build_contract`, `_extract_commodities`)
 - Route optimization (2-opt, greedy nearest-neighbor)
@@ -361,18 +320,18 @@ The QTimer-chunked approach already provides adequate responsiveness.
 
 ### L4. PyInstaller bundle size reduction
 
-**Problem**: The exe bundles PyTorch (for EasyOCR), which adds ~500MB+ to the
-distribution. Most users may never use OCR.
+**Problem**: The exe bundles PyTorch (for EasyOCR), which adds ~250MB+ to the
+distribution (shipped exe is ~333MB total). Most users may never use OCR.
 
 **Options**:
 1. **Separate OCR plugin**: Ship base exe without PyTorch, offer `logistics_hub/`
    as an optional download that adds the heavy deps.
-2. **Use ONNX Runtime instead of PyTorch**: EasyOCR can export to ONNX; runtime
-   is ~50MB vs ~500MB.
+2. **Use ONNX Runtime instead of PyTorch**: EasyOCR can export to ONNX; that
+   runtime is ~50MB, against the PyTorch portion of the ~333MB exe.
 3. **Cloud OCR fallback**: Offer a (rate-limited) cloud OCR endpoint as an
    alternative to local inference.
 
-**Benefit**: Base distribution drops from ~600MB to ~100MB.
+**Benefit**: Base distribution drops from ~333MB to well under 100MB.
 
 **Effort**: Very high for options 2-3, medium for option 1.
 
@@ -436,18 +395,14 @@ Mitigate with clear "last updated X ago" indicators.
 
 ## Implementation Priority Matrix
 
+Items already shipped (Q1-Q4, M1, M2, M5 — see Implementation Status above)
+are omitted below; this matrix only orders what's still open.
+
 | Priority | Item | Benefit | Effort | Risk |
 |----------|------|---------|--------|------|
-| 1 | Q1 (Share LocationService) | High | Low | None |
-| 2 | Q2 (Dedupe commodities call) | Medium | Low | None |
-| 3 | M1 (Lazy-load easyocr) | Very High | Medium | Low |
-| 4 | Q3 (Connection pooling) | Medium | Trivial | None |
-| 5 | Q4 (Cache refineries_methods) | Low | Trivial | None |
-| 6 | M2 (Background OCR thread) | High | Medium | Low |
-| 7 | M4 (Consolidate stylesheets) | Medium | Medium | Low |
-| 8 | L1 (Decompose logistics_hub) | High | High | Medium |
-| 9 | M3 (Pre-warm cache) | Medium | Medium | Low |
-| 10 | M5 (Request deduplication) | Medium | Medium | Low |
+| 1 | M4 (Consolidate stylesheets) | Medium | Medium | Low |
+| 2 | L1 (Decompose logistics_hub) | High | High | Medium |
+| 3 | M3 (Pre-warm cache) | Medium | Medium | Low |
 
 ---
 

@@ -2,7 +2,7 @@
 
 Modules narrowed to only those that map directly to an existing UEX endpoint
 (no custom pathfinding/logic UEX doesn't already compute, no unverified
-account/auth requirement — see docs/PROGRESS.md for what was cut and why).
+account/auth requirement — see docs/HISTORY.md for what was cut and why).
 
 Ranked by researched community interest (2026-09-03), not just endpoint
 availability. Evidence tiers:
@@ -74,20 +74,22 @@ availability. Evidence tiers:
 
 ## High want, high complexity — not ranked in the tiers above
 
-**Multi-Stop Contract Route Optimizer.** User's own explicit high-priority
-want (2026-09-03), not from the community-interest research above — a
-different category of ask, so kept separate rather than slotted into a
-tier.
+**Multi-Stop Contract Route Optimizer — built, as Logistics Hub.** User's
+own explicit high-priority want (2026-09-03), not from the community-interest
+research above — a different category of ask, so kept separate rather than
+slotted into a tier. See the Status section below and
+`docs/modules/logistics-hub.md`.
 
 - **Problem:** when you've picked up multiple hauling/box-delivery
   contracts, what order should you visit the pickup/dropoff terminals in
   to minimize travel?
-- **Why it can't be fully automated:** live mission-board contract data
+- **Why it couldn't be fully automated:** live mission-board contract data
   (which contracts you're actually holding, their pickup/dropoff points)
   is server-side, per-player, and not exposed by UEX or any public API —
-  same root limitation as the original Game.log combat-data problem. The
-  user would have to manually enter their current stops; nothing can read
-  that state for them.
+  same root limitation as the original Game.log combat-data problem.
+  Solved instead with OCR: the user screenshots the in-game contract board,
+  Logistics Hub reads the stops from that image rather than needing manual
+  entry.
 - **What IS confirmed to work (tested live, 2026-09-03):**
   `terminals_distances?id_terminal_origin=<id>&id_terminal_destination=<id>`
   returns a real distance for exactly one terminal pair per call — e.g.
@@ -95,17 +97,16 @@ tier.
   mode — an N-stop run needs up to N×(N-1) calls to build a full distance
   matrix (trivial against the 120/min rate limit for realistic stop counts
   of 4-8).
-- **Why it's harder than every other module so far:** every other module
+- **Why it was harder than every other module so far:** every other module
   in this backlog just displays data UEX already computed
   (`commodities_routes` literally hands back the best route). This one
-  needs actual routing logic written on our side — build a distance
-  matrix from pairwise calls, then solve "best order to visit all stops"
-  (a small-scale TSP-like problem; brute-force or nearest-neighbor is
-  plenty at 4-8 stops, no need for a real solver). It's also the first
-  module whose primary input is manual user entry rather than an API
-  picker — a different UI shape (an editable stop list, not a dropdown).
-- **Not scoped yet.** Revisit when ready — write
-  `docs/modules/contract-route-optimizer.md` at that point.
+  needed actual routing logic written on our side — a distance matrix from
+  pairwise calls, then a greedy nearest-neighbor pass improved by 2-opt (a
+  small-scale TSP-like problem; brute-force/2-opt is plenty at realistic
+  stop counts, no need for a real solver). This is an explicit, documented
+  exception to AGENTS.md's no-custom-pathfinding rule — see AGENTS.md and
+  CLAUDE.md for the exception, and DECISIONS.md for the full routing
+  writeup.
 
 ## Sources
 

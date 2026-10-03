@@ -45,8 +45,8 @@ All modules are included and load automatically:
   small pill showing just the wordmark; click to restore
 - **System tray icon** — right-click for Show/Exit; recover the overlay if the
   pill lands somewhere invisible
-- **Global hotkey** (Settings, default F3) — toggle stow/deploy while Star
-  Citizen has focus
+- **Global hotkey** (Settings, no default — empty until you set one) —
+  toggle stow/deploy while Star Citizen has focus
 - **Click-through pill** (Settings) — when enabled, the stowed pill passes all
   clicks through to the game; redeploy via hotkey or tray only
 

@@ -60,7 +60,8 @@ Read only what's relevant to your task:
 | Doc | Purpose |
 |-----|---------|
 | `AGENTS.md` (this file) | First read — onboarding, safety rules, conventions |
-| `docs/PROGRESS.md` | Current status, what's done, what's next |
+| `docs/PROGRESS.md` | One-page status: version, shipped, open |
+| `docs/HISTORY.md` | Session archive. Not the status |
 | `docs/ARCHITECTURE.md` | Module contract, Core responsibilities, config schema |
 | `docs/DECISIONS.md` | Dated log of choices + rationale (append-only) |
 | `docs/BACKLOG.md` | Ranked module backlog with community-interest evidence |
@@ -69,8 +70,8 @@ Read only what's relevant to your task:
 | `BUILD.md` | Build, test, and release instructions |
 | `README.md` | End-user documentation |
 
-**Start every session by reading `docs/PROGRESS.md`** to orient, then only the
-docs relevant to your task.
+**Start every session by reading `docs/PROGRESS.md`** (one page), then only the
+docs relevant to your task. Do not start from `docs/HISTORY.md`.
 
 ---
 
@@ -195,6 +196,15 @@ a future feature, it must be user-provided in Settings.
 Don't write custom pathfinding, commodity prediction, or market analysis that
 UEX's own API doesn't provide. The modules display UEX data as-is, with only
 client-side filtering/sorting.
+
+**Explicit, documented exception: Logistics Hub's route ordering.** UEX has
+no "best order to visit these stops" endpoint, so Logistics Hub builds a
+distance matrix from real `terminals_distances`/`orbits_distances` calls
+and solves the stop order itself (greedy nearest-neighbor + 2-opt
+improvement) — the distances are real UEX data, only the ordering logic is
+ours. Scoped and justified in `docs/BACKLOG.md`'s "Multi-Stop Contract
+Route Optimizer" entry; this is the one deliberate carve-out from this rule,
+not a precedent for inventing logic elsewhere.
 
 ### 7. Never run two mobiOverlay instances at once
 

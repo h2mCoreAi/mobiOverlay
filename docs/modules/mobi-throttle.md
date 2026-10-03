@@ -10,7 +10,7 @@ work around limitations Qt doesn't have.
 **Built, live-verified, and user-confirmed working 2026-09-08** with a
 real throttle — see docs/DECISIONS.md (2026-09-08 entries) for the full
 build/verification writeup and the follow-up usability fix, and
-docs/PROGRESS.md for the summary. `modules/mobi_throttle/module.py`.
+docs/HISTORY.md for the build log. `modules/mobi_throttle/module.py`.
 Everything below was the architecture written *before* any code existed;
 it held up unchanged through implementation except where a note below
 says otherwise.

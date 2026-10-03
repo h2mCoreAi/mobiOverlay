@@ -73,7 +73,7 @@ sentinel (first item, default) alongside a new BUY IN system filter:
 
 - Origin terminal picker now reads from the shared `host/locations.py`
   `LocationService.all_locations()` (see Core Location service in
-  docs/PROGRESS.md, Phase 4) instead of a per-system `terminals` call —
+  docs/HISTORY.md, Phase 4) instead of a per-system `terminals` call —
   filtered client-side to `_endpoint == "terminals"`, `type == "commodity"`,
   `is_available_live`, same predicate the old system-scoped call used, just
   applied across all systems at once. Labeled via

@@ -98,18 +98,22 @@ Shared HTTP client for all UEX API access. Key features:
 ```json
 {
   "ui": {
-    "window_opacity": 0.9,
-    "card_opacity": 0.9,
+    "window_opacity": 0.92,
+    "card_opacity": 0.94,
     "font_scale": 1.15,
     "window_geometry": { "x": 100, "y": 100, "width": 400, "height": 600 },
     "pill_geometry": { "x": 100, "y": 100 },
-    "show_console": false
+    "pre_stow_geometry": { "x": 100, "y": 100, "width": 400, "height": 600 },
+    "pill_click_through": false,
+    "always_on_top": true,
+    "show_console": false,
+    "hotkey_combo": "",
+    "hotkey_display": ""
   },
   "api": { "uex_token": "", "uex_base_url": "https://api.uexcorp.uk/2.0/" },
   "cards": { "<card_id>": { "x": 0, "y": 0, "collapsed": false, "visible": true } },
   "modules": { "<module_id>": { } },
-  "hotkey_combo": "f3",
-  "hotkey_display": "F3"
+  "shared": { "current_location_name": "", "current_location": null }
 }
 ```
 
@@ -212,8 +216,9 @@ The capture UI (`_HotkeyField` in `main_window.py`) is click-to-arm: click
 the field, press and release any combo. Capture uses
 `GlobalHotkey.capture_combo()`, which spawns a daemon thread calling
 `keyboard.read_hotkey(suppress=False)` and reports the result back via a Signal.
-Config stores the raw `keyboard`-library combo string (`hotkey_combo`,
-e.g. `"f3"` or `"ctrl+alt+p"`) plus a prettified `hotkey_display` for the UI.
+Config stores the raw `keyboard`-library combo string (`ui.hotkey_combo`,
+e.g. `"f3"` or `"ctrl+alt+p"`, default `""` — no hotkey until the user sets
+one) plus a prettified `ui.hotkey_display` for the UI.
 
 ## Logistics Hub OCR (modules/logistics_hub/ocr.py)
 
