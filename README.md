@@ -43,6 +43,8 @@ All modules are included and load automatically:
 
 - **Stow to pill** (`▬` button or global hotkey) — shrinks the overlay to a
   small pill showing just the wordmark; click to restore
+- **Minimize / maximize** (`🗕` / `🗖` buttons, or double-click the title bar
+  to maximize) — normal Windows behavior; the overlay has a taskbar entry
 - **System tray icon** — right-click for Show/Exit; recover the overlay if the
   pill lands somewhere invisible
 - **Global hotkey** (Settings, no default — empty until you set one) —
@@ -106,6 +108,8 @@ mobiOverlay/
   locations_cache.json     # UEX location cache (auto-refreshes weekly)
   mobinotes_data.json      # mobiNotes storage (if you use that module)
   logistics_hub_debug.jsonl  # OCR debug log (if you use Logistics Hub)
+  logistics_hub_completed.jsonl  # Contracts you marked COMPLETE
+  .mobioverlay.lock        # Single-instance guard (safe to ignore)
 ```
 
 ## Building from Source

@@ -7665,3 +7665,18 @@ by an automated check.
      minimized-to-taskbar and the user doesn't remember the hotkey),
      not the only one. Not re-editing that 2026-09-20 entry since this log
      is append-only â€” this entry is the correction.
+
+- **2026-10-03 — Docs restructured so any agent can pick up the project cold.**
+  A cross-agent review found `docs/PROGRESS.md` (the file every agent was
+  told to read first) was a ~1,200-line session diary whose status still
+  called v0.2.0 unreleased, though `v0.3.0` was already tagged. Moved that log verbatim to
+  `docs/HISTORY.md` and replaced `PROGRESS.md` with a one-page status:
+  version, shipped, open, working rules. Older entries in this file that say
+  "see PROGRESS.md" now mean `HISTORY.md`. Same pass: fixed the stale
+  config schema, the commodity-prices and optimization docs, and 674
+  mojibake em dashes in this file, which were a pure byte fix with no wording changed.
+  Also added a rule to `AGENTS.md` and `CLAUDE.md`: never push directly to `master`
+  without the owner's explicit confirmation in the current session. Removed
+  references to the owner's specific local install paths, and gitignored
+  local build/runtime leftovers (`dist-test/`, `release/`,
+  `freeze-build*.log`, `.mobioverlay.lock`) — they are not project files.

@@ -15,3 +15,5 @@ logistics_hub_completed.jsonl
 mobinotes_data.json
 freeze-build*.log
 .mobioverlay.lock
+dist-test/
+release/
