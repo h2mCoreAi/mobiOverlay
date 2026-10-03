@@ -37,7 +37,7 @@ All modules are included and load automatically:
 | **Multi-Commodity Finder** | Find terminals that trade multiple commodities at once |
 | **Crosshair** | Customizable centered reticle overlay |
 | **mobiNotes** | In-game notepad with pages, tags, and search |
-| **mobiThrottle** | Throttle axis visualization with saved positions |
+| **mobiThrottle** | Throttle axis visualization with saved positions (its two hotkeys are unset until you set them in the card) |
 
 ### Window Controls
 
@@ -45,12 +45,14 @@ All modules are included and load automatically:
   small pill showing just the wordmark; click to restore
 - **Minimize / maximize** (`🗕` / `🗖` buttons, or double-click the title bar
   to maximize) — normal Windows behavior; the overlay has a taskbar entry
-- **System tray icon** — right-click for Show/Exit; recover the overlay if the
-  pill lands somewhere invisible
+- **System tray icon** — right-click for Show/Stow/Quit; recover the overlay
+  if the pill lands somewhere invisible
 - **Global hotkey** (Settings, no default — empty until you set one) —
   toggle stow/deploy while Star Citizen has focus
-- **Click-through pill** (Settings) — when enabled, the stowed pill passes all
-  clicks through to the game; redeploy via hotkey or tray only
+- **Click-through pill** (Settings) — when enabled, clicks pass through the
+  stowed pill to the game. Rest the cursor on the pill for a moment and it
+  lights up and becomes clickable (click to redeploy, or drag it); it goes
+  back to click-through when the cursor leaves. The hotkey and tray still work
 
 ### Card Management
 
@@ -82,7 +84,7 @@ a ~100MB language model (cached in `~/.EasyOCR/` afterward).
 
 If WASD, menus, or other keyboard input stops responding in Star Citizen:
 
-1. **Quit mobiOverlay** (Task Manager → `mobiOverlay.exe`, or right-click tray → Exit)
+1. **Quit mobiOverlay** (Task Manager → `mobiOverlay.exe`, or right-click tray → Quit)
 2. **Quit Star Citizen normally** and relaunch
 
 The global hotkey uses a low-level keyboard hook that can interfere with

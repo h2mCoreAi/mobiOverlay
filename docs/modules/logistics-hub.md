@@ -295,7 +295,9 @@ Outside the tabs (always visible regardless of which tab is active):
 ## Debug log
 
 Always-on, append-only JSON Lines file at `paths.app_root() /
-"logistics_hub_debug.jsonl"` (next to `config.json`). One entry per scan
+"logistics_hub_debug.jsonl"` (next to `config.json`). Rotated to
+`logistics_hub_debug.jsonl.1` once it passes 5 MB (`DEBUG_LOG_MAX_BYTES`,
+since 2026-10-03); the completed-contracts log is never rotated. One entry per scan
 (`pending_review`: raw OCR text, candidate phrases, the built contract, a
 per-candidate resolution trace, grade), a second entry per ACCEPT/REJECT
 (`review_accepted`/`review_rejected`: grade, compatibility prompts/

@@ -64,6 +64,54 @@ Summary of changes shipping in v0.2.0 since the initial v0.1.0 release:
 
 ---
 
+## 2026-10-03 — Code review, fixes, and owner testing (PR #12)
+
+Full review of `host/` and all eight modules before new feature work.
+Rationale for each change is in `docs/DECISIONS.md` (four 2026-10-03
+entries); this is the session record.
+
+- **Fixed:**
+  - ✕ only hid the window, leaving a process that held the
+    single-instance lock.
+  - Relaunch skipped module `shutdown()`.
+  - An abandoned hotkey capture could bind a gameplay key.
+  - Non-atomic writes plus silent empty-on-corrupt loads risked wiping
+    notes and config.
+  - Offline-at-launch cached an empty location index for 7 days.
+  - HTTP 429 wasn't detected as a rate limit.
+  - Refinery Finder's system filter was never populated.
+  - Null UEX numbers crashed the trading modules.
+  - Maximized stow/close geometry.
+  - Logistics Hub: SCAN could get stuck disabled; the debug log grew
+    unbounded.
+- **Owner decisions:**
+  - mobiThrottle hotkeys now default to unset.
+  - Scan pacing is unchanged; the 120/min limit is marked unconfirmed.
+- **Found by owner testing:**
+  - Relaunch in the packaged exe loaded no modules ("Failed to remove
+    temporary directory"). Broken since modules moved inside the exe
+    (2026-09-20). Fixed with `PYINSTALLER_RESET_ENVIRONMENT`, reproduced
+    and verified with a minimal onefile probe.
+  - A click-through pill couldn't be clicked at all. Added
+    hover-to-unlock: 700 ms rest, measured ~2 µs per 100 ms poll, no
+    mouse hook. Its first highlight was invisible (a stylesheet on
+    `_TitleBar`, which lacks `WA_StyledBackground`), so it moved to
+    `MainWindow.paintEvent`, and the test now checks rendered pixels.
+- **Tests:**
+  - New `tests/test_core_persistence.py` and
+    `tests/test_pill_hover_unlock.py`; corruption checks in the notes
+    suite.
+  - Logistics Hub's 21 UI-state checks run again (they had been
+    silently skipped since `_ReminderBanner` became a `QLabel`).
+- **Owner-verified in a `dist-test` build:**
+  - ✕ and tray Quit exit fully; Relaunch reloads all modules.
+  - Stow/deploy while maximized; hotkey-capture cancel; card resize
+    persistence; Refinery system filter; mobiNotes; SCAN; throttle
+    hotkeys; pill hover-unlock.
+  - A short in-game session: hotkey toggling, pill not unlocking during
+    play, real contract scan, throttle bar, no stutter, clean exit with
+    the game running.
+
 ## Pill click-through, crosshair hardening, and taskbar minimize/maximize
 
 Three features shipped in commits `6a494aa` (2026-09-19, ancestor of
