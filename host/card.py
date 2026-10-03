@@ -132,10 +132,14 @@ class _ResizeHandle(QWidget):
             delta = event.globalPosition().toPoint() - self._drag_start
             new_w = max(CARD_MIN_WIDTH, self._start_size.width() + delta.x())
             new_h = max(CARD_MIN_HEIGHT, self._start_size.height() + delta.y())
-            self._card.set_manual_size(new_w, new_h)
+            # Persisted once on release, not on every mouse move — each
+            # save rewrites config.json.
+            self._card.set_manual_size(new_w, new_h, persist=False)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
+            if self._drag_start is not None and self._card._manual_size is not None:
+                self._card.resized.emit(self._card.card_id, *self._card._manual_size)
             self._drag_start = None
 
 
@@ -209,12 +213,13 @@ class Card(QFrame):
         self.update()
         self.container.update()
 
-    def set_manual_size(self, w: int, h: int):
+    def set_manual_size(self, w: int, h: int, persist: bool = True):
         w = max(CARD_MIN_WIDTH, w)
         h = max(CARD_MIN_HEIGHT, h)
         self._manual_size = (w, h)
         self.apply_size()
-        self.resized.emit(self.card_id, w, h)
+        if persist:
+            self.resized.emit(self.card_id, w, h)
 
     # -- error state --------------------------------------------------
     def _build_error_widget(self) -> QWidget:

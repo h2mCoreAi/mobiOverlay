@@ -527,6 +527,7 @@ class _HotkeyField(QLineEdit):
         self.setReadOnly(True)
         self.setAlignment(Qt.AlignCenter)
         self.setStyleSheet(_HOTKEY_FIELD_STYLE)
+        self._current_display = initial_display
         self.setText(initial_display or "Click to set…")
 
     def mousePressEvent(self, event):
@@ -539,12 +540,18 @@ class _HotkeyField(QLineEdit):
 
     def _on_captured(self, combo):
         self._capturing = False
+        if not combo or combo.lower() == "esc":
+            # Escape cancels rather than becoming the hotkey, same as the
+            # host's Stow/Deploy field.
+            self.setText(self._current_display or "Click to set…")
+            return
+        self._current_display = combo
         self.setText(combo)
         self._on_applied(combo)
 
     def _on_capture_failed(self, _message):
         self._capturing = False
-        self.setText("Click to set…")
+        self.setText(self._current_display or "Click to set…")
 
 
 class MobiThrottleModule(ModuleBase):
@@ -568,8 +575,12 @@ class MobiThrottleModule(ModuleBase):
         "home_chirp_enabled": True, "home_chirp_count": 1, "home_chirp_cooldown": 2.0,
         "position_1": None, "position_2": None,
         "position_1_enabled": True, "position_2_enabled": True,
-        "toggle_hotkey": "ctrl+alt+o", "toggle_hotkey_display": "Ctrl+Alt+O",
-        "position_hotkey": "ctrl+alt+p", "position_hotkey_display": "Ctrl+Alt+P",
+        # No hotkeys by default: GlobalHotkey only installs its low-level
+        # keyboard hook once a combo is set, so a user who never sets one
+        # (most users, with no throttle at all) never gets a hook from this
+        # module. Existing installs keep whatever combo is already saved.
+        "toggle_hotkey": "", "toggle_hotkey_display": "",
+        "position_hotkey": "", "position_hotkey_display": "",
         "position_hold_ms": 0,
         # Reconnect-check cadence — decoupled from the bar's own 60Hz poll
         # timer (see refresh()); much shorter than the host's 300s default

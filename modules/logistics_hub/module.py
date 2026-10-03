@@ -137,7 +137,10 @@ def _ensure_ocr_loaded() -> bool:
         }
         logger.info("OCR engine loaded successfully")
         return True
-    except ImportError as e:
+    except Exception as e:
+        # Not just ImportError: a broken torch install in a frozen build
+        # raises OSError (DLL load failed) here, which used to escape
+        # _safe_scan() and leave the SCAN button disabled for good.
         _ocr_load_error = str(e)
         logger.warning("OCR dependencies not available: %s", e)
         return False
@@ -165,6 +168,11 @@ DEBUG_LOG_FILENAME = "logistics_hub_debug.jsonl"  # always-on scan history, see 
 # finished, meant for later analysis (session totals, aUEC/hour, etc.).
 # See docs/DECISIONS.md, 2026-09-07.
 COMPLETED_LOG_FILENAME = "logistics_hub_completed.jsonl"
+# The debug log stores the full raw OCR text and route snapshot of every
+# scan, forever. Past this size it's rotated to `<name>.1` (replacing any
+# older rotation) so it can't grow without bound. The completed log is
+# never rotated — it's the user's own record.
+DEBUG_LOG_MAX_BYTES = 5 * 1024 * 1024
 
 # Hauler Profile choices (added 2026-09-07) — fixed, small option sets
 # rather than free text, so grading (a later part of the same plan) has
@@ -907,6 +915,10 @@ class _ReminderBanner(QLabel):
     def mousePressEvent(self, event):
         self._on_click()
         super().mousePressEvent(event)
+
+    def click(self):
+        """Programmatic dismiss, matching the QPushButton API this replaced."""
+        self._on_click()
 
 
 class _RegionSelector(QWidget):
@@ -2510,6 +2522,12 @@ class LogisticsHubModule(ModuleBase):
         self._append_debug_log(entry)
 
     def _append_debug_log(self, entry: dict) -> None:
+        log_path = paths.app_root() / DEBUG_LOG_FILENAME
+        try:
+            if log_path.stat().st_size > DEBUG_LOG_MAX_BYTES:
+                os.replace(log_path, log_path.with_name(DEBUG_LOG_FILENAME + ".1"))
+        except OSError:
+            pass  # missing (nothing to rotate) or locked — just append
         self._append_jsonl(DEBUG_LOG_FILENAME, entry)
 
     def _append_jsonl(self, filename: str, entry: dict) -> None:

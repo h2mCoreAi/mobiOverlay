@@ -303,7 +303,10 @@ class MultiCommodityFinderModule(ModuleBase):
         # No auto-refresh — this is an on-demand scan, same reasoning as
         # Commodity Prices' Retrieve Data and Trade Route Optimizer's
         # Any-Location SCAN (multi-call, shouldn't run silently on a timer).
-        pass
+        # The one exception: retry the commodity list if it couldn't be
+        # fetched at startup, so the picker doesn't stay empty all session.
+        if self.commodity_list.count() == 0:
+            self._populate_commodities()
 
     # -- scan -----------------------------------------------------------
     def _on_scan_clicked(self):
@@ -458,14 +461,14 @@ class MultiCommodityFinderModule(ModuleBase):
                 if is_buy_mode:
                     # Same stock gate Commodity Prices' Best Buy uses — a
                     # quoted buy price with 0 source stock isn't a real option.
-                    if not (r.get("price_buy", 0) > 0 and r.get("scu_buy", 0) > 0):
+                    if not ((r.get("price_buy") or 0) > 0 and (r.get("scu_buy") or 0) > 0):
                         continue
                     price = r["price_buy"]
                 else:
                     # No scu_sell gate — same reasoning as Commodity Prices'
                     # Best Sell (UEX doesn't reliably track sell-side demand
                     # caps, see docs/DECISIONS.md 2026-09-05).
-                    if not (r.get("price_sell", 0) > 0):
+                    if not ((r.get("price_sell") or 0) > 0):
                         continue
                     price = r["price_sell"]
 

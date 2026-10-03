@@ -2,13 +2,15 @@
 CardContainer, the tray for stowed (hidden) cards, and Settings.
 """
 import ctypes
+import logging
 import subprocess
+import time
 from ctypes import wintypes
 
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QPoint, QRectF, QTimer
-from PySide6.QtGui import QGuiApplication, QColor, QPainter, QPainterPath, QIcon
+from PySide6.QtGui import QCursor, QGuiApplication, QColor, QPainter, QPainterPath, QPen, QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QSizeGrip, QSizePolicy, QLineEdit, QSystemTrayIcon, QMenu
@@ -18,7 +20,7 @@ from host import theme
 from host import hotkey as hotkey_mod
 from host.card_container import CardContainer
 from host.config import Config
-from host.paths import app_root, relaunch_command
+from host.paths import app_root, relaunch_command, relaunch_env
 
 GWL_EXSTYLE = -20
 WS_EX_TRANSPARENT = 0x00000020
@@ -28,6 +30,16 @@ ctypes.windll.user32.SetWindowLongW.restype = ctypes.c_long
 ctypes.windll.user32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
 
 TRAY_ICON_PATH = Path(__file__).resolve().parent / "assets" / "icons" / "mobioverlay.png"
+
+# Hover-to-unlock for a click-through pill: clicks pass through to the game
+# until the cursor has rested on the pill this long, then it becomes
+# clickable (and lights up) until the cursor leaves. The poll is one
+# GetCursorPos + rect check (microseconds) and only runs while stowed with
+# click-through ON. Polling is deliberate: a click-through window receives
+# no mouse events, and the alternative (a global mouse hook) would sit in
+# the path of every in-game mouse movement.
+PILL_HOVER_POLL_MS = 100
+PILL_HOVER_UNLOCK_MS = 700
 
 
 def _build_stylesheet() -> str:
@@ -155,6 +167,18 @@ def _ensure_on_screen(x: int, y: int, w: int, h: int,
     return x, y
 
 
+def _saved_geometry(saved, keys: tuple[str, ...]) -> tuple[int, ...] | None:
+    """A saved geometry dict from config as a tuple, or None if it's missing
+    or incomplete (a partial dict used to raise KeyError and stop the
+    window being built at all)."""
+    if not isinstance(saved, dict):
+        return None
+    try:
+        return tuple(int(saved[k]) for k in keys)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 class _TrayRow(QWidget):
     """One stowed card's row in the tray panel — click anywhere to deploy it."""
 
@@ -193,6 +217,9 @@ class _TrayPanel(QWidget):
 
     def __init__(self, main_window: "MainWindow"):
         super().__init__(main_window, Qt.Popup)
+        # A fresh panel is built on every click — without this each closed
+        # one stayed alive as a hidden child of MainWindow for the session.
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             _TrayPanel {{ background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; }}
@@ -279,8 +306,18 @@ class _HotkeyField(QLineEdit):
         self.setReadOnly(True)
         self.setAlignment(Qt.AlignCenter)
         self._capturing = False
+        self._capture_cancelled = False
         self._capture_handles = []  # keeps in-flight capture signal-holder QObjects alive
         self._show_current()
+
+    def hideEvent(self, event):
+        # keyboard.read_hotkey() can't be cancelled, so a capture started
+        # here keeps listening after the Settings popup closes. Without
+        # this, the next key pressed anywhere (e.g. W, in-game) would be
+        # saved as the global Stow/Deploy hotkey.
+        if self._capturing:
+            self._capture_cancelled = True
+        super().hideEvent(event)
 
     def _show_current(self):
         display = self._win.config.data["ui"].get("hotkey_display") or ""
@@ -294,6 +331,7 @@ class _HotkeyField(QLineEdit):
         if self._capturing:
             return
         self._capturing = True
+        self._capture_cancelled = False
         self.setText("Press a key combo…")
         handle = self._win.capture_hotkey_combo(
             lambda combo: self._on_captured(handle, combo),
@@ -304,6 +342,8 @@ class _HotkeyField(QLineEdit):
     def _on_captured(self, handle, combo: str):
         self._capture_handles.remove(handle)
         self._capturing = False
+        if self._capture_cancelled:
+            return
         if not combo or combo.lower() == "esc":
             self._show_current()  # Escape cancels rather than becoming the hotkey
             return
@@ -316,6 +356,8 @@ class _HotkeyField(QLineEdit):
     def _on_capture_error(self, handle, message: str):
         self._capture_handles.remove(handle)
         self._capturing = False
+        if self._capture_cancelled:
+            return
         self._flash("Capture failed — try again")
 
 
@@ -325,6 +367,9 @@ class _SettingsPanel(QWidget):
 
     def __init__(self, main_window: "MainWindow"):
         super().__init__(main_window, Qt.Popup)
+        # A fresh panel is built on every click — without this each closed
+        # one stayed alive as a hidden child of MainWindow for the session.
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             _SettingsPanel {{ background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; }}
@@ -461,8 +506,9 @@ class _SettingsPanel(QWidget):
         # -- Pill click-through --
         pill_row = _SettingsRow(
             "PILL CLICK-THROUGH",
-            "ON = pill passes all clicks through to the game (cannot drag or click it). "
-            "Redeploy via hotkey or system tray only. OFF = pill is draggable and clickable.",
+            "ON = clicks pass through the pill to the game. Rest the cursor on it for a "
+            "moment to unlock it (it lights up), then click to redeploy or drag it. "
+            "OFF = pill is always draggable and clickable.",
         )
         current_pill_click_through = main_window.config.data["ui"].get("pill_click_through", False)
         pill_btn = QPushButton()
@@ -756,21 +802,28 @@ class MainWindow(QWidget):
         self._geometry_save_timer.setSingleShot(True)
         self._geometry_save_timer.timeout.connect(self._save_tracked_geometry)
 
-        pre_stow = config.data["ui"].get("pre_stow_geometry") or {}
-        self._pre_stow_geometry: tuple[int, int, int, int] | None = (
-            (pre_stow["x"], pre_stow["y"], pre_stow["width"], pre_stow["height"])
-            if pre_stow else None
+        self._pre_stow_geometry: tuple[int, int, int, int] | None = _saved_geometry(
+            config.data["ui"].get("pre_stow_geometry"), ("x", "y", "width", "height")
         )
-        pill_geo = config.data["ui"].get("pill_geometry") or {}
-        self._pill_geometry: tuple[int, int] | None = (
-            (pill_geo["x"], pill_geo["y"]) if pill_geo else None
+        self._pill_geometry: tuple[int, int] | None = _saved_geometry(
+            config.data["ui"].get("pill_geometry"), ("x", "y")
         )
         self._pill_click_through = config.data["ui"].get("pill_click_through", False)
+        # Set when stowing a maximized window, so deploy can re-maximize.
+        self._stowed_from_maximized = False
 
-        geo = config.data["ui"].get("window_geometry") or {}
-        self.resize(geo.get("width", 680), geo.get("height", 560))
         default_x, default_y = _default_launch_position()
-        self.move(geo.get("x", default_x), geo.get("y", default_y))
+        x, y, width, height = _saved_geometry(
+            config.data["ui"].get("window_geometry"), ("x", "y", "width", "height")
+        ) or (default_x, default_y, 680, 560)
+        self.resize(width, height)
+        # A saved spot on a monitor that's since been unplugged or
+        # rearranged would open the window somewhere invisible. Fall back
+        # to the same non-primary default as a first launch — never the
+        # primary (gaming) monitor just because the saved one is gone.
+        if QGuiApplication.screenAt(QPoint(x + 20, y + 20)) is None:
+            x, y = default_x, default_y
+        self.move(x, y)
         self._geometry_tracking_ready = True
 
         # Global (system-wide) Stow/Deploy hotkey — works even while the
@@ -781,9 +834,25 @@ class MainWindow(QWidget):
             self._hotkey.set_hotkey(saved_combo, self.toggle_app_stow)
 
         # System tray icon — recovery affordance for when users forget the
-        # hotkey or lose the stowed pill. Qt.Tool excludes this window from
-        # the taskbar intentionally; the tray provides the alternative.
+        # hotkey or lose the stowed pill.
         self._tray = _SystemTray(self)
+
+        self._pill_hover_timer = QTimer(self)
+        self._pill_hover_timer.setInterval(PILL_HOVER_POLL_MS)
+        self._pill_hover_timer.timeout.connect(self._poll_pill_hover)
+        self._pill_hover_since: float | None = None  # monotonic time the cursor arrived on the pill
+        self._pill_unlocked = False
+
+        # Run by relaunch() before it hard-exits — see add_before_exit().
+        self._before_exit_callbacks: list = []
+        self._exiting = False
+
+    def add_before_exit(self, callback):
+        """Register cleanup that must run before this process exits.
+        relaunch() ends with os._exit(), which skips app.aboutToQuit and
+        atexit, so anything hooked only there (module shutdown(), the
+        single-instance lock) has to be registered here too."""
+        self._before_exit_callbacks.append(callback)
 
     def toggle_collapse_all(self):
         self._all_collapsed = not self._all_collapsed
@@ -839,6 +908,10 @@ class MainWindow(QWidget):
             self.showMaximized()
 
     def _save_tracked_geometry(self):
+        # The debounce can fire after a stow began (e.g. a resize right
+        # before stowing) — that would record the pill as the deployed size.
+        if self._app_stowed or self.isMaximized():
+            return
         self._pre_stow_geometry = (self.x(), self.y(), self.width(), self.height())
         self.config.data["ui"]["pre_stow_geometry"] = {
             "x": self.x(), "y": self.y(), "width": self.width(), "height": self.height(),
@@ -864,6 +937,17 @@ class MainWindow(QWidget):
     def stow_app(self):
         if self._app_stowed:
             return
+        # A maximized window ignores resize() — stowing it as-is left a
+        # full-screen "pill", and saved the maximized size as the size to
+        # restore to. Restore first; toggle_maximize() already saved the
+        # real pre-maximize geometry, and deploy_app() re-maximizes.
+        self._stowed_from_maximized = self.isMaximized()
+        if self._stowed_from_maximized:
+            self.showNormal()
+            if self._pre_stow_geometry:
+                x, y, w, h = self._pre_stow_geometry
+                self.setGeometry(x, y, w, h)
+        self._geometry_save_timer.stop()
         pre_stow_x, pre_stow_y = self.x(), self.y()
         self._pre_stow_geometry = (pre_stow_x, pre_stow_y, self.width(), self.height())
         self.config.data["ui"]["pre_stow_geometry"] = {
@@ -895,6 +979,7 @@ class MainWindow(QWidget):
         self.move(pill_x, pill_y)
 
         self._apply_native_click_through(self._pill_click_through)
+        self._sync_pill_hover_watch()
         self._tray.update_menu_state(is_stowed=True)
         self.config.save()
 
@@ -910,12 +995,16 @@ class MainWindow(QWidget):
         self._size_grip.setVisible(True)
         self.title_bar.set_stowed_mode(False)
         self._app_stowed = False
+        self._sync_pill_hover_watch()
         self.setMinimumSize(*self._normal_min_size)
         if self._pre_stow_geometry:
             x, y, w, h = self._pre_stow_geometry
             self.move(x, y)
             self.resize(w, h)
         self.save_current_position()
+        if self._stowed_from_maximized:
+            self._stowed_from_maximized = False
+            self.showMaximized()
         self._tray.update_menu_state(is_stowed=False)
         self._take_foreground_focus()
 
@@ -973,11 +1062,10 @@ class MainWindow(QWidget):
         combo, so the bit is set on the real HWND instead, which Windows
         checks live on every hit-test.
 
-        Deliberately affects mouse input only, not drag specifically —
-        with the bit set, every mouse event (including a click on the
-        pill's own close button) passes straight through, so the only way
-        back to full mode is the Stow/Deploy hotkey. That's the point:
-        the pill becomes a pure, unclickable HUD element.
+        With the bit set, every mouse event (including a click on the
+        pill's own close button) passes straight through. The hover poll
+        (`_poll_pill_hover`) clears it while the cursor rests on the pill,
+        so the pill stays reachable without catching stray clicks.
         """
         hwnd = int(self.winId())
         style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
@@ -991,6 +1079,48 @@ class MainWindow(QWidget):
         self.config.save()
         if self._app_stowed:
             self._apply_native_click_through(enabled)
+        self._sync_pill_hover_watch()
+
+    def _sync_pill_hover_watch(self):
+        """Run the hover poll only while it can matter: stowed to the pill
+        with click-through ON. Any other state stops it and clears the
+        unlocked highlight."""
+        if self._app_stowed and self._pill_click_through:
+            if not self._pill_hover_timer.isActive():
+                self._pill_hover_since = None
+                self._pill_hover_timer.start()
+            return
+        self._pill_hover_timer.stop()
+        self._pill_hover_since = None
+        self._set_pill_unlocked(False, apply_click_through=False)
+
+    def _poll_pill_hover(self):
+        hovering = self.frameGeometry().contains(QCursor.pos())
+        if hovering:
+            if self._pill_unlocked:
+                return
+            now = time.monotonic()
+            if self._pill_hover_since is None:
+                self._pill_hover_since = now
+            elif (now - self._pill_hover_since) * 1000 >= PILL_HOVER_UNLOCK_MS:
+                self._set_pill_unlocked(True)
+            return
+        self._pill_hover_since = None
+        # Mid-drag the cursor can briefly outrun the pill — don't relock
+        # under the user's hand.
+        if self._pill_unlocked and self.title_bar._drag_offset is None:
+            self._set_pill_unlocked(False)
+
+    def _set_pill_unlocked(self, unlocked: bool, apply_click_through: bool = True):
+        """Only touches the window style on an actual change, never per poll."""
+        if unlocked == self._pill_unlocked:
+            return
+        self._pill_unlocked = unlocked
+        if apply_click_through:
+            self._apply_native_click_through(not unlocked)
+        # Highlight is painted in paintEvent: _TitleBar has no
+        # WA_StyledBackground, so a stylesheet rule on it never renders.
+        self.update()
 
     def capture_hotkey_combo(self, on_captured, on_error=None):
         return self._hotkey.capture_combo(on_captured, on_error)
@@ -1031,6 +1161,17 @@ class MainWindow(QWidget):
         # free, not a separate value to keep in sync.
         path.addRoundedRect(QRectF(self.rect()), theme.RADIUS, theme.RADIUS)
         painter.fillPath(path, color)
+        if self._app_stowed and getattr(self, "_pill_unlocked", False):
+            # Hover-unlocked click-through pill: solid tint plus a bright
+            # border, so it's obvious the next click will land on it.
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+            tint = QColor(theme.ACCENT_CYAN)
+            tint.setAlphaF(0.35)
+            painter.fillPath(path, tint)
+            pen = QPen(QColor(theme.ACCENT_CYAN))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), theme.RADIUS, theme.RADIUS)
         painter.end()
         super().paintEvent(event)
 
@@ -1076,7 +1217,12 @@ class MainWindow(QWidget):
         # this one's window_geometry save had actually landed.
         self._save_window_geometry()
         self._hotkey.shutdown()
-        subprocess.Popen(relaunch_command(), cwd=str(app_root()))
+        # Module shutdown() and the single-instance lock release are only
+        # hooked to aboutToQuit/atexit, which os._exit() below skips — run
+        # them now, before the new process can race for the same lock.
+        self._run_before_exit_callbacks()
+        subprocess.Popen(relaunch_command(), cwd=str(app_root()), env=relaunch_env())
+        self._exiting = True
         self.close()
         # Not just self.close(): the Settings panel that owns this button
         # is itself a live top-level widget (Qt.Popup with WA_StyledBackground
@@ -1099,12 +1245,22 @@ class MainWindow(QWidget):
         # If stowed, self.x()/y()/width()/height() describe the tiny pill,
         # not a size worth reopening at next launch — save the geometry
         # from before it was stowed instead.
-        if self._app_stowed and self._pre_stow_geometry:
+        # Same for maximized: the fill-the-screen size isn't the size to
+        # reopen at (toggle_maximize() saved the real one).
+        if (self._app_stowed or self.isMaximized()) and self._pre_stow_geometry:
             x, y, w, h = self._pre_stow_geometry
         else:
             x, y, w, h = self.x(), self.y(), self.width(), self.height()
         self.config.data["ui"]["window_geometry"] = {"x": x, "y": y, "width": w, "height": h}
         self.config.save()
+
+    def _run_before_exit_callbacks(self):
+        callbacks, self._before_exit_callbacks = self._before_exit_callbacks, []
+        for callback in callbacks:
+            try:
+                callback()
+            except Exception:
+                logging.getLogger("mobioverlay").exception("Before-exit cleanup failed")
 
     def closeEvent(self, event):
         self._save_window_geometry()
@@ -1115,3 +1271,12 @@ class MainWindow(QWidget):
         self._hotkey.shutdown()
         self._tray.shutdown()
         super().closeEvent(event)
+        # host/main.py sets quitOnLastWindowClosed(False) so closing a
+        # module's popout can't quit the app. That also meant the ✕ button
+        # only hid this window: the process kept running invisibly, with
+        # no tray icon, still holding the single-instance lock, so the
+        # next launch said "already running". Closing the main window is
+        # always a real exit.
+        if not self._exiting:
+            self._exiting = True
+            QApplication.instance().quit()

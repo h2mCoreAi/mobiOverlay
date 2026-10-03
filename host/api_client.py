@@ -12,7 +12,8 @@ from requests.adapters import HTTPAdapter
 # Short TTL for deduplication cache (seconds). Prevents repeated identical
 # GET requests when multiple modules refresh simultaneously at startup or
 # when a user clicks several cards' refresh buttons in quick succession.
-# UEX rate limit is 120/min — this helps stay well under that threshold.
+# UEX's actual anonymous rate limit is unconfirmed: "120/min" was assumed
+# early on, but a real ~490/min burst (205 calls in ~25s) wasn't limited.
 DEDUPE_TTL_SECONDS = 2.0
 
 
@@ -62,7 +63,7 @@ class UexApiClient:
         Concurrent or rapid-fire calls for the same endpoint+params share
         a single network request (in-flight) or reuse a recently-fetched
         result (short-TTL cache). This helps avoid redundant API calls and
-        stay within UEX's 120/min rate limit.
+        stay within UEX's rate limit.
         """
         key = self._cache_key(endpoint, params)
         now = time.monotonic()
@@ -116,7 +117,13 @@ class UexApiClient:
 
         # Cache result and clean up in-flight
         with self._dedupe_lock:
-            self._cache[key] = (time.monotonic(), result)
+            now = time.monotonic()
+            # Expired entries were otherwise only dropped when the same key
+            # was requested again — distance lookups and multi-commodity
+            # scans use one-off keys, so the dict grew for the whole session.
+            for stale_key in [k for k, (ts, _r) in self._cache.items() if now - ts >= DEDUPE_TTL_SECONDS]:
+                del self._cache[stale_key]
+            self._cache[key] = (now, result)
             if key in self._inflight:
                 del self._inflight[key]
 
@@ -130,12 +137,28 @@ class UexApiClient:
         url = self.base_url + endpoint.lstrip("/") + "/"
         try:
             resp = self._session.get(url, params=params, headers=headers, timeout=10)
+            # Checked before raise_for_status(): if UEX reports its rate
+            # limit with an HTTP error code, raise_for_status() would turn
+            # it into a generic UexApiError, and the scan loops (which stop
+            # on UexRateLimitError but skip other errors) would keep firing
+            # requests into the limit.
+            if resp.status_code == 429:
+                raise UexRateLimitError("UEX rate limit reached — wait a moment, then retry.")
+            if not resp.ok:
+                try:
+                    error_status = resp.json().get("status")
+                except (ValueError, AttributeError):
+                    error_status = None
+                if error_status == "requests_limit_reached":
+                    raise UexRateLimitError("UEX rate limit reached — wait a moment, then retry.")
             resp.raise_for_status()
             payload = resp.json()
         except requests.RequestException as exc:
             raise UexApiError(f"UEX API request failed: {exc}") from exc
         except ValueError as exc:
             raise UexApiError(f"UEX API returned invalid JSON: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise UexApiError(f"UEX API returned an unexpected response: {str(payload)[:200]}")
 
         status = payload.get("status")
         if status == "requests_limit_reached":

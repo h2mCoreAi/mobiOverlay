@@ -37,7 +37,7 @@ CPU-only torch first avoids that bloat on machines without NVIDIA GPUs.
 # CPU-only torch (recommended unless you have CUDA)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
-pip install pyinstaller
+pip install "pyinstaller>=6.9"  # 6.9+ required for Settings > Relaunch (see host/paths.py)
 
 pyinstaller mobioverlay.spec --noconfirm
 ```

@@ -7680,3 +7680,116 @@ by an automated check.
   references to the owner's specific local install paths, and gitignored
   local build/runtime leftovers (`dist-test/`, `release/`,
   `freeze-build*.log`, `.mobioverlay.lock`) — they are not project files.
+
+- **2026-10-03 — Code review: exit, persistence, and resilience fixes.**
+  A full review of `host/` and every module before new feature work. Fixed:
+  1. **✕ left an invisible process running.** `quitOnLastWindowClosed(False)`
+     (2026-09-04) meant closing `MainWindow` only hid it. `closeEvent` already
+     removed the tray icon, so the process was unreachable and kept the
+     single-instance lock ("already running" on next launch).
+     `closeEvent` now calls `QApplication.quit()`.
+  2. **Relaunch skipped module `shutdown()`** and released the
+     single-instance lock only at process death, after the new process had
+     been spawned. Added `MainWindow.add_before_exit()`. `main.py` registers
+     module shutdown (now idempotent) and the lock release there, and
+     `relaunch()` runs them before `Popen`.
+  3. **An abandoned hotkey capture could bind a gameplay key.**
+     `keyboard.read_hotkey()` can't be cancelled. Closing Settings
+     mid-capture left it listening, and the next key pressed anywhere
+     became the global Stow/Deploy hotkey. `_HotkeyField.hideEvent` now
+     marks the capture cancelled. The Settings and Tray popups now set
+     `WA_DeleteOnClose` (each click used to leak a hidden panel).
+  4. **Data-loss paths on corrupt/partial files.** `config.json`,
+     `mobinotes_data.json` and `locations_cache.json` were written with a
+     truncating `open("w")`. A corrupt notes file was loaded as an empty
+     list, and the next save wiped every note. Added `host/fileio.py` with
+     atomic writes and `quarantine_corrupt()`. `NotesStore.load()` now
+     raises on a transient read error instead of starting empty.
+     `Config.save()` logs failures instead of raising into UI slots.
+  5. **Offline at launch poisoned the location cache for 7 days.** A failed
+     or partial UEX fetch was saved with a fresh timestamp. Only complete
+     fetches are saved now, with a fallback to an older complete cache and
+     a throttled retry (`FETCH_RETRY_SECONDS`). A failed `commodities`
+     fetch is no longer cached as `[]` for the session. Commodity Prices,
+     Refinery Finder and Multi-Commodity Finder repopulate an empty picker
+     on refresh.
+  6. **Rate limits reported as HTTP errors were missed.** HTTP 429 (or an
+     error body with `requests_limit_reached`) now raises
+     `UexRateLimitError`, so the scan loops stop instead of firing into the
+     limit. A non-dict payload raises `UexApiError` instead of
+     `AttributeError`. Expired dedupe-cache entries are pruned.
+  7. **Smaller fixes.**
+     - Refinery Finder's system filter was never populated (it only ever
+       held "All Systems").
+     - Null `price_*`/`scu_*`/`profit`/`value` fields from UEX raised
+       `TypeError` in the comparisons.
+     - Stowing while maximized produced a full-screen "pill", and deploy
+       now re-maximizes. Closing while maximized saved the full-screen
+       size as the size to reopen at.
+     - A saved window position on a disconnected monitor now falls back
+       to the non-primary default.
+     - A partial geometry dict in config raised `KeyError` while the
+       window was being built.
+     - Card resize saved config on every mouse move; it now saves once
+       on release.
+     - Logistics Hub's OCR import catches non-`ImportError` failures
+       (which left SCAN disabled for good).
+     - Logistics Hub's debug log rotates at 5 MB (completed log untouched).
+     - The UI-state tests were silently skipped because the test called
+       `.click()` on `_ReminderBanner` (a `QLabel` since `6a494aa`). The
+       banner now has `click()`.
+  Docs: `ARCHITECTURE.md` described the single-instance guard as a named
+  mutex; it is a lockfile. Corrected, and added exit-path and
+  persistent-file sections. New `tests/test_core_persistence.py`.
+  **Not changed (needs the owner):** mobiThrottle's default hotkeys install
+  a global keyboard hook for every user; Commodity Prices' Retrieve Data
+  paces at ~8 req/s, above the 120/min limit noted in `api_client.py`.
+
+- **2026-10-03 — mobiThrottle hotkeys default to unset; UEX rate limit
+  marked unconfirmed.** Follow-up to the code review entry above, decided by
+  the owner. (1) mobiThrottle's `toggle_hotkey`/`position_hotkey` defaults
+  changed from `ctrl+alt+o`/`ctrl+alt+p` to empty, so no global keyboard
+  hook is installed for users who never set one. `GlobalHotkey.set_hotkey("")`
+  already returns before installing anything. Existing configs keep their
+  saved combos, because the defaults only fill missing keys. Escape during
+  capture now cancels instead of binding "esc". (2) Scan pacing (~8 req/s)
+  is left unchanged. The "120/min" UEX limit was never confirmed, and a
+  real 205-call Retrieve Data run (~490/min) wasn't rate-limited.
+  `commodity-prices.md` claimed ~150 calls was "well under 120/min", which
+  was wrong arithmetic; that's corrected, and the `api_client.py` comment is
+  updated. If a rate limit is ever actually hit, consider an automatic
+  pause-and-resume rather than slowing every scan.
+
+- **2026-10-03 — Relaunch in the packaged exe loaded no modules.** Found by
+  the owner testing the code-review `dist-test` build. This had been broken
+  since modules moved inside the exe (2026-09-20); it was not caused by the
+  review changes. A onefile exe that re-runs `sys.executable` passes
+  PyInstaller's bootloader environment variables to the new process. The
+  new process then reuses the old instance's `_MEIPASS` extraction folder,
+  which the old bootloader deletes as it exits. Result: no modules (they're
+  discovered under `_MEIPASS/modules`), plus a "Failed to remove temporary
+  directory" error from the old bootloader. Reproduced with a minimal
+  onefile probe: without the fix the relaunched copy never started; with it,
+  the copy got its own folder and survived. Fix:
+  `host/paths.relaunch_env()` sets `PYINSTALLER_RESET_ENVIRONMENT=1`
+  (PyInstaller 6.9+, the documented way to spawn a fresh instance) when
+  frozen. `release.yml` and `BUILD.md` now pin `pyinstaller>=6.9`.
+
+- **2026-10-03 — Click-through pill unlocks on hover.** Owner feedback:
+  with Pill Click-Through ON the pill couldn't be clicked at all, which
+  defeated the point of having it. Click-through existed to stop
+  *accidental* clicks, not deliberate ones. Options considered: hover to
+  unlock, hold a modifier key, drop click-through for a
+  double-click/long-press gesture, or both of the first two. The owner
+  chose hover to unlock. Clicks pass through until the cursor has rested on
+  the pill for 700 ms; then it lights up and is clickable/draggable until
+  the cursor leaves. An accidental click is a quick pass, so it still goes
+  through to the game.
+  - **Implementation:** a 100 ms `QTimer` reading `QCursor.pos()`, active
+    only while stowed with click-through ON.
+  - **Cost:** the owner raised CPU and micro-stutter concerns. Measured
+    ~2.2 µs per check (≈0.002% of one core at 10 Hz). The poll runs in the
+    overlay's process, not the game's. `WS_EX_TRANSPARENT` is only
+    rewritten on lock/unlock transitions, never per poll.
+  - **Rejected:** a `WH_MOUSE_LL` hook, which would sit in the path of
+    every in-game mouse movement.

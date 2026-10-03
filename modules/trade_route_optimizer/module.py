@@ -530,7 +530,7 @@ class TradeRouteOptimizerModule(ModuleBase):
         if dest_system != ALL_SYSTEMS:
             rows = [r for r in rows if r.get("destination_star_system_name") == dest_system]
 
-        rows = sorted(rows, key=lambda r: r.get("profit", 0), reverse=True)
+        rows = sorted(rows, key=lambda r: r.get("profit") or 0, reverse=True)
         top_routes = rows[:TOP_N_ROUTES]
 
         # Rows always stay visible (even with placeholder text) rather than
@@ -542,14 +542,14 @@ class TradeRouteOptimizerModule(ModuleBase):
             if i < len(top_routes):
                 r = top_routes[i]
                 origin_place = r.get("origin_planet_name") or r.get("origin_star_system_name") or ""
-                origin_name = self._strip_admin_prefix(r.get("origin_terminal_name", ""))
+                origin_name = self._strip_admin_prefix(r.get("origin_terminal_name") or "")
                 buy_at_label.setText(f"BUY AT {origin_name} · {origin_place}")
-                commodity_label.setText(r.get("commodity_name", "—"))
+                commodity_label.setText(r.get("commodity_name") or "—")
                 dest_place = r.get("destination_planet_name") or r.get("destination_star_system_name") or ""
-                dest_name = self._strip_admin_prefix(r.get("destination_terminal_name", ""))
+                dest_name = self._strip_admin_prefix(r.get("destination_terminal_name") or "")
                 dest_label.setText(f"SELL AT {dest_name} · {dest_place}")
-                profit_label.setText(f"{r.get('profit', 0):,} aUEC")
-                roi_label.setText(f"{r.get('price_roi', 0):.1f}% ROI")
+                profit_label.setText(f"{r.get('profit') or 0:,} aUEC")
+                roi_label.setText(f"{r.get('price_roi') or 0:.1f}% ROI")
             else:
                 buy_at_label.setText("")
                 commodity_label.setText("—")

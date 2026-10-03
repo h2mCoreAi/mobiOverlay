@@ -48,7 +48,9 @@ Optimizer's `commodities_routes` reliance.
 - Raw commodity picker (`commodities` where `is_raw == 1`, 45 real entries
   confirmed live — sorted alphabetically)
 - Optional star-system filter, same client-side pattern as Commodity Prices'
-  sell/buy filters (no extra API call)
+  sell/buy filters (no extra API call). Its dropdown is filled from the
+  systems in the fetched yield data on each refresh. Before 2026-10-03 it
+  was never populated and only ever offered "All Systems"
 - Top 5 terminals for the selected commodity, ranked by yield modifier
   (best/highest first): terminal name, star system, yield modifier
   (`+N%`/`-N%`), capacity (SCU, comma-formatted)

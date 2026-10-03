@@ -109,6 +109,13 @@ Open-Settings, is dropped per above). Each installs its own
 without conflict, so nothing needs to be shared/merged with mobiOverlay's
 own Stow/Deploy `GlobalHotkey` instance.
 
+**Both hotkeys default to unset (2026-10-03).** They used to default to
+`ctrl+alt+o` / `ctrl+alt+p`, which installed a global keyboard hook for
+every user, throttle or not. That went against the host's rule that the
+hook is only installed once the user sets a hotkey. A hook is now only
+installed once a combo is captured in the card. Installs that already have
+the old defaults saved keep them. Escape during capture cancels.
+
 The card's hotkey-capture fields follow the same pattern as
 `main_window.py`'s `_HotkeyField` (click → `GlobalHotkey.capture_combo()` →
 signal back to the GUI thread), adapted to bind to the module's own

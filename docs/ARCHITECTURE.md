@@ -148,8 +148,16 @@ horizontal gap between monitors). If the pill would land in a gap or off-screen,
 it's clamped to a visible area with a 10px margin.
 
 **Pill click-through**: `pill_click_through` setting (default OFF) controls
-whether the stowed pill passes all mouse events through to the game via
-`WS_EX_TRANSPARENT`. When ON, redeploy via hotkey or system tray only.
+whether the stowed pill passes mouse events through to the game via
+`WS_EX_TRANSPARENT`. When ON, the pill unlocks on hover: a `QTimer`
+(`PILL_HOVER_POLL_MS`, 100 ms) checks the cursor position, and after it
+has rested on the pill for `PILL_HOVER_UNLOCK_MS` (700 ms) click-through is
+cleared and the title bar lights up (tint and border painted in `MainWindow.paintEvent`; `_TitleBar` has no `WA_StyledBackground`, so stylesheet rules on it never render). The pill is then
+clickable (redeploy) and draggable until the cursor leaves. The timer only
+runs while stowed with click-through ON, and the window style changes only
+on lock/unlock, never per poll. Measured at ~2 µs per check. A global
+mouse hook was deliberately not used, since it would sit in the path of
+every in-game mouse movement. The hotkey and tray still redeploy as before.
 
 **Native taskbar minimize/maximize (2026-09-30):** `MainWindow`'s window
 flags changed from `Qt.Tool` to `Qt.Window | Qt.WindowMinMaxButtonsHint`
@@ -179,10 +187,34 @@ Icon file: `host/assets/icons/mobioverlay.png`.
 
 ## Single-instance guard (host/single_instance.py)
 
-Prevents running two mobiOverlay copies at once. Uses a Windows named mutex
-(`mobiOverlay-SingleInstance-v1`) checked at startup. If another instance holds
-the mutex, shows an error dialog and exits. This prevents duplicate global
-keyboard hooks from racing on the same hotkey.
+Prevents running two mobiOverlay copies at once. Holds an exclusive lock
+(`msvcrt.locking`) on `.mobioverlay.lock` next to the exe for the process's
+lifetime. If another instance holds it, shows an error dialog and exits. This
+prevents duplicate global keyboard hooks from racing on the same hotkey.
+The lock is released at exit, and by `MainWindow.relaunch()` before it starts
+the new process (see "Exit paths" below).
+
+## Exit paths
+
+- **✕ / tray Quit**: `MainWindow.closeEvent` saves geometry, unhooks the
+  hotkey, and calls `QApplication.quit()` explicitly. `host/main.py` sets
+  `quitOnLastWindowClosed(False)` (so closing a module popout can't quit the
+  app), which means closing the main window alone would otherwise leave an
+  invisible process running.
+- **Relaunch**: ends with `os._exit()`, which skips `aboutToQuit` and
+  `atexit`. Cleanup that must still happen (every module's `shutdown()`,
+  the single-instance lock) is registered with `MainWindow.add_before_exit()`
+  and runs before the new process is spawned.
+
+## Persistent files
+
+`config.json`, `mobinotes_data.json`, and `locations_cache.json` are written
+with `host/fileio.atomic_write_text()` (temp file + `os.replace`), so a crash
+mid-save can't truncate them. A file that fails to parse is moved aside to
+`<name>.corrupt-<timestamp>` by `quarantine_corrupt()` instead of being
+overwritten by the next save. The location cache is only written after a
+complete UEX fetch; a failed or partial fetch falls back to the older cache
+and is retried (at most every 5 minutes) on the next lookup.
 
 ## Global hotkey (host/hotkey.py)
 

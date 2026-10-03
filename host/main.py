@@ -237,20 +237,35 @@ def main():
 
         safe_refresh()  # initial fetch
 
-        interval_s = module.settings.get("refresh_interval_seconds", DEFAULT_REFRESH_SECONDS)
-        if interval_s:
+        try:
+            interval_s = float(module.settings.get("refresh_interval_seconds", DEFAULT_REFRESH_SECONDS) or 0)
+        except (TypeError, ValueError):
+            interval_s = DEFAULT_REFRESH_SECONDS
+        if interval_s > 0:
             timer = QTimer()
             timer.timeout.connect(safe_refresh)
-            timer.start(interval_s * 1000)
+            timer.start(int(interval_s * 1000))
             timers.append(timer)
 
+    modules_shut_down = False
+
     def _shutdown_modules():
+        # Runs from aboutToQuit on a normal exit, or from MainWindow.relaunch()
+        # (which exits via os._exit and never reaches aboutToQuit) — only once.
+        nonlocal modules_shut_down
+        if modules_shut_down:
+            return
+        modules_shut_down = True
+        for timer in timers:
+            timer.stop()
         for module in modules:
             try:
                 module.shutdown()
             except Exception:
                 logger.exception("Module '%s' shutdown() failed", getattr(module, "module_id", "?"))
     app.aboutToQuit.connect(_shutdown_modules)
+    window.add_before_exit(_shutdown_modules)
+    window.add_before_exit(lambda: _instance_lock.__exit__(None, None, None))
 
     window.show()
     splash.finish(window)

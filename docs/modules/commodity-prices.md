@@ -127,8 +127,12 @@ systems, ignoring the Best Sell/Best Buy system filters entirely):
     countdown ("REFRESH IN MM:SS", 30 min) gates re-fetching — clicking
     while it's counting down prompts "FORCE UPDATE?" first rather than
     re-fetching immediately
-  - ~100-150 calls in one burst is well under the 120/min UEX limit; this is
-    a deliberate, bounded, one-time cost per click, not background polling
+  - One call per commodity (~200) in one burst — a deliberate, bounded,
+    one-time cost per click, not background polling. Note the "120/min"
+    limit cited elsewhere in this project is unconfirmed: a real run of 205
+    calls in ~25s (~490/min) completed without being rate-limited (see
+    `docs/HISTORY.md`). If UEX does rate-limit, the scan stops cleanly with
+    the rate-limit message (HTTP 429 is detected too, since 2026-10-03).
 - **FIND MOST PROFITABLE** — instant and purely local:
   - Reads the already-downloaded `_all_commodity_data` and the Best
     Sell/Best Buy system filters' current state at click time — no API call

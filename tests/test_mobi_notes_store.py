@@ -91,6 +91,25 @@ def run() -> int:
     checks += 1
 
     tmp_path.unlink(missing_ok=True)
+
+    # -- corrupt file is moved aside, never silently overwritten ----------------
+    corrupt_dir = Path(tempfile.mkdtemp())
+    corrupt_path = corrupt_dir / "mobinotes_data.json"
+    corrupt_path.write_text('{"schema_version": 1, "notes": [{"id": "a", "ti', encoding="utf-8")
+    recovered = NotesStore(corrupt_path)
+    assert recovered.all_notes() == []
+    checks += 1
+    backups = list(corrupt_dir.glob("mobinotes_data.json.corrupt-*"))
+    assert len(backups) == 1, f"corrupt notes file wasn't preserved: {list(corrupt_dir.iterdir())}"
+    assert backups[0].read_text(encoding="utf-8").startswith('{"schema_version": 1'), "backup lost the original bytes"
+    checks += 1
+    recovered.add("Trade", "New", "", [])
+    assert backups[0].exists(), "saving after recovery deleted the backup"
+    assert len(NotesStore(corrupt_path).all_notes()) == 1
+    checks += 1
+    assert not list(corrupt_dir.glob("*.tmp")), "atomic save left a temp file behind"
+    checks += 1
+
     print(f"{checks}/{checks} mobiNotes store checks passed")
     return checks
 

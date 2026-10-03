@@ -43,7 +43,7 @@ jobs:
           # Install CPU-only torch first to avoid pulling CUDA (~2GB savings)
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
-          pip install pyinstaller
+          pip install "pyinstaller>=6.9"  # 6.9+: PYINSTALLER_RESET_ENVIRONMENT, needed by Settings > Relaunch
 
       - name: Build exe
         run: pyinstaller mobioverlay.spec --noconfirm
