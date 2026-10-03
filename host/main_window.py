@@ -4,12 +4,13 @@ CardContainer, the tray for stowed (hidden) cards, and Settings.
 import ctypes
 import logging
 import subprocess
+import time
 from ctypes import wintypes
 
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QPoint, QRectF, QTimer
-from PySide6.QtGui import QGuiApplication, QColor, QPainter, QPainterPath, QIcon
+from PySide6.QtGui import QCursor, QGuiApplication, QColor, QPainter, QPainterPath, QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QSizeGrip, QSizePolicy, QLineEdit, QSystemTrayIcon, QMenu
@@ -30,6 +31,16 @@ ctypes.windll.user32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, c
 
 TRAY_ICON_PATH = Path(__file__).resolve().parent / "assets" / "icons" / "mobioverlay.png"
 
+# Hover-to-unlock for a click-through pill: clicks pass through to the game
+# until the cursor has rested on the pill this long, then it becomes
+# clickable (and lights up) until the cursor leaves. The poll is one
+# GetCursorPos + rect check (microseconds) and only runs while stowed with
+# click-through ON. Polling is deliberate: a click-through window receives
+# no mouse events, and the alternative (a global mouse hook) would sit in
+# the path of every in-game mouse movement.
+PILL_HOVER_POLL_MS = 100
+PILL_HOVER_UNLOCK_MS = 700
+
 
 def _build_stylesheet() -> str:
     # A function, not a module-level constant: theme.fpx() must read
@@ -42,6 +53,10 @@ QWidget#titleBar {{
         stop:0 #182029, stop:1 #0d131a);
     border: 1px solid {theme.BORDER_CYAN};
     border-radius: {theme.RADIUS}px;
+}}
+QWidget#titleBar[unlocked="true"] {{
+    background: {theme.ACCENT_CYAN_DIM};
+    border: 1px solid {theme.ACCENT_CYAN};
 }}
 QLabel#wordmark {{
     font-family: "{theme.FONT_DISPLAY}";
@@ -495,8 +510,9 @@ class _SettingsPanel(QWidget):
         # -- Pill click-through --
         pill_row = _SettingsRow(
             "PILL CLICK-THROUGH",
-            "ON = pill passes all clicks through to the game (cannot drag or click it). "
-            "Redeploy via hotkey or system tray only. OFF = pill is draggable and clickable.",
+            "ON = clicks pass through the pill to the game. Rest the cursor on it for a "
+            "moment to unlock it (it lights up), then click to redeploy or drag it. "
+            "OFF = pill is always draggable and clickable.",
         )
         current_pill_click_through = main_window.config.data["ui"].get("pill_click_through", False)
         pill_btn = QPushButton()
@@ -825,6 +841,12 @@ class MainWindow(QWidget):
         # hotkey or lose the stowed pill.
         self._tray = _SystemTray(self)
 
+        self._pill_hover_timer = QTimer(self)
+        self._pill_hover_timer.setInterval(PILL_HOVER_POLL_MS)
+        self._pill_hover_timer.timeout.connect(self._poll_pill_hover)
+        self._pill_hover_since: float | None = None  # monotonic time the cursor arrived on the pill
+        self._pill_unlocked = False
+
         # Run by relaunch() before it hard-exits — see add_before_exit().
         self._before_exit_callbacks: list = []
         self._exiting = False
@@ -961,6 +983,7 @@ class MainWindow(QWidget):
         self.move(pill_x, pill_y)
 
         self._apply_native_click_through(self._pill_click_through)
+        self._sync_pill_hover_watch()
         self._tray.update_menu_state(is_stowed=True)
         self.config.save()
 
@@ -976,6 +999,7 @@ class MainWindow(QWidget):
         self._size_grip.setVisible(True)
         self.title_bar.set_stowed_mode(False)
         self._app_stowed = False
+        self._sync_pill_hover_watch()
         self.setMinimumSize(*self._normal_min_size)
         if self._pre_stow_geometry:
             x, y, w, h = self._pre_stow_geometry
@@ -1042,11 +1066,10 @@ class MainWindow(QWidget):
         combo, so the bit is set on the real HWND instead, which Windows
         checks live on every hit-test.
 
-        Deliberately affects mouse input only, not drag specifically —
-        with the bit set, every mouse event (including a click on the
-        pill's own close button) passes straight through, so the only way
-        back to full mode is the Stow/Deploy hotkey. That's the point:
-        the pill becomes a pure, unclickable HUD element.
+        With the bit set, every mouse event (including a click on the
+        pill's own close button) passes straight through. The hover poll
+        (`_poll_pill_hover`) clears it while the cursor rests on the pill,
+        so the pill stays reachable without catching stray clicks.
         """
         hwnd = int(self.winId())
         style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
@@ -1060,6 +1083,48 @@ class MainWindow(QWidget):
         self.config.save()
         if self._app_stowed:
             self._apply_native_click_through(enabled)
+        self._sync_pill_hover_watch()
+
+    def _sync_pill_hover_watch(self):
+        """Run the hover poll only while it can matter: stowed to the pill
+        with click-through ON. Any other state stops it and clears the
+        unlocked highlight."""
+        if self._app_stowed and self._pill_click_through:
+            if not self._pill_hover_timer.isActive():
+                self._pill_hover_since = None
+                self._pill_hover_timer.start()
+            return
+        self._pill_hover_timer.stop()
+        self._pill_hover_since = None
+        self._set_pill_unlocked(False, apply_click_through=False)
+
+    def _poll_pill_hover(self):
+        hovering = self.frameGeometry().contains(QCursor.pos())
+        if hovering:
+            if self._pill_unlocked:
+                return
+            now = time.monotonic()
+            if self._pill_hover_since is None:
+                self._pill_hover_since = now
+            elif (now - self._pill_hover_since) * 1000 >= PILL_HOVER_UNLOCK_MS:
+                self._set_pill_unlocked(True)
+            return
+        self._pill_hover_since = None
+        # Mid-drag the cursor can briefly outrun the pill — don't relock
+        # under the user's hand.
+        if self._pill_unlocked and self.title_bar._drag_offset is None:
+            self._set_pill_unlocked(False)
+
+    def _set_pill_unlocked(self, unlocked: bool, apply_click_through: bool = True):
+        """Only touches the window style on an actual change, never per poll."""
+        if unlocked == self._pill_unlocked:
+            return
+        self._pill_unlocked = unlocked
+        if apply_click_through:
+            self._apply_native_click_through(not unlocked)
+        self.title_bar.setProperty("unlocked", unlocked)
+        self.title_bar.style().unpolish(self.title_bar)
+        self.title_bar.style().polish(self.title_bar)
 
     def capture_hotkey_combo(self, on_captured, on_error=None):
         return self._hotkey.capture_combo(on_captured, on_error)

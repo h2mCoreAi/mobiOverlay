@@ -104,6 +104,7 @@ calculations, and UI state tests (if PySide6 is available).
 Other test files:
 - `python tests/test_api_client_dedupe.py` — UexApiClient deduplication
 - `python tests/test_core_persistence.py` — config/cache recovery, atomic saves, rate-limit detection (no network)
+- `python tests/test_pill_hover_unlock.py` — click-through pill hover-to-unlock (offscreen, no hooks)
 - `python tests/test_mobi_notes_store.py` — mobiNotes data store
 
 **Requirement**: `locations_cache.json` must exist (run the app once first, or

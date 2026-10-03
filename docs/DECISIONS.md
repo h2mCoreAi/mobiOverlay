@@ -7774,3 +7774,22 @@ by an automated check.
   `host/paths.relaunch_env()` sets `PYINSTALLER_RESET_ENVIRONMENT=1`
   (PyInstaller 6.9+, the documented way to spawn a fresh instance) when
   frozen. `release.yml` and `BUILD.md` now pin `pyinstaller>=6.9`.
+
+- **2026-10-03 — Click-through pill unlocks on hover.** Owner feedback:
+  with Pill Click-Through ON the pill couldn't be clicked at all, which
+  defeated the point of having it. Click-through existed to stop
+  *accidental* clicks, not deliberate ones. Options considered: hover to
+  unlock, hold a modifier key, drop click-through for a
+  double-click/long-press gesture, or both of the first two. The owner
+  chose hover to unlock. Clicks pass through until the cursor has rested on
+  the pill for 700 ms; then it lights up and is clickable/draggable until
+  the cursor leaves. An accidental click is a quick pass, so it still goes
+  through to the game.
+  - **Implementation:** a 100 ms `QTimer` reading `QCursor.pos()`, active
+    only while stowed with click-through ON.
+  - **Cost:** the owner raised CPU and micro-stutter concerns. Measured
+    ~2.2 µs per check (≈0.002% of one core at 10 Hz). The poll runs in the
+    overlay's process, not the game's. `WS_EX_TRANSPARENT` is only
+    rewritten on lock/unlock transitions, never per poll.
+  - **Rejected:** a `WH_MOUSE_LL` hook, which would sit in the path of
+    every in-game mouse movement.

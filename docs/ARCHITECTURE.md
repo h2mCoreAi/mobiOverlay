@@ -148,8 +148,16 @@ horizontal gap between monitors). If the pill would land in a gap or off-screen,
 it's clamped to a visible area with a 10px margin.
 
 **Pill click-through**: `pill_click_through` setting (default OFF) controls
-whether the stowed pill passes all mouse events through to the game via
-`WS_EX_TRANSPARENT`. When ON, redeploy via hotkey or system tray only.
+whether the stowed pill passes mouse events through to the game via
+`WS_EX_TRANSPARENT`. When ON, the pill unlocks on hover: a `QTimer`
+(`PILL_HOVER_POLL_MS`, 100 ms) checks the cursor position, and after it
+has rested on the pill for `PILL_HOVER_UNLOCK_MS` (700 ms) click-through is
+cleared and the title bar lights up (`unlocked` property). The pill is then
+clickable (redeploy) and draggable until the cursor leaves. The timer only
+runs while stowed with click-through ON, and the window style changes only
+on lock/unlock, never per poll. Measured at ~2 µs per check. A global
+mouse hook was deliberately not used, since it would sit in the path of
+every in-game mouse movement. The hotkey and tray still redeploy as before.
 
 **Native taskbar minimize/maximize (2026-09-30):** `MainWindow`'s window
 flags changed from `Qt.Tool` to `Qt.Window | Qt.WindowMinMaxButtonsHint`
