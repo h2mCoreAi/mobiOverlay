@@ -125,12 +125,15 @@ all 8 modules bundled inside. `config.json` and cache files persist next to the 
 ## Branch/PR workflow
 
 1. **Work on PR branches** — never commit directly to `master`
-2. **Name branches**: `cursor/<descriptive-name>-<suffix>` (or similar prefix)
-3. **Test side-by-side** before merge:
+2. **Ask before pushing to `master`** — never push directly to `master`
+   without the owner's explicit confirmation in the current session, even
+   for docs-only commits
+3. **Name branches**: `cursor/<descriptive-name>-<suffix>` (or similar prefix)
+4. **Test side-by-side** before merge:
    - Build to a separate folder: `pyinstaller mobioverlay.spec --distpath dist-test`
    - Copy to test location, copy `config.json`, run alongside Star Citizen
    - **Never overwrite the owner's live `Desktop\mobiOverlay\` exe** until approved
-4. **Release flow**: tag `vX.Y.Z` on `master` → GitHub Actions publishes zip
+5. **Release flow**: tag `vX.Y.Z` on `master` → GitHub Actions publishes zip
 
 ---
 

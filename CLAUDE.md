@@ -61,3 +61,5 @@ pyinstaller mobioverlay.spec --noconfirm
 6. **Never invent API logic** UEX doesn't compute (one documented exception:
    Logistics Hub's 2-opt route ordering over real UEX distances — see AGENTS.md)
 7. **Never run two mobiOverlay instances** at once
+8. **Never push directly to `master`** without asking the owner first
+   (work on a PR branch by default — see AGENTS.md)
