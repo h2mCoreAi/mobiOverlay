@@ -14,43 +14,25 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QComboBox, QLabel, QHBoxLayout, QVBoxLayout, QWidget, QPushButton
 
 from host import theme
-from host.api_client import UexRateLimitError
+from host.api_client import RATE_LIMIT_RETRY_COOLDOWN_S, UexRateLimitError
+from host.background import run_in_background
 from host.module_base import ModuleBase
 
 ALL_SYSTEMS = "All Systems"
 RETRIEVE_STEP_INTERVAL_MS = 120  # be nice to the API — ~8 requests/sec while retrieving
 REFRESH_CACHE_SECONDS = 1800  # 30 min — commodity prices don't move that fast
+CACHED_PRICES_MAX_AGE_SECONDS = 6 * 3600  # a RETRIEVE DATA result is restored after a restart only if newer than this
+PRICE_CACHE_KEY = "commodity_prices.all"
 FORCE_CONFIRM_TIMEOUT_MS = 4000  # how long "FORCE UPDATE?" stays up before reverting
 
-_ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 9px 10px;"
-_LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 2px;'
-_PRICE_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(20)}px; font-weight: bold;'
-_LOC_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px;'
-_TIMESTAMP_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;'
-_COMBO_STYLE = f"""
-    QComboBox {{
-        background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
-        font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(15)}px;
-    }}
-"""
-_SYSTEM_COMBO_STYLE = f"""
-    QComboBox {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_MUTED};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 2px 4px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
-    }}
-"""
-_ACTION_BTN_STYLE = f"""
-    QPushButton {{
-        background: transparent; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; padding: 5px 0;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;
-    }}
-    QPushButton:disabled {{
-        color: {theme.TEXT_DIM}; border: 1px solid {theme.BORDER_FLAT};
-    }}
-"""
+_ROW_STYLE = theme.row_style("9px 10px")
+_LABEL_SMALL = theme.label_small()
+_PRICE_STYLE = theme.text_style(20, weight='bold')
+_LOC_STYLE = theme.text_style(10, color=theme.TEXT_MUTED)
+_TIMESTAMP_STYLE = theme.timestamp_style()
+_COMBO_STYLE = theme.field_style('QComboBox', theme.ACCENT_CYAN, 15, padding='4px 6px', family=theme.FONT_DISPLAY, weight=800)
+_SYSTEM_COMBO_STYLE = theme.field_style('QComboBox', theme.TEXT_MUTED, 9, padding='2px 4px')
+_ACTION_BTN_STYLE = theme.action_btn_style()
 
 
 class CommodityPricesModule(ModuleBase):
@@ -72,7 +54,10 @@ class CommodityPricesModule(ModuleBase):
 
         # Retrieve Data state
         self._all_commodity_data: dict[str, list[dict]] = {}
+        self._price_cache = self.services.price_cache
         self._retrieve_timer: QTimer | None = None
+        self._retrieve_inflight = False
+        self._retrieve_generation = 0  # bumped per retrieval so a late reply from an old one is ignored
         self._retrieve_queue: list[str] = []
         self._retrieve_index = 0
         self._last_retrieve_time = 0.0
@@ -106,6 +91,7 @@ class CommodityPricesModule(ModuleBase):
             "data, respecting the system filters below. Instant — no new "
             "API calls. Retrieve Data first."
         )
+        self._profitable_base_tip = self.profitable_btn.toolTip()
         self.profitable_btn.setEnabled(False)
         self.profitable_btn.clicked.connect(self.find_most_profitable)
         card.body_layout.addWidget(self.profitable_btn)
@@ -139,6 +125,7 @@ class CommodityPricesModule(ModuleBase):
         self.buy_system.currentTextChanged.connect(self._on_buy_filter_changed)
 
         self.card = card
+        self._restore_cached_prices()
         return card
 
     def _build_price_row(self, label_text: str, price_color: str):
@@ -334,6 +321,8 @@ class CommodityPricesModule(ModuleBase):
         if not self._commodities:
             return
         self._stop_countdown()
+        self._retrieve_generation += 1
+        self._retrieve_inflight = False
         self._retrieve_queue = list(self._commodities)
         self._retrieve_index = 0
         self._all_commodity_data = {}
@@ -346,32 +335,85 @@ class CommodityPricesModule(ModuleBase):
         self._retrieve_timer.start(RETRIEVE_STEP_INTERVAL_MS)
 
     def _retrieve_step(self):
+        """One timer tick: request the next commodity on a worker thread (the
+        UI stays responsive while UEX answers). At most one request is in
+        flight, so pacing is unchanged."""
+        if self._retrieve_inflight:
+            return
         if self._retrieve_index >= len(self._retrieve_queue):
             self._finish_retrieve()
             return
 
         name = self._retrieve_queue[self._retrieve_index]
         self._retrieve_index += 1
-        try:
-            rows = self.api.get("commodities_prices", {"commodity_name": name})
-            self._all_commodity_data[name] = [r for r in rows if r.get("commodity_name") == name]
-        except UexRateLimitError as exc:
-            self._retrieve_timer.stop()
-            self._retrieve_timer = None
+        self._retrieve_inflight = True
+        generation = self._retrieve_generation
+        run_in_background(
+            lambda: self.api.get("commodities_prices", {"commodity_name": name}),
+            lambda rows: self._on_retrieve_rows(generation, name, rows),
+            lambda exc: self._on_retrieve_error(generation, exc),
+        )
+
+    def _on_retrieve_rows(self, generation: int, name: str, rows: list):
+        if generation != self._retrieve_generation:
+            return
+        self._retrieve_inflight = False
+        self._all_commodity_data[name] = [r for r in rows if r.get("commodity_name") == name]
+        self.retrieve_btn.setText(f"RETRIEVING {self._retrieve_index}/{len(self._retrieve_queue)}")
+
+    def _on_retrieve_error(self, generation: int, exc: Exception):
+        if generation != self._retrieve_generation:
+            return
+        self._retrieve_inflight = False
+        if isinstance(exc, UexRateLimitError):
+            if self._retrieve_timer is not None:
+                self._retrieve_timer.stop()
+                self._retrieve_timer = None
             self.retrieve_btn.setEnabled(True)
             self.retrieve_btn.setText("RETRIEVE DATA")
             self.profitable_btn.setEnabled(bool(self._all_commodity_data))
-            self.card.set_error(str(exc), retry_callback=self._start_retrieve)
+            self.card.set_error(str(exc), retry_callback=self._start_retrieve, cooldown_s=RATE_LIMIT_RETRY_COOLDOWN_S)
             return
-        except Exception:
-            pass  # skip commodities that individually fail; don't abort the whole retrieval
-
+        # skip commodities that individually fail; don't abort the whole retrieval
         self.retrieve_btn.setText(f"RETRIEVING {self._retrieve_index}/{len(self._retrieve_queue)}")
+
+    def _restore_cached_prices(self):
+        """Reload the last RETRIEVE DATA result saved by a previous session, so
+        FIND MOST PROFITABLE works at launch without another ~25 s download.
+        The countdown resumes from the original fetch time; an entry older than
+        REFRESH_CACHE_SECONDS is still usable but the tooltip says how old it is
+        and RETRIEVE DATA stays one click away."""
+        hit = self._price_cache.load(PRICE_CACHE_KEY)
+        if not hit:
+            return
+        fetched_at, data = hit
+        age = time.time() - fetched_at
+        if not isinstance(data, dict) or not data or age < 0 or age > CACHED_PRICES_MAX_AGE_SECONDS:
+            return
+        self._all_commodity_data = data
+        self._last_retrieve_time = fetched_at
+        self.profitable_btn.setEnabled(True)
+        when = time.strftime("%H:%M", time.localtime(fetched_at))
+        self.profitable_btn.setToolTip(
+            self._profitable_base_tip
+            + f"\n\nUsing the prices retrieved at {when} ({int(age // 60)} min ago, loaded from "
+            "the saved cache). Click RETRIEVE DATA to refresh them."
+        )
+        if age < REFRESH_CACHE_SECONDS:
+            self._start_countdown()
+
+    def _save_cached_prices(self):
+        """Persist the finished retrieval off the GUI thread. The dict isn't
+        mutated again (the next retrieval builds a fresh one)."""
+        data, fetched_at = self._all_commodity_data, self._last_retrieve_time
+        run_in_background(lambda: self._price_cache.save(PRICE_CACHE_KEY, data, fetched_at), lambda _ok: None)
 
     def _finish_retrieve(self):
         self._retrieve_timer.stop()
         self._retrieve_timer = None
         self._last_retrieve_time = time.time()
+        self.profitable_btn.setToolTip(self._profitable_base_tip)
+        self._save_cached_prices()
         self.retrieve_btn.setEnabled(True)
         self.profitable_btn.setEnabled(bool(self._all_commodity_data))
         self.card.clear_error()

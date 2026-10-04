@@ -54,6 +54,8 @@ from host.card import Card
 from host.locations import LocationService
 from host.main_window import MainWindow
 from host.module_loader import discover_modules
+from host.price_cache import PriceCache
+from host.services import Services
 from host.splash import show_splash, set_status
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -209,7 +211,7 @@ def main():
     set_status(splash, "Loading location data...")
     app.processEvents()
     locations = LocationService(api_client)
-    locations.ensure_loaded()
+    locations.ensure_loaded(background_refresh_stale=True)
 
     window = MainWindow(config)
 
@@ -217,7 +219,8 @@ def main():
         set_status(splash, f"Loading {name.replace('_', ' ').title()}...")
 
     discover_start = time.monotonic()
-    modules = discover_modules(api_client, config, locations, on_module_loading=_on_module_loading)
+    services = Services(api_client, config, locations, PriceCache())
+    modules = discover_modules(api_client, config, locations, on_module_loading=_on_module_loading, services=services)
     logger.info("discover_modules() took %.2fs total", time.monotonic() - discover_start)
     if not modules:
         logger.warning("No modules loaded — the overlay will show an empty container.")

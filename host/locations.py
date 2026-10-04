@@ -23,6 +23,7 @@ this shared service existed — see docs/DECISIONS.md, 2026-09-04.
 """
 import difflib
 import json
+import threading
 import logging
 import re
 import time
@@ -95,21 +96,31 @@ class LocationService:
         # staying empty for the rest of the session.
         self._fetch_incomplete = False
         self._last_fetch_attempt = 0.0
+        self._refresh_thread: threading.Thread | None = None
 
     # ------------------------------------------------------------------
     # Loading / caching
     # ------------------------------------------------------------------
-    def ensure_loaded(self, force_refresh: bool = False):
+    def ensure_loaded(self, force_refresh: bool = False, background_refresh_stale: bool = False):
         """Populate the in-memory index — from the disk cache if it's
         still fresh, otherwise from the live UEX API (and re-cache the
         result). A no-op if already loaded this session, unless
-        force_refresh is set."""
+        force_refresh is set.
+
+        With `background_refresh_stale`, an expired (but same-version) cache
+        is used immediately and refreshed from UEX on a worker thread, so
+        startup never waits on the hundreds of location requests once a
+        cache exists. Only a first run, or a cache from an older schema,
+        still blocks."""
         if self._locations is not None and not force_refresh:
             if not self._fetch_incomplete or time.monotonic() - self._last_fetch_attempt < FETCH_RETRY_SECONDS:
                 return
             force_refresh = True  # last fetch failed — try the API again
         self._friendly_names = None
         if not force_refresh and self._load_from_disk():
+            return
+        if background_refresh_stale and not force_refresh and self._load_from_disk(allow_stale=True):
+            self.refresh_in_background()
             return
         self._last_fetch_attempt = time.monotonic()
         complete = self._fetch_from_api()
@@ -169,9 +180,47 @@ class LocationService:
         except OSError:
             logger.warning("locations: failed to write cache file", exc_info=True)
 
+    def refresh_in_background(self):
+        """Re-fetch every location from UEX on a worker thread and swap the
+        result in only if the fetch was complete; otherwise the data already
+        in memory stays and the next launch tries again. A no-op while a
+        refresh is already running."""
+        if self._refresh_thread is not None and self._refresh_thread.is_alive():
+            return
+        self._refresh_thread = threading.Thread(
+            target=self._background_refresh, name="locations-refresh", daemon=True)
+        self._refresh_thread.start()
+
+    def _background_refresh(self):
+        try:
+            systems, locations, name_index, complete = self._fetch_snapshot()
+        except Exception:
+            logger.warning("locations: background refresh failed", exc_info=True)
+            return
+        if not (complete and locations):
+            logger.warning("locations: background refresh incomplete — keeping the cached copy")
+            return
+        # Index first, then the list it indexes, so a reader on the GUI
+        # thread never sees a new list with an old index.
+        self._systems = systems
+        self._name_index = name_index
+        self._locations = locations
+        self._friendly_names = None
+        self._save_to_disk()
+        logger.info("locations: background refresh swapped in %d locations", len(locations))
+
     def _fetch_from_api(self) -> bool:
         """Populate the in-memory index from UEX. Returns True only if every
         request succeeded — the caller won't cache anything less."""
+        systems, locations, name_index, complete = self._fetch_snapshot()
+        self._systems = systems
+        self._locations = locations
+        self._name_index = name_index
+        return complete
+
+    def _fetch_snapshot(self) -> tuple[list, list, dict, bool]:
+        """Fetch (systems, locations, name_index, complete) from UEX without
+        touching instance state, so it is safe to run on a worker thread."""
         locations_by_key: dict = {}
         name_index: dict[str, dict] = {}
         complete = True
@@ -180,12 +229,7 @@ class LocationService:
             systems = self.api.get("star_systems")
         except Exception:
             logger.warning("locations: could not fetch star_systems from UEX API", exc_info=True)
-            self._systems = []
-            self._locations = []
-            self._name_index = {}
-            return False
-
-        self._systems = systems
+            return [], [], {}, False
 
         for system in systems:
             if not system.get("is_available") or not system.get("id"):
@@ -209,13 +253,12 @@ class LocationService:
                         if label:
                             name_index.setdefault(self.normalize(label), row)
 
-        self._locations = list(locations_by_key.values())
-        self._name_index = name_index
+        locations = list(locations_by_key.values())
         logger.info(
             "locations: resolved %d unique locations (%d searchable names) from UEX API",
-            len(self._locations), len(name_index),
+            len(locations), len(name_index),
         )
-        return complete and bool(self._locations)
+        return systems, locations, name_index, complete and bool(locations)
 
     def _rebuild_name_index(self):
         index: dict[str, dict] = {}

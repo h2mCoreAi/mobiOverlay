@@ -82,3 +82,66 @@ def hex_to_rgba(hex_color: str, alpha: float) -> str:
     hex_color = hex_color.lstrip("#")
     r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
     return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+# Shared widget styles. Functions, not constants: they read FONT_SCALE, which
+# main.py sets after this module is imported.
+def label_small() -> str:
+    """Small letter-spaced caption above a control."""
+    return f'color: {TEXT_MUTED}; font-family: "{FONT_MONO}"; font-size: {fpx(9)}px; letter-spacing: 2px;'
+
+
+def timestamp_style() -> str:
+    """Dim "updated X ago" line."""
+    return f'color: {TEXT_DIM}; font-family: "{FONT_MONO}"; font-size: {fpx(9)}px; letter-spacing: 1px;'
+
+
+def action_btn_style() -> str:
+    """Outlined cyan action button (RETRIEVE / SCAN style)."""
+    return f"""
+    QPushButton {{
+        background: transparent; color: {ACCENT_CYAN};
+        border: 1px solid {BORDER_CYAN}; border-radius: {RADIUS}px; padding: 5px 0;
+        font-family: "{FONT_MONO}"; font-size: {fpx(9)}px; letter-spacing: 1px;
+    }}
+    QPushButton:disabled {{
+        color: {TEXT_DIM}; border: 1px solid {BORDER_FLAT};
+    }}
+"""
+
+
+def row_style(padding: str, border: str | None = None) -> str:
+    """Bordered result/list row."""
+    return f"border: 1px solid {border or BORDER_FLAT}; border-radius: {RADIUS}px; padding: {padding};"
+
+
+def text_style(size: int, color: str | None = None, family: str | None = None,
+               weight: str | int | None = None, letter_spacing: int | None = None) -> str:
+    """Plain label text: color/font/size, optional weight and letter-spacing."""
+    parts = [f"color: {color};"] if color else []
+    parts.append(f'font-family: "{family or FONT_MONO}";')
+    if weight:
+        parts.append(f"font-weight: {weight};")
+    parts.append(f"font-size: {fpx(size)}px;")
+    if letter_spacing:
+        parts.append(f"letter-spacing: {letter_spacing}px;")
+    return " ".join(parts)
+
+
+def field_style(widget: str, color: str, size: int, padding: str | None = None,
+                family: str | None = None, weight: str | int | None = None,
+                drop_down: int | None = None) -> str:
+    """Dark input-field style for QComboBox / QLineEdit / QTextEdit / QListWidget.
+    `drop_down` sets the combo arrow column width."""
+    border = f"border: 1px solid {BORDER_FLAT}; border-radius: {RADIUS}px;"
+    if padding:
+        border += f" padding: {padding};"
+    font = f'font-family: "{family or FONT_MONO}";'
+    if weight:
+        font += f" font-weight: {weight};"
+    font += f" font-size: {fpx(size)}px;"
+    out = (f"\n    {widget} {{\n        background: {BG_VOID}; color: {color};\n"
+           f"        {border}\n        {font}\n    }}\n")
+    if drop_down:
+        out += f"    {widget}::drop-down {{ width: {drop_down}px; border: none; }}\n"
+    return out

@@ -53,6 +53,26 @@ next to the exe. Just double-click and go.
 - `logistics_hub_debug.jsonl` — Logistics Hub debug log (if used)
 - `logistics_hub_completed.jsonl` — contracts marked COMPLETE in Logistics Hub
 
+## Lite build (no OCR, ~70 MB)
+
+The OCR stack (torch, torchvision, easyocr, OpenCV, scipy, scikit-image,
+numpy, Pillow) is most of the full exe's size, and only Logistics Hub's
+contract scanning uses it. Setting `MOBI_LITE=1` leaves it out:
+
+```powershell
+pip install -r requirements-lite.txt
+pip install "pyinstaller>=6.9"
+$env:MOBI_LITE = "1"
+pyinstaller mobioverlay.spec --noconfirm
+```
+
+This writes `dist/mobiOverlay-lite.exe` (about 72 MB measured, against ~333 MB
+for the full build), so it never overwrites `dist/mobiOverlay.exe`. In the lite
+build Logistics Hub's SCAN button reports that the OCR engine isn't included;
+every other module is unchanged. The release workflow builds it as a separate
+`build-lite` job after the full build and attaches
+`mobiOverlay-<version>-windows-lite.zip` to the same release.
+
 ## Running tests
 
 The test suite uses plain asserts with no test framework dependency:

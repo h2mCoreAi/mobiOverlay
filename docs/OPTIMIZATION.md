@@ -17,6 +17,16 @@ expected benefit, effort/risk, and project-rule compliance.
 | M1 | ✅ Implemented | Lazy-load easyocr/PyTorch on first OCR use |
 | M2 | ✅ Implemented | Background OCR thread + thin OCR extract to `modules/logistics_hub/ocr.py` |
 | M5 | ✅ Implemented | In-flight/short-TTL request deduplication in UexApiClient |
+| M3 | ✅ Implemented | Stale location cache is served at once and refreshed on a worker thread (`ensure_loaded(background_refresh_stale=True)`); only a first run or schema bump still blocks |
+| L1 | ✅ Implemented | `logistics_hub/module.py` 4,368 → ~2.7k lines: `parsing.py`, `routing.py`, `grading.py`, `popups.py` extracted (one commit each); old route planner checked identical on 150 random scenarios |
+| Q5 | ✅ Resolved differently | Batching rejected (it lengthens GUI freezes); the real cost, blocking requests in timer ticks, is fixed by L3 |
+| L3 | ✅ Implemented (thread pool, not asyncio) | `host/background.py`; the three scan loops request on a worker thread and stay responsive |
+| N3 | ✅ Implemented | `host/price_cache.py` (SQLite); Commodity Prices restores its RETRIEVE DATA result after a restart |
+| L2 | ✅ Implemented (lightweight) | `host/services.py` `Services` dataclass; the loader installs one shared instance, modules read `self.services` |
+| L4 | ✅ Implemented (option 1: separate lite build) | `MOBI_LITE=1` spec variant, 72 MB vs ~333 MB; CI `build-lite` job attaches it to the release |
+| N1 | ✅ Implemented | Rate-limit errors disable Retry for 8s with a countdown (`Card.set_error(cooldown_s=)`) |
+| N2 | ✅ Implemented | `UexApiClient` logs per-request timing at DEBUG |
+| M4 | ✅ Implemented | Shared `row_style`, `text_style`, `field_style`, `label_small`, `timestamp_style`, `action_btn_style` in `host/theme.py`; every migrated style checked equivalent to the original. One-off button styles (icon/nudge/stepper) stay local |
 
 ---
 
@@ -100,7 +110,15 @@ session.
 
 ---
 
-### Q5. Reduce QTimer overhead in scan loops
+### Q5. Reduce QTimer overhead in scan loops ✅ RESOLVED (not as written)
+
+**Finding**: the timer itself costs nothing measurable. What hurt was that each
+tick ran a blocking `api.get()` on the GUI thread, so a ~200-request scan kept
+the UI frozen for most of its duration. Batching 5 requests per 600 ms tick, as
+proposed below, would have made each freeze five times longer. The fix is L3:
+the request now runs on a worker thread and the 120 ms tick only paces it.
+
+**Original proposal**:
 
 **Problem**: Scan loops (Commodity Prices, Trade Route Optimizer, Multi-Commodity
 Finder) use 120ms QTimer intervals for rate limiting:
@@ -182,7 +200,18 @@ in non-main threads.
 
 ---
 
-### M3. Pre-warm LocationService cache at install/first-run
+### M3. Pre-warm LocationService cache at install/first-run ✅ IMPLEMENTED
+
+**Fixed (stale-while-revalidate instead of a bundled cache)**: an expired but
+same-version `locations_cache.json` is loaded immediately and refreshed from
+UEX by `LocationService.refresh_in_background()`. The fetch builds its result
+without touching shared state (`_fetch_snapshot()`) and swaps it in only when
+complete, so a failed or partial refresh keeps the older copy. A bundled
+baseline cache was rejected: it would ship stale data for each new patch. A
+true first run (no cache) and a schema bump (`CACHE_VERSION`) still fetch
+synchronously behind the splash screen.
+
+**Original problem notes**:
 
 **Problem**: The 7-day disk cache (`locations_cache.json`) must be populated from
 live API calls on first run or after cache expiry. This adds ~2-3s of blocking
@@ -200,7 +229,13 @@ cache age and showing "updating location data..." on stale cache.
 
 ---
 
-### M4. Consolidate duplicate stylesheet string construction
+### M4. Consolidate duplicate stylesheet string construction ✅ IMPLEMENTED
+
+**Done**: styles that were byte-identical across modules now live in
+`theme.label_small()`, `theme.timestamp_style()` and `theme.action_btn_style()`
+(functions, since they read `FONT_SCALE` set after import). Modules keep their
+`_NAME = theme.fn()` constants. Remaining variants differ in padding/size and
+need visual checks to merge.
 
 **Problem**: Every module defines its own near-identical `_COMBO_STYLE`,
 `_ACTION_BTN_STYLE`, `_LABEL_SMALL`, etc.:
@@ -252,7 +287,17 @@ outside the lock.
 
 ## Larger Bets (High effort, significant architectural improvement)
 
-### L1. Decompose logistics_hub/module.py (4,350 lines)
+### L1. Decompose logistics_hub/module.py (4,350 lines) ✅ IMPLEMENTED
+
+**Done** in four commits (parsing, routing, grading, popups), each gated by the
+full regression suite. `routing.py` was also compared against the old
+in-module planner on 150 random contract sets (identical routes and debug
+output) and has its own tests (`tests/test_logistics_hub_routing.py`). The
+debug-log writers, popouts and results rendering stay in `module.py`: they are
+entangled with card state, and splitting them would mean passing most of the
+card through. The pre-commit hook now covers every file in the folder.
+
+**Original plan**:
 
 **Problem**: `logistics_hub/module.py` is 4,350 lines — nearly 40% of all Python
 code in the project. It contains:
@@ -282,7 +327,19 @@ the existing test suite (`tests/test_logistics_hub_parsing.py`).
 
 ---
 
-### L2. Implement a module-level dependency injection container
+### L2. Implement a module-level dependency injection container ✅ IMPLEMENTED (lightweight)
+
+**Done**: `host/services.py` defines `Services(api, config, locations, price_cache)`.
+`discover_modules(..., services=)` installs one shared instance on `ModuleBase`,
+and every module reads it as `self.services`; `self.api`/`self.config`/
+`self.locations` stay as shortcuts, so no existing module needed its `__init__`
+changed. A new shared service is now one field in `Services` plus one line in
+`host/main.py`. Without a loader (tests, scripts) `ModuleBase` builds a default
+`Services` from its own arguments. A full container with lazy construction and
+lifetimes was not built: with four services it would only add indirection.
+Commodity Prices already takes its `PriceCache` from it. Test: `tests/test_services.py`.
+
+**Original proposal**:
 
 **Problem**: Modules manually instantiate their own `LocationService`, manage their
 own timers, and duplicate setup logic. Adding a new shared service requires editing
@@ -301,7 +358,20 @@ services are planned.
 
 ---
 
-### L3. Consider async/await for network calls
+### L3. Consider async/await for network calls ✅ IMPLEMENTED (as a thread pool)
+
+**Done without asyncio/qasync**: `host/background.py` runs a call on a
+2-worker `ThreadPoolExecutor` and delivers the result (or exception) back on
+the GUI thread through a queued Qt signal. Commodity Prices, Trade Route
+Optimizer and Multi-Commodity Finder keep their 120 ms pacing and their
+one-request-in-flight rule, so the request rate is unchanged; a per-scan
+generation counter drops replies from a superseded scan. `UexApiClient` was
+already thread-safe (locked dedupe). Tests: `tests/test_background_scans.py`
+(event loop stays free during a slow scan, rate limit stops the scan, stale
+replies ignored). `aiohttp`/`httpx` + `qasync` were not adopted: no new
+dependency, no packaging risk, same benefit for this usage.
+
+**Original proposal**:
 
 **Problem**: All API calls are synchronous `requests.get()`. In scan loops this is
 partially mitigated by QTimer chunking, but each individual call still blocks.
@@ -318,7 +388,22 @@ The QTimer-chunked approach already provides adequate responsiveness.
 
 ---
 
-### L4. PyInstaller bundle size reduction
+### L4. PyInstaller bundle size reduction ✅ IMPLEMENTED (option 1)
+
+**Done**: `mobioverlay.spec` has a lite variant (`MOBI_LITE=1`) that leaves out
+torch, torchvision, easyocr, OpenCV, scipy, scikit-image, numpy and Pillow and
+writes `mobiOverlay-lite.exe`. Measured 72.5 MB against ~333 MB. Logistics Hub's
+existing graceful-degradation path reports that the OCR engine isn't in the
+build instead of crashing. `release.yml` gained a `build-lite` job that runs
+after the full build and attaches the lite zip to the same release, so a lite
+failure can't affect the full release. **Not yet verified**: the lite exe has
+been built but not launched (done while Star Citizen was running, which the
+safety rules forbid testing alongside), and the new CI job hasn't run.
+Options 2 (ONNX) and 3 (cloud OCR) were not attempted: ONNX is a rewrite of the
+OCR path that can't be checked here, and cloud OCR would send the player's
+screenshots to a third party, against the project's no-telemetry stance.
+
+**Original proposal**:
 
 **Problem**: The exe bundles PyTorch (for EasyOCR), which adds ~250MB+ to the
 distribution (shipped exe is ~333MB total). Most users may never use OCR.
@@ -344,7 +429,7 @@ rework.
 
 ## Network/API-Specific Recommendations
 
-### N1. Implement exponential backoff on rate limit
+### N1. Implement exponential backoff on rate limit ✅ IMPLEMENTED (fixed 8s cooldown, not exponential)
 
 **Problem**: `UexRateLimitError` is raised but the retry is immediate (user clicks
 Retry button). Repeated immediate retries worsen the rate limit situation.
@@ -355,7 +440,7 @@ Retry button). Repeated immediate retries worsen the rate limit situation.
 
 ---
 
-### N2. Add request timing telemetry
+### N2. Add request timing telemetry ✅ IMPLEMENTED (DEBUG log in `UexApiClient._do_get`)
 
 **Problem**: No visibility into which API calls are slow or failing frequently.
 
@@ -370,7 +455,22 @@ logger.debug("GET %s took %.2fs", endpoint, time.monotonic() - start)
 
 ---
 
-### N3. Consider a local SQLite cache for price data
+### N3. Consider a local SQLite cache for price data ✅ IMPLEMENTED (Commodity Prices)
+
+**Done**: `host/price_cache.py` is a small key/value cache in
+`price_cache.sqlite3` next to the exe (one short-lived connection per call,
+so any thread can use it; an unreadable file is quarantined and rebuilt).
+Commodity Prices saves each finished RETRIEVE DATA off the GUI thread and
+restores it at launch, so FIND MOST PROFITABLE works immediately. Staleness
+rules, since trading on old prices is the risk: the original fetch time is
+kept, an entry under 30 min old resumes the REFRESH IN countdown, one between
+30 min and 6 h is usable but the button stays RETRIEVE DATA and the tooltip
+says how many minutes old it is, and anything older (or dated in the future)
+is ignored. Trade Route Optimizer is deliberately not cached: its results
+depend on the budget and system filters and are invalidated when they change.
+Tests: `tests/test_price_cache.py`, `tests/test_commodity_prices_cache.py`.
+
+**Original proposal**:
 
 **Problem**: `commodities_prices` data is fetched repeatedly across modules and
 sessions. A 30-minute refresh cache helps but doesn't persist across app restarts.
@@ -400,9 +500,7 @@ are omitted below; this matrix only orders what's still open.
 
 | Priority | Item | Benefit | Effort | Risk |
 |----------|------|---------|--------|------|
-| 1 | M4 (Consolidate stylesheets) | Medium | Medium | Low |
-| 2 | L1 (Decompose logistics_hub) | High | High | Medium |
-| 3 | M3 (Pre-warm cache) | Medium | Medium | Low |
+| 3 | M4 remainder (per-module style variants) | Low | Medium | Low |
 
 ---
 

@@ -64,6 +64,15 @@ Summary of changes shipping in v0.2.0 since the initial v0.1.0 release:
 
 ---
 
+## 2026-10-04 — Optimization pass (branch `cursor/optimizations-n1-n2-m4`)
+
+Every open item in `docs/OPTIMIZATION.md` was either implemented or resolved
+with a documented reason; see that file and the 2026-10-04 DECISIONS entry.
+New tests: `test_logistics_hub_routing.py`, `test_background_scans.py`,
+`test_price_cache.py`, `test_commodity_prices_cache.py`, `test_services.py`,
+plus two stale-cache cases in `test_core_persistence.py`. Not yet verified by a
+person: the changes in a live (non-offscreen) run, and the lite exe launching.
+
 ## 2026-10-03 — Code review, fixes, and owner testing (PR #12)
 
 Full review of `host/` and all eight modules before new feature work.

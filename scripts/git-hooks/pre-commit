@@ -12,7 +12,7 @@
 
 changed=$(git diff --cached --name-only)
 
-if ! echo "$changed" | grep -qE '^(modules/logistics_hub/module\.py|host/locations\.py|tests/test_logistics_hub_parsing\.py)$'; then
+if ! echo "$changed" | grep -qE '^(modules/logistics_hub/[a-z_]+\.py|host/locations\.py|tests/test_logistics_hub_(parsing|routing)\.py)$'; then
     exit 0
 fi
 

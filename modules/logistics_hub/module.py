@@ -48,7 +48,7 @@ been collected.
 import importlib.util
 import json
 import os
-import re
+import sys
 import threading
 import time
 import uuid
@@ -59,25 +59,24 @@ from datetime import datetime, timezone
 # host/module_loader.py's own docstring: modules ship external to the exe,
 # not on sys.path as a package). Same mechanism the host uses to load this
 # very file.
-_gamelog_verify_spec = importlib.util.spec_from_file_location(
-    "mobioverlay_logistics_hub_gamelog_verify",
-    os.path.join(os.path.dirname(__file__), "gamelog_verify.py"),
-)
-gamelog_verify = importlib.util.module_from_spec(_gamelog_verify_spec)
-_gamelog_verify_spec.loader.exec_module(gamelog_verify)
+def _load_sibling(name: str, filename: str):
+    """Load a sibling .py file by path and register it in sys.modules under
+    `name` (so another sibling can find it without loading it twice)."""
+    spec = importlib.util.spec_from_file_location(name, os.path.join(os.path.dirname(__file__), filename))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
-_ocr_spec = importlib.util.spec_from_file_location(
-    "mobioverlay_logistics_hub_ocr",
-    os.path.join(os.path.dirname(__file__), "ocr.py"),
-)
-ocr_module = importlib.util.module_from_spec(_ocr_spec)
-_ocr_spec.loader.exec_module(ocr_module)
+
+gamelog_verify = _load_sibling("mobioverlay_logistics_hub_gamelog_verify", "gamelog_verify.py")
+
+ocr_module = _load_sibling("mobioverlay_logistics_hub_ocr", "ocr.py")
 
 from PySide6.QtCore import Qt, QRect, QRectF, QPoint, QTimer, Signal, QObject
 from PySide6.QtGui import (
     QGuiApplication,
     QImage,
-    QIntValidator,
     QPainter,
     QPainterPath,
     QColor,
@@ -87,10 +86,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QCompleter,
-    QFileDialog,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QPushButton,
     QScrollArea,
     QSizeGrip,
@@ -142,6 +139,11 @@ def _ensure_ocr_loaded() -> bool:
         # raises OSError (DLL load failed) here, which used to escape
         # _safe_scan() and leave the SCAN button disabled for good.
         _ocr_load_error = str(e)
+        if getattr(sys, "frozen", False) and isinstance(e, ImportError):
+            _ocr_load_error = (
+                f"{e} (the lite build leaves the OCR engine out — "
+                "use the full mobiOverlay.exe for contract scanning)"
+            )
         logger.warning("OCR dependencies not available: %s", e)
         return False
 
@@ -174,64 +176,13 @@ COMPLETED_LOG_FILENAME = "logistics_hub_completed.jsonl"
 # never rotated — it's the user's own record.
 DEBUG_LOG_MAX_BYTES = 5 * 1024 * 1024
 
-# Hauler Profile choices (added 2026-09-07) — fixed, small option sets
-# rather than free text, so grading (a later part of the same plan) has
-# a closed set of values to branch on instead of parsing arbitrary text.
-# Ship is the one free-text field (no reliable static ship-data source —
-# see docs/DECISIONS.md) and doubles as the key for the ship/location
-# compatibility feedback database.
-PROFILE_GOAL_CHOICES = ["Profit", "Reputation", "Keep Busy"]
-PROFILE_RISK_CHOICES = ["Safe systems only", "Moderate", "Will run risky routes for good pay"]
-PROFILE_TIME_CHOICES = ["Quick (<30 min)", "Medium", "Long session"]
-PROFILE_REGION_CHOICES = ["Current system only", "Willing to cross jump points"]
-
-# `_grade_contract()` returns a raw 0-100 score directly (shown as a
-# percentage) rather than a letter — per user direction, 2026-09-07: a
-# numeric scale reads more precisely than 5 coarse letter bands. Weights
-# below are a first-pass rubric, meant to be tuned against real usage the
-# same way this module's OCR/routing thresholds already were.
-#
-# A known-BAD ship/location match or a duplicate-freight overlap never
-# blocks ACCEPT (per user direction) but caps the score here regardless of
-# how good everything else scores — matches this module's existing
-# "never silently averaged away" pattern for the Freight Manifest warning.
-GRADE_CAP_ON_WARNING = 55
-# A stricter cap for cargo capacity overflow specifically — added
-# 2026-09-07 after a live test showed a contract that needed nearly 4x
-# the user's actual cargo capacity still scored a "B" (55), since grading
-# never checked capacity at all (a separate oversight — capacity checking
-# already existed on the card's own summary line, just never wired into
-# grading). Exceeding capacity is a harder constraint than a duplicate-
-# freight annoyance or an unconfirmed location: it's not just annoying or
-# unverified, it's physically impossible to complete as queued — so it
-# gets a lower ceiling than the other two warnings, not the same one.
-CAPACITY_OVERFLOW_CAP = 20
-# Real system names UEX marks as more dangerous to route through — used
-# only as a soft nudge against Risk Tolerance, not a hard rule (Star
-# Citizen's actual risk map shifts with game updates; this is deliberately
-# small and easy to extend, not treated as authoritative).
-RISKY_SYSTEMS = {"Pyro"}
-
-# Default aUEC/SCU thresholds for the reward-efficiency part of grading —
-# user-editable via the Hauler Profile's GRADING SCALE table
-# (`self.settings["grading_thresholds"]`), these are only the fallback
-# when nothing's been saved yet. First-pass guesses (500/200/80) were
-# checked 2026-09-07 against this project's own 10 real captured contract
-# fixtures and found to be miscalibrated low — every real contract in that
-# set scored "good" or better, real observed range was ~520-4,300 — but
-# rather than guess a second, equally unverified set of numbers, this is
-# now the user's own call to tune, not something hardcoded from research
-# that turned out unreliable.
-DEFAULT_GRADING_THRESHOLDS = {"great": 500, "good": 200, "ok": 80}
-
-# How long after ACCEPT to wait before rechecking Game.log and, if it's
-# still unmatched, showing the blinking in-game-accept reminder — added
-# 2026-09-08. A placeholder guess, same spirit as gamelog_verify's window
-# constant: expected to need tuning against real
-# `nearest_haul_event_gap_seconds` data once more sessions run, hence a
-# plain user-editable field (Hauler Profile popup) rather than something
-# baked in harder. 0 disables the reminder entirely.
-DEFAULT_ACCEPT_REMINDER_SECONDS = 30
+# Contract grading (score, Freight Manifest, ship/location compatibility key)
+# lives in grading.py; its tunables are re-bound here for the Hauler Profile UI.
+grading = _load_sibling("mobioverlay_logistics_hub_grading", "grading.py")
+GRADE_CAP_ON_WARNING = grading.GRADE_CAP_ON_WARNING
+CAPACITY_OVERFLOW_CAP = grading.CAPACITY_OVERFLOW_CAP
+RISKY_SYSTEMS = grading.RISKY_SYSTEMS
+DEFAULT_GRADING_THRESHOLDS = grading.DEFAULT_GRADING_THRESHOLDS
 
 # Restricts what EasyOCR can output to characters that can actually appear
 # in a contract panel — letters, digits, and every punctuation mark
@@ -252,19 +203,15 @@ DEFAULT_ACCEPT_REMINDER_SECONDS = 30
 # backwards compatibility with any code that references it directly.
 OCR_ALLOWLIST = ocr_module.OCR_ALLOWLIST
 
-# Real UEX distance (LocationService.distance(), see host/locations.py) is
-# the primary travel cost between two resolved locations now — genuine
-# point-to-point/orbit-to-orbit numbers, not a guess. These are only the
-# *fallback* tiers for when a real distance can't be determined (missing
-# orbit/system data, or the UEX distance endpoints themselves failed) —
-# scaled to roughly the same numeric range real distances live in (tens to
-# low hundreds, per live UEX data) so a fallback-tier edge doesn't look
-# artificially cheap next to a real-distance edge in the same route.
-COST_SAME_TERMINAL = 0
-COST_SAME_BODY = 5        # same planet/moon/space station/city/outpost
-COST_SAME_SYSTEM = 50
-COST_DIFFERENT_SYSTEM = 200
-COST_UNRESOLVED = 3       # at least one side has no API match — text-heuristic territory
+# Route ordering (greedy + 2-opt + Or-opt over real UEX distances) lives in
+# routing.py, loaded by file path like the siblings above; the fallback-cost
+# tiers are re-bound here for the debug-log code that reports edge sources.
+routing = _load_sibling("mobioverlay_logistics_hub_routing", "routing.py")
+COST_SAME_TERMINAL = routing.COST_SAME_TERMINAL
+COST_SAME_BODY = routing.COST_SAME_BODY
+COST_SAME_SYSTEM = routing.COST_SAME_SYSTEM
+COST_DIFFERENT_SYSTEM = routing.COST_DIFFERENT_SYSTEM
+COST_UNRESOLVED = routing.COST_UNRESOLVED
 
 
 def _virtual_desktop_rect() -> QRect | None:
@@ -285,1164 +232,44 @@ def _order_ocr_boxes(results: list, image_width: int) -> list[str]:
     return ocr_module.order_ocr_boxes(results, image_width)
 
 
-_PICKUP_COMMODITY_RE = re.compile(r"\bcollect\s+(.+?)\s+from\s+(.+)", re.I)
-# Captures the SCU quantity too (group 1) — unlike the "Collect X from Y"
-# pickup line, which never states its own quantity, each "Deliver N/TOTAL
-# SCU of X to Y" line always does, and it's *this specific delivery's*
-# amount (group 3 is the destination it belongs to).
-_DROPOFF_COMMODITY_RE = re.compile(r"\bdeliver\s+(?:\d+/)?(\d+)\s*scu\s+of\s+(.+?)\s+to\s+(.+)", re.I)
+# Pure contract-text parsing lives in parsing.py (same file-path import
+# mechanism as above); the names are re-bound here so existing references
+# (and tests/test_logistics_hub_parsing.py) keep working unchanged.
+parsing = _load_sibling("mobioverlay_logistics_hub_parsing", "parsing.py")
+_PICKUP_COMMODITY_RE = parsing._PICKUP_COMMODITY_RE
+_DROPOFF_COMMODITY_RE = parsing._DROPOFF_COMMODITY_RE
+_find_delivery_match = parsing._find_delivery_match
+_complete_commodity_name = parsing._complete_commodity_name
+_commodity_quantities = parsing._commodity_quantities
+_extract_commodities = parsing._extract_commodities
+_CARGO_UNKNOWN = parsing._CARGO_UNKNOWN
+_cargo_label = parsing._cargo_label
+_entry_scu = parsing._entry_scu
+_all_commodity_names = parsing._all_commodity_names
+_extract_reward = parsing._extract_reward
+_total_reward = parsing._total_reward
+_PHRASE_STOPWORDS = parsing._PHRASE_STOPWORDS
+_DROPOFF_SECTION_RE = parsing._DROPOFF_SECTION_RE
+_PICKUP_SECTION_RE = parsing._PICKUP_SECTION_RE
+_PICKUP_HINT_RE = parsing._PICKUP_HINT_RE
+_DROPOFF_HINT_RE = parsing._DROPOFF_HINT_RE
+_candidate_phrases = parsing._candidate_phrases
+
+
+# Popup widgets live in popups.py. Names are re-bound here for the card code
+# below (and for the choice lists the Hauler Profile table shares).
+popups = _load_sibling("mobioverlay_logistics_hub_popups", "popups.py")
+_ReminderBanner = popups._ReminderBanner
+_RegionSelector = popups._RegionSelector
+_ReviewPopup = popups._ReviewPopup
+_HaulerProfilePopup = popups._HaulerProfilePopup
+PROFILE_GOAL_CHOICES = popups.PROFILE_GOAL_CHOICES
+PROFILE_RISK_CHOICES = popups.PROFILE_RISK_CHOICES
+PROFILE_TIME_CHOICES = popups.PROFILE_TIME_CHOICES
+PROFILE_REGION_CHOICES = popups.PROFILE_REGION_CHOICES
+DEFAULT_ACCEPT_REMINDER_SECONDS = popups.DEFAULT_ACCEPT_REMINDER_SECONDS
 
 
-def _find_delivery_match(lines: list[str], start: int, pattern: "re.Pattern", max_join: int = 2):
-    """Search `pattern` starting at `lines[start]`, progressively folding in
-    following lines when it doesn't match yet. A "Collect X from Y" or
-    "Deliver N SCU of X to Y" line can be split by OCR's two-column
-    reordering well before the destination even starts — confirmed real:
-    "Deliver 0/5 SCU of Pressurized" / "to Ambitious Dream" / "Station..."
-    are three separate lines, so a same-line-only search misses the whole
-    delivery, not just its tail. Returns `(match, end_index)`, where
-    `end_index` is the last line folded into the text the match came from
-    (so a caller widening its own search further, e.g. for a still-
-    truncated destination name, knows where to resume); `None` if nothing
-    matched within `max_join` extra lines."""
-    text = lines[start]
-    end = start
-    for _ in range(max_join + 1):
-        m = pattern.search(text)
-        if m:
-            return m, end
-        end += 1
-        if end >= len(lines):
-            return None
-        text = f"{text} {lines[end]}"
-    return None
-
-
-def _complete_commodity_name(commodity: str, known_names: dict[str, str]) -> str:
-    """OCR can split a delivery line badly enough that the commodity's own
-    second word lands nowhere a nearby-line join can reach at all —
-    confirmed real: "...of Pressurized" / "to Ambitious Dream" /
-    "Station..." left the word "Ice" orphaned several lines away entirely,
-    scrambled in with unrelated trailing footer/button text. Rather than
-    chase an orphaned word with no reliable anchor, complete a truncated
-    match against a fuller name of the *same* commodity already confirmed
-    elsewhere in this same contract via a normal, complete, single-line
-    match (`known_names`, from `_all_commodity_names`) — the same
-    commodity is virtually always spelled out intact on at least one of
-    its other pickup/drop-off lines. Only fires when the truncated text
-    isn't already a recognized complete name and is a whole-word prefix of
-    *exactly one* longer known name; any other outcome (already complete,
-    no match, more than one candidate) leaves the text alone rather than
-    guessing."""
-    key = commodity.lower()
-    if key in known_names:
-        return commodity
-    candidates = [
-        original for lower, original in known_names.items()
-        if lower.startswith(key + " ")
-    ]
-    return candidates[0] if len(candidates) == 1 else commodity
-
-
-def _commodity_quantities(raw_text: str) -> dict[str, str]:
-    """Map each commodity name to its TOTAL SCU across every "Deliver
-    N/TOTAL SCU of X to..." line mentioning it — summed, not just the last
-    one seen. A single pickup can feed more than one drop-off of the same
-    commodity (confirmed real: one contract collecting Titanium once, then
-    delivering 52 SCU of it to one station and 50 SCU to another — the
-    pickup needs the combined 102, not whichever delivery line happened to
-    be read last). Used only for the pickup side's total; each drop-off
-    gets its own exact per-line quantity directly instead (see
-    `_extract_commodities` below), so this summing never leaks into a
-    drop-off showing the wrong (combined) amount for its own delivery."""
-    lines = raw_text.splitlines()
-    known_names = _all_commodity_names(raw_text)
-    totals: dict[str, int] = {}
-    i = 0
-    while i < len(lines):
-        result = _find_delivery_match(lines, i, _DROPOFF_COMMODITY_RE)
-        if result is None:
-            i += 1
-            continue
-        m, end = result
-        commodity = re.sub(r"[.:_,;]+$", "", m.group(2)).strip()
-        commodity = _complete_commodity_name(commodity, known_names)
-        key = commodity.lower()
-        if key:
-            totals[key] = totals.get(key, 0) + int(m.group(1))
-        i = end + 1
-    return {k: str(v) for k, v in totals.items()}
-
-
-def _extract_commodities(
-    raw_text: str, location_raw: str, role: str, qty_by_commodity: dict[str, str] | None = None
-) -> list[tuple[str, str | None]]:
-    """What cargo is actually changing hands at one pickup/drop-off — the
-    thing the module never surfaced at all before, even though every real
-    contract line spells it out ("Collect Silicon from...", "Deliver...of
-    Waste to..."). A location only needs to appear *somewhere* on the
-    commodity-mention line or the one right after it (OCR line-wraps the
-    location name past the line break more often than not) for it to
-    count — doesn't need to be the exact candidate string that resolved it
-    (OCR errors and station codes mean the two rarely match exactly), just
-    a substring match after stripping non-alphanumerics from both sides.
-
-    A single location can have more than one commodity moving through it
-    (contract 3: Long Forest Station -> Waste on one scan, Scrap on a
-    different mission built around the same pickup) — collect every
-    distinct match rather than stopping at the first, so the picked-up/
-    delivered items shown for a stop are never silently incomplete.
-    """
-    loc_key = re.sub(r"[^a-z0-9]", "", location_raw.lower())
-    if not loc_key:
-        return []
-    is_pickup = role == "pickup"
-    pattern = _PICKUP_COMMODITY_RE if is_pickup else _DROPOFF_COMMODITY_RE
-    # Group layout differs: the pickup line never states its own quantity
-    # (commodity, destination); the drop-off line always does (quantity,
-    # commodity, destination) — see `_DROPOFF_COMMODITY_RE`.
-    commodity_group, dest_group = (1, 2) if is_pickup else (2, 3)
-    qty_by_commodity = qty_by_commodity or {}
-    known_names = _all_commodity_names(raw_text)
-
-    lines = raw_text.splitlines()
-    found: list[tuple[str, str | None]] = []
-    seen: set[str] = set()
-    i = 0
-    while i < len(lines):
-        result = _find_delivery_match(lines, i, pattern)
-        if result is None:
-            i += 1
-            continue
-        m, end = result
-        i = end + 1
-        # The location name after "from"/"to" often continues past even
-        # whatever line(s) `_find_delivery_match` already folded in — OCR
-        # line-wrap splits "MIC-LI Shallow Frontier" from "Station:" — so a
-        # match on the destination's tail alone can be truncated right
-        # before the part that would actually confirm it's this location.
-        # Widen the search window by one more line so a truncated tail
-        # doesn't silently drop the commodity — but only trust a match that
-        # actually straddles the boundary (some of it already in this
-        # line's own destination text). Confirmed real: "Deliver 0/13 SCU
-        # of Corundum to Everus Harbor above" is immediately followed, by
-        # pure two-column OCR interleaving, by an unrelated "Freight
-        # elevator at Port Tressler..." listing line — accepting a loc_key
-        # match found *anywhere* in the widened text let Port Tressler's
-        # own extraction pass steal this Everus-Harbor-bound delivery
-        # (wrong destination entirely, not just an imprecise one), which
-        # also blocked the real, correct Port Tressler delivery line later
-        # in the contract via the dedup-by-commodity-name check below.
-        base = re.sub(r"[^a-z0-9]", "", m.group(dest_group).lower())
-        if loc_key in base:
-            loc_part = base
-        elif end + 1 < len(lines):
-            next_line = lines[end + 1]
-            widened = re.sub(r"[^a-z0-9]", "", (m.group(dest_group) + " " + next_line).lower())
-            idx = widened.find(loc_key)
-            straddles = idx != -1 and idx < len(base)
-            # A single-word city candidate (see _candidate_phrases's "in "
-            # pass) is, by construction, never going to straddle this
-            # boundary — a destination phrased "Teasa Spaceport" / "in
-            # Lorville:" always puts the *entire* city name on the next
-            # line, none of it on this one. That's a direct grammatical
-            # continuation of the same destination ("X in CITY"), not a
-            # coincidentally-adjacent unrelated mention (the Port Tressler
-            # case above is a different *terminal's* own freight-elevator
-            # listing, never introduced by "in "). Confirmed real: a live
-            # scan's "Deliver...to Teasa Spaceport" / "in Lorville:" lost
-            # its commodity entirely for the Lorville stop without this —
-            # the straddle check can structurally never pass for this
-            # pattern, not just miss it occasionally.
-            next_in_match = re.match(r"\s*in\s+([A-Za-z']+)", next_line, re.I)
-            is_in_continuation = (
-                next_in_match is not None
-                and re.sub(r"[^a-z0-9]", "", next_in_match.group(1).lower()) == loc_key
-            )
-            loc_part = widened if (straddles or is_in_continuation) else base
-        else:
-            loc_part = base
-        if loc_key not in loc_part:
-            continue
-        commodity = re.sub(r"[.:_,;]+$", "", m.group(commodity_group)).strip()
-        commodity = _complete_commodity_name(commodity, known_names)
-        key = commodity.lower()
-        if commodity and key not in seen:
-            seen.add(key)
-            # Pickup: the contract-wide total across every drop-off of this
-            # commodity (`qty_by_commodity`, summed in `_commodity_quantities`).
-            # Drop-off: this specific delivery's own amount, straight from
-            # this line's own match — never the pickup's combined total.
-            qty = qty_by_commodity.get(key) if is_pickup else m.group(1)
-            found.append((commodity, qty))
-    return found
-
-
-# A pickup/dropoff always has *some* cargo in a real contract — a blank
-# commodity field is never a genuine "nothing to carry" result, only a
-# parsing gap (e.g. OCR splits a location name across lines with unrelated
-# text interleaved in between, wider than `_extract_commodities` can
-# safely bridge without risking cross-attaching the wrong location's
-# cargo — see docs/DECISIONS.md, 2026-09-04). Silently showing nothing
-# looked like the module had simply confirmed there was no cargo, when
-# it actually just couldn't find it — say so explicitly instead, in
-# every place a commodity list gets displayed or exported.
-_CARGO_UNKNOWN = "cargo unknown — check raw OCR text"
-
-
-def _cargo_label(commodities: list | None) -> str:
-    """Render one entry's commodity list, with SCU quantity when known
-    ("13 SCU Agricultural Supplies") — bare name only when it isn't (older
-    saved contracts persisted before quantity tracking was added carry
-    plain strings instead of (name, qty) pairs, so both are accepted)."""
-    if not commodities:
-        return _CARGO_UNKNOWN
-    parts = []
-    for c in commodities:
-        if isinstance(c, (list, tuple)):
-            name, qty = c
-        else:
-            name, qty = c, None
-        parts.append(f"{qty} SCU {name}" if qty else name)
-    return "/".join(parts)
-
-
-def _entry_scu(entry: dict) -> int:
-    """Total SCU across one pickup/dropoff entry's commodities — same
-    tolerance for missing/non-numeric quantities as `_cargo_label` above
-    (older saved contracts, or a "cargo unknown" entry with no commodities
-    at all), so a stop with unknown cargo just contributes 0 rather than
-    raising. Used by the card's peak-cargo-capacity summary."""
-    total = 0
-    for c in entry.get("commodities") or []:
-        qty = c[1] if isinstance(c, (list, tuple)) and len(c) > 1 else None
-        if qty and str(qty).isdigit():
-            total += int(qty)
-    return total
-
-
-def _all_commodity_names(raw_text: str) -> dict[str, str]:
-    """Every commodity name mentioned anywhere in the text, keyed by its
-    normalized (lowercase) form and mapped to the original-cased spelling
-    it was first seen with. Two uses: (1) keep the "always have a fallback
-    stop" logic in `_build_contract` from grabbing a commodity name and
-    displaying it as if it were an unresolved location — confirmed real:
-    when a contract's real drop-off text never matches anything ("NB Int.
-    Spaceport" — an abbreviation with no real substring relationship to
-    the actual place, "New Babbage" — see docs/DECISIONS.md), the fallback
-    used to pick the nearest leftover dropoff-hinted candidate with no
-    regard for whether it was actually a place; that leftover was "Ship
-    Ammunition", the commodity being delivered, not a location at all.
-    (2) the reference vocabulary `_complete_commodity_name` completes a
-    truncated name against — see that function for why. Deliberately
-    single-line matching only, never `_find_delivery_match`'s multi-line
-    join: a name gathered here needs to already be trustworthy/complete on
-    its own, since it's what a truncated mention elsewhere gets completed
-    against — folding in a *different* truncated mention here could
-    complete one fragment against another instead of a real full name.
-    """
-    names: dict[str, str] = {}
-    # Commodity is group 1 for the pickup line, group 2 for the drop-off
-    # line (group 1 there is the SCU quantity) — see `_DROPOFF_COMMODITY_RE`.
-    for pattern, commodity_group in ((_PICKUP_COMMODITY_RE, 1), (_DROPOFF_COMMODITY_RE, 2)):
-        for line in raw_text.splitlines():
-            m = pattern.search(line)
-            if m:
-                commodity = re.sub(r"[.:_,;]+$", "", m.group(commodity_group)).strip()
-                key = commodity.lower()
-                if key and key not in names:
-                    names[key] = commodity
-    return names
-
-
-def _extract_reward(raw_text: str) -> str | None:
-    # aUEC amounts are comma-grouped ("50,250") — that's a much more
-    # reliable signal than the word "reward" itself, since OCR frequently
-    # mangles the reward icon glyph next to it into stray characters
-    # ("4 50,250" for what's actually "▲ 50,250" in-game). OCR occasionally
-    # misreads the comma as a period ("63.250" instead of "63,250") —
-    # confirmed real, so accept either as the thousands separator.
-    m = re.search(r"(\d{1,3}(?:[,.]\d{3})+)", raw_text)
-    return m.group(1).replace(".", ",") if m else None
-
-
-def _total_reward(contracts: list[dict]) -> int:
-    """Sum of every contract's reward (already a comma-grouped string from
-    `_extract_reward` — "87,250"), for the card's at-a-glance summary.
-    Contracts with no parsed reward simply contribute 0."""
-    total = 0
-    for c in contracts:
-        reward = c.get("reward")
-        if reward:
-            digits = reward.replace(",", "")
-            if digits.isdigit():
-                total += int(digits)
-    return total
-
-
-# Real contract panels are full of chrome/flavor text around the actual
-# pickup/drop-off names ("Contract Deadline", "PRIMARY OBJECTIVES", the
-# contractor's own name, UI buttons like "ABANDON"/"SHARE"/"TRACK"). None
-# of that will ever match a real UEX terminal, so it's harmless noise once
-# every candidate gets checked against the API — but filtering the most
-# common chrome up front keeps the candidate list (and any manual review
-# of "(unresolved)" entries) shorter and easier to read.
-_PHRASE_STOPWORDS = {
-    "reward", "contract deadline", "contracted by", "details",
-    "primary objectives", "drop off locations", "abandon", "share",
-    "track", "any order", "lagrange point", "rookie", "small haul",
-    "collect stims", "freight elevator",
-    # Bare section headers ("PICK UP" / "DROP OFF" with no "LOCATIONS"
-    # suffix — see the section regexes below) matched the general
-    # capitalized-phrase pattern and got treated as location text in their
-    # own right. Confirmed real and bad: "DROP OFF" normalizes to
-    # "dropoff", which contains Port Olisar's 2-letter nickname "PO" as a
-    # substring, so it silently "resolved" to a real but completely
-    # unrelated place. Excluding them here is a second, independent guard
-    # alongside the section regexes actually consuming these lines.
-    "pick up", "drop off",
-    # "Covalex Shipping" — the mission-giver company's own name, mentioned
-    # in every Covalex contract's flavor text ("Covalex Shipping is a
-    # limited liability corporation...") — substring-matches a real UEX
-    # location literally named "Covalex Orison", producing a phantom
-    # dropoff with no real cargo data ("cargo unknown") and, worse,
-    # blocking Game.log verification's commodity/tonnage correction from
-    # ever attaching (it can't match a dropoff name Game.log never
-    # mentions). Confirmed real and repeated across two separate sessions'
-    # debug logs (2026-09-07 and 2026-09-08) — see docs/DECISIONS.md.
-    # "Covalex Shippina" is the same real phrase via a common OCR
-    # letter-substitution typo; excluded alongside it pre-emptively even
-    # though it's only ever been observed failing to match harmlessly so
-    # far, since it's the identical underlying noise source.
-    "covalex shipping", "covalex shippina",
-}
-
-
-# Matches a *standalone* section header line — "PICK UP", "DROP OFF",
-# "PICK UP LOCATIONS", "DROP OFF LOCATIONS (ANY ORDER)" — anchored to the
-# whole line (plus optional trailing "(...)"/punctuation) so it can't
-# accidentally fire on an unrelated sentence that merely contains the
-# words "pick up"/"drop off" somewhere in the middle (e.g. "Doesn't matter
-# what order you drop them off:" must NOT trigger section mode).
-_DROPOFF_SECTION_RE = re.compile(r"^\s*drop.?off(\s+locations)?\s*(\(.*\))?\s*:?\s*$", re.I)
-_PICKUP_SECTION_RE = re.compile(r"^\s*pick.?up(\s+locations)?\s*(\(.*\))?\s*:?\s*$", re.I)
-_PICKUP_HINT_RE = re.compile(r"\bcollect\b|\bpick(?:ed|ing)?\s*up\b", re.I)
-_DROPOFF_HINT_RE = re.compile(r"\bdeliver(?:ed)?\b.*\bto\b", re.I)
-
-
-def _candidate_phrases(raw_text: str) -> list[tuple[str, str, int]]:
-    """Extract plausible location-name phrases (2-4 capitalized words) from
-    every line of the OCR text, tagged with a role hint ("pickup",
-    "dropoff", or "neutral") based on nearby keywords / whether the line
-    falls under a "DROP OFF LOCATIONS" or "PICK UP LOCATIONS" section
-    header (real contracts use either, one pickup with several drop-offs
-    or one drop-off with several pickups). Deduped, in first-seen order
-    (first hint wins on a repeat).
-
-    Deliberately over-generates candidates — a contract panel mentions its
-    real pickup/drop-off names multiple times across different sentences,
-    often with an OCR error in any single mention, so casting wide and
-    letting `_resolve_location` filter against real UEX data is far more
-    robust than trying to regex-parse the narrative structure exactly
-    right. The hint only decides *role* (pickup vs. drop-off) once a
-    candidate is already confirmed real by the API — it never invents a
-    location that isn't a genuine phrase match.
-    """
-    # Hint sources aren't equally trustworthy — a keyword on the phrase's
-    # *own* line is direct evidence; one inherited via backward lookback is
-    # a proximity guess that can attach to the wrong nearby phrase (see
-    # below); a section header is weaker still. Track a priority alongside
-    # each candidate's hint so a *later*, more-trustworthy mention can
-    # still override an *earlier*, less-trustworthy one for the same
-    # phrase — plain "was it neutral before" wasn't enough. Confirmed real:
-    # a run-on sentence ("A freight elevator at Long Forest Station ... has
-    # cargo delivered to Endless Odyssey Station...") put "Long Forest
-    # Station" on a line with no keyword of its own; lookback found the
-    # *preceding* "Deliver...to Endless Odyssey" line and wrongly hinted it
-    # "dropoff" — then the correct later "Collect Silicon from ...Long
-    # Forest Station" mention (a real own-line pickup keyword) couldn't
-    # override it because the existing hint wasn't "neutral" anymore.
-    HINT_PRIORITY = {"neutral": 0, "section": 1, "lookback": 2, "own_line": 3}
-    # (phrase, hint, priority) — the priority travels all the way out to
-    # `_build_contract`'s own resolved-terminal merge now too, not just the
-    # text-keyed merge here, since the same override bug can recur at that
-    # later stage: two *differently-worded* candidates ("Shallow Frontier
-    # Station" from one line, "Shallow Frontier" from another) can each
-    # resolve to the *same real terminal* while carrying different hints —
-    # confirmed real, a lookback-mishinted "dropoff" mention blocked a
-    # later, correct, higher-priority "pickup" mention of the same place
-    # because they never shared a dedup key here at all.
-    candidates: list[tuple[str, str, int]] = []
-    seen: dict[str, int] = {}  # normalized phrase -> index in candidates
-    section_hint = None  # None, "pickup", or "dropoff" — set by a section header
-
-    raw_lines = raw_text.splitlines()
-
-    # First pass: a per-line keyword hint from "Collect X from Y" / "Deliver
-    # X to Y" alone (no section fallback yet) — used below to look
-    # *backward* a couple of lines when a location's own line has no
-    # keyword. Real panels split "Collect Processed Food" and its location
-    # ("HDMS-Ryder.") across 2-3 lines when OCR reads a two-column layout
-    # in the wrong order, interleaving unrelated flavor-text sentences in
-    # between; a same-line-only check missed every one of those.
-    KEYWORD_LOOKBACK = 2
-    keyword_hints: list[str | None] = []
-    for line in raw_lines:
-        if _PICKUP_HINT_RE.search(line):
-            keyword_hints.append("pickup")
-        elif _DROPOFF_HINT_RE.search(line):
-            keyword_hints.append("dropoff")
-        else:
-            keyword_hints.append(None)
-
-    for line_idx, line in enumerate(raw_lines):
-        if _DROPOFF_SECTION_RE.search(line):
-            section_hint = "dropoff"
-            continue
-        if _PICKUP_SECTION_RE.search(line):
-            section_hint = "pickup"
-            continue
-
-        if keyword_hints[line_idx] is not None:
-            hint = keyword_hints[line_idx]
-            hint_source = "own_line"
-        else:
-            # No keyword on this exact line. A line under an active DROP
-            # OFF/PICK UP LOCATIONS section that looks like a real location
-            # row is claimed by that section *before* falling back to
-            # backward lookback — the section header is explicit, on-screen
-            # structure ("Freight elevator at X at Y's L# Lagrange point"
-            # always contains "at"; trailing signature/footer text like the
-            # contractor name, "Jr. Logistics Coordinator", the company
-            # name, or ABANDON/SHARE/TRACK never does, so "at" is a safe
-            # qualifier), while lookback is only a proximity guess.
-            # Confirmed real: two-column OCR reordering can land an
-            # unrelated pickup-keyword line (flavor text for a *different*
-            # item) directly before a real drop-off row printed under an
-            # active DROP OFF LOCATIONS header — lookback then claimed that
-            # row as a pickup instead of trusting the section it was
-            # actually under (see DECISIONS.md). Lookback only runs when
-            # no section is active, or the line doesn't look like a
-            # section row (e.g. narrative sentences with no header at all).
-            hint = None
-            if section_hint is not None and re.search(r"\bat\b", line, re.I):
-                hint = section_hint
-                hint_source = "section"
-            else:
-                for back in range(1, KEYWORD_LOOKBACK + 1):
-                    idx = line_idx - back
-                    if idx < 0:
-                        break
-                    if keyword_hints[idx] is not None:
-                        hint = keyword_hints[idx]
-                        hint_source = "lookback"
-                        break
-                if hint is None:
-                    hint = "neutral"
-                    hint_source = "neutral"
-        priority = HINT_PRIORITY[hint_source]
-
-        def add_candidate(phrase: str, phrase_hint: str, phrase_priority: int) -> None:
-            key = phrase.lower()
-            if key in _PHRASE_STOPWORDS or len(phrase) < 5:
-                return
-            if key in seen:
-                idx = seen[key]
-                # A higher-priority hint (see HINT_PRIORITY above) always
-                # wins for the same phrase, regardless of which mention
-                # came first in the text.
-                if phrase_priority > candidates[idx][2]:
-                    candidates[idx] = (candidates[idx][0], phrase_hint, phrase_priority)
-                return
-            seen[key] = len(candidates)
-            candidates.append((phrase, phrase_hint, phrase_priority))
-
-        for m in re.finditer(
-            r"[A-Z][a-zA-Z']+(?:\s+[A-Z][a-zA-Z']+){1,3}(?:\s+(?=\S*\d)[A-Za-z0-9-]+)?", line
-        ):
-            words = m.group(0).split()
-            phrase = " ".join(words)
-            add_candidate(phrase, hint, priority)
-            # Real UEX names for near-identical sibling locations often
-            # differ only by a trailing number ("ArcCorp Mining Area 045"
-            # vs "...061") — the word-only pattern above can't capture a
-            # digit at all, so a real, present disambiguating suffix was
-            # being silently dropped even when OCR read it perfectly
-            # clean on the same line. The optional trailing group above
-            # picks it up when present (requires at least one digit in
-            # that trailing token, so it doesn't also start swallowing
-            # unrelated words like "at"/"above" that follow a real name).
-            # A leading word that's very short (≤3 chars — "Lz", "Ll", "LI",
-            # "L2"...) is almost always a station-code fragment the capital-
-            # word regex swept up because a hyphen ("MIC-L1") broke it away
-            # from its own "MIC" prefix, not part of the real place name.
-            # OCR also frequently mis-reads the digit in these codes as a
-            # letter (L1 -> "Ll"/"LI"/"Lz"), which breaks exact/substring
-            # matching against the real UEX name — so also offer the phrase
-            # with that leading fragment stripped; if it's wrong, resolution
-            # just returns None and it's discarded, no harm done.
-            if len(words) >= 3 and len(words[0]) <= 3:
-                add_candidate(" ".join(words[1:]), hint, priority)
-
-        # Many real UEX outposts/terminals are named as a single hyphenated
-        # token — "HDMS-Edmond", "HDMS-Thedus" — with no second
-        # space-separated word at all. The multi-word regex above requires
-        # 2+ words, so these were completely invisible to it; a contract
-        # naming several such outposts lost every one of them. Catch them
-        # separately: 2+ leading capitals, then one or more "-word" segments.
-        # A trailing OCR artifact right after the real name — an errant
-        # underscore standing in for a period, e.g. "HDMS-Edmond_" — was
-        # silently blocking \b, since \b treats "_" as a word character
-        # with no boundary against a letter. Use an explicit non-alnum (or
-        # end-of-string) lookahead/lookbehind instead so stray punctuation
-        # like that can't swallow an otherwise-clean match.
-        for m in re.finditer(
-            r"(?<![A-Za-z0-9])[A-Z]{2,}(?:-[A-Za-z0-9]+)+(?=[^A-Za-z0-9]|$)", line
-        ):
-            # If a capitalized word immediately follows ("MIC-L1 Shallow
-            # Frontier Station"), the multi-word regex above already
-            # captured the fuller, more specific phrase — and separately
-            # offers a code-stripped variant of it too. Adding the bare
-            # code as *another* independent candidate here doesn't help in
-            # that case and can actively hurt: some real UEX shops are
-            # nicknamed with the exact same bare station code as the
-            # station itself ("Landing Services - MIC-L1" vs. the actual
-            # "MIC-L1 Shallow Frontier Station"), so resolving the bare
-            # code alone can land on the wrong one of the two and show up
-            # as a spurious duplicate stop. Only offer it standalone when
-            # nothing more descriptive follows on the line.
-            if re.match(r"\s+[A-Z]", line[m.end():]):
-                continue
-            add_candidate(m.group(0), hint, priority)
-
-        # A location named with a single capitalized word (real cities can
-        # be — "Lorville") never becomes a candidate at all above, since
-        # that regex requires 2+ words in a row. Confirmed real: "...Teasa
-        # Spaceport in Lorville." never offered "Lorville" itself as a
-        # candidate — only the genuinely ambiguous 2-word "Teasa Spaceport"
-        # (which resolves to two different real shops there) was tried, so
-        # the city was never even considered. Deliberately narrow: only
-        # after "in " specifically, never "at "/"above " — every real
-        # contract template seen introduces a *planet* via "above PLANET"
-        # ("above Hurston:", "above Crusader."), and planets aren't part of
-        # LocationService's indexed endpoints at all, so nothing already
-        # filters them out; confirmed live that bare planet names collide
-        # with unrelated real shops via substring match ("Hurston" ->
-        # "Hurston Dynamics Showcase - Lorville", "Crusader" ambiguous
-        # across 3 unrelated shops). "in " never precedes a planet/system
-        # name in any template seen, so this scoping targets the reported
-        # bug shape without reopening that risk. The negative lookahead
-        # skips a multi-word name's first word ("in New Deal Plaza") —
-        # the 2+-word regex above already captures that fuller phrase.
-        for m in re.finditer(r"\bin\s+([A-Z][a-zA-Z']{3,})(?!\s+[A-Z])", line):
-            add_candidate(m.group(1), hint, priority)
-
-        # A location name itself (not just the flavor text around it) can be
-        # split across a line wrap by the same two-column OCR reordering,
-        # e.g. "...SCU of Agricultural Supplies to Everus" / "Harbor above
-        # Hurston:" — the real name "Everus Harbor" never appears intact on
-        # either line, so the phrase regex above can't see it at all, and
-        # the location only resolves via a *different*, unrelated mention
-        # elsewhere that gets whatever hint lookback happens to guess.
-        # Confirmed real: this silently reversed pickup/dropoff for a
-        # contract whose "Deliver...to X" line wrapped, while the actual
-        # pickup keyword ("Collect...from Y") landed on an adjacent line by
-        # coincidence and lookback attached its hint to the wrapped dropoff
-        # name instead. Re-scan the current line joined with the next one,
-        # reusing the current line's own hint/priority — if the keyword and
-        # its object are on this line (own_line), the reassembled full name
-        # now gets that same trustworthy hint instead of an unrelated
-        # lookback guess. Purely additive: `add_candidate` only replaces an
-        # existing entry on a strictly higher priority, and a bogus joined
-        # phrase simply won't resolve against real UEX data later.
-        #
-        # Restricted to `own_line` on purpose — trying this for every line
-        # (including lookback/section/neutral lines) backfired in practice:
-        # joining a lookback-hinted line with its neighbor let the *same*
-        # contamination this is meant to fix reach one line further than
-        # before, wrongly dragging an unrelated, correctly-neutral phrase
-        # ("Seraphim Station", two lines after the real dropoff keyword)
-        # into that keyword's hint. Only a line whose keyword is directly
-        # on it is trustworthy enough to extend across the wrap.
-        #
-        # Also restricted to matches that actually straddle the line break
-        # (some of the match's characters on each side of the join) — a
-        # match sitting entirely inside the next line isn't a wrapped name
-        # at all, just an unrelated phrase that happens to follow this
-        # line, and inheriting this line's own_line hint/priority for it is
-        # its own, separately confirmed real bug: "Collect Processed Food
-        # from Seraphim Station." (own_line pickup) directly followed by
-        # the unrelated "Freight elevator at Ambitious Dream Station at
-        # Crusader's Ll" pulled "Ambitious Dream Station" — a real
-        # drop-off elsewhere in the same contract — in as a bogus pickup at
-        # the highest priority, permanently locking out its correct hint.
-        # A genuinely wrapped name (e.g. "...to Everus" / "Harbor above
-        # Hurston:") always has match characters on both sides of the
-        # join, so this restriction only removes the false case.
-        if hint_source == "own_line" and line_idx + 1 < len(raw_lines):
-            next_line = raw_lines[line_idx + 1]
-            joined = f"{line} {next_line}"
-            boundary = len(line)  # index of the inserted joining space
-            for m in re.finditer(
-                r"[A-Z][a-zA-Z']+(?:\s+[A-Z][a-zA-Z']+){1,3}(?:\s+(?=\S*\d)[A-Za-z0-9-]+)?",
-                joined,
-            ):
-                if not (m.start() < boundary and m.end() > boundary + 1):
-                    continue
-                phrase = " ".join(m.group(0).split())
-                add_candidate(phrase, hint, priority)
-
-    return candidates
-
-
-class _ReminderBanner(QLabel):
-    """A clickable, word-wrapping stand-in for the accept-reminder banner.
-
-    Was a QPushButton — Qt doesn't wrap QPushButton text regardless of
-    stylesheet, which clipped the message in the narrower Tracker popout
-    (see docs/PROGRESS.md, 2026-09-08 known issue). QLabel supports real
-    word-wrap; `mousePressEvent` below preserves the original "any click
-    anywhere on it dismisses" behavior a QPushButton gave for free.
-    """
-
-    def __init__(self, on_click):
-        super().__init__("")
-        self._on_click = on_click
-        self.setWordWrap(True)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setAlignment(Qt.AlignCenter)
-
-    def mousePressEvent(self, event):
-        self._on_click()
-        super().mousePressEvent(event)
-
-    def click(self):
-        """Programmatic dismiss, matching the QPushButton API this replaced."""
-        self._on_click()
-
-
-class _RegionSelector(QWidget):
-    """Full‑screen transparent widget used to drag‑draw a capture rectangle.
-
-    Only shows on the screen where the cursor is at the moment the user
-    clicks “SET SCAN AREA”.  Coordinates emitted in global desktop space.
-    """
-
-    selected = Signal(QRect)
-
-    def __init__(self, desktop_rect: QRect):
-        super().__init__()
-        self._desktop_rect = desktop_rect
-        self._start = None
-        self._end = None
-
-        self.setWindowFlags(
-            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
-        )
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setCursor(Qt.CrossCursor)
-        self.setFocusPolicy(Qt.StrongFocus)
-
-        self.setGeometry(desktop_rect)
-        self.show()
-        self.raise_()
-        self.setFocus(Qt.OtherFocusReason)
-
-    # ---- painting -----------------------------------------------------
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-
-        # Dim the whole screen slightly so the capture rectangle stands out.
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 70))
-
-        if self._start is not None and self._end is not None:
-            rect = QRect(self._start, self._end).normalized()
-
-            # translucent cyan fill behind the future capture boundaries
-            brush = QColor(theme.ACCENT_CYAN)
-            brush.setAlpha(70)
-            painter.fillRect(rect, brush)
-
-            pen = QPen(QColor(theme.ACCENT_CYAN), 1, Qt.DashLine)
-            painter.setPen(pen)
-            painter.drawRect(rect.adjusted(0, 0, -1, -1))
-
-    # ---- mouse/key handling -------------------------------------------
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self._start = event.position().toPoint()
-            self._end = None
-            self.update()
-
-    def mouseMoveEvent(self, event):
-        if self._start is not None:
-            self._end = event.position().toPoint()
-            self.update()
-
-    def mouseReleaseEvent(self, event):
-        if (
-            event.button() == Qt.LeftButton
-            and self._start is not None
-            and self._end is not None
-        ):
-            local_rect = QRect(self._start, self._end).normalized()
-            global_top_left = self.geometry().topLeft() + local_rect.topLeft()
-            self.selected.emit(QRect(global_top_left, local_rect.size()))
-        self._finish()
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Escape:
-            self._finish()
-        else:
-            super().keyPressEvent(event)
-
-    def _finish(self):
-        self._start = None
-        self._end = None
-        self.close()
-        self.deleteLater()
-
-
-class _ReviewPopup(QWidget):
-    """Shown after every scan (not just duplicates) — added 2026-09-07 per
-    user direction: SCAN CONTRACT used to add straight to the queue/route,
-    only pausing for a duplicate. Now every scan pauses here first. Same
-    themed `Qt.Popup` shell `_DuplicatePopup` used (closes on an outside
-    click, matches the rest of the app's HUD styling instead of a plain
-    QMessageBox) — generalized to show the contract summary and (later,
-    once the grading pass lands) a 0-100 score, not just a duplicate
-    warning. The duplicate warning line still appears here when relevant,
-    folded into this one popup instead of a separate flow."""
-
-    def __init__(
-        self, parent_widget, summary_text: str, duplicate_warning: str | None,
-        grade: int | None, grade_reason: str, grade_capped: bool,
-        unrated_terminals: list[tuple[str, dict]], on_rate, on_accept, on_reject,
-    ):
-        # A real top-level window, not Qt.Popup — added 2026-09-07 after a
-        # live test showed Qt.Popup auto-closes on any outside click or
-        # focus loss (e.g. tabbing away to check something), silently
-        # discarding an in-progress compatibility rating and forcing a
-        # rescan. This decision needs to survive that; only ACCEPT/REJECT
-        # should ever close it. Positioned manually below (popup.move()),
-        # same as before.
-        super().__init__(None, Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        border_color = theme.ACCENT_AMBER if duplicate_warning else theme.BORDER_FLAT
-        self.setStyleSheet(f"""
-            _ReviewPopup {{
-                background: {theme.BG_PANEL}; border: 1px solid {border_color};
-                border-radius: {theme.RADIUS}px;
-            }}
-        """)
-        self._on_rate = on_rate
-        self._on_accept = on_accept
-        self._on_reject = on_reject
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(8)
-        self.setMaximumWidth(420)
-
-        title = QLabel("Add this contract?")
-        title.setStyleSheet(
-            f"color: {theme.TEXT_PRIMARY}; font-family: {theme.FONT_DISPLAY}; "
-            f"font-weight: 700; font-size: {theme.fpx(11)}px;"
-        )
-        layout.addWidget(title)
-
-        summary = QLabel(summary_text)
-        summary.setWordWrap(True)
-        summary.setStyleSheet(
-            f"color: {theme.TEXT_PRIMARY}; font-family: {theme.FONT_MONO}; "
-            f"font-size: {theme.fpx(10)}px;"
-        )
-        layout.addWidget(summary)
-
-        if grade is not None:
-            # Amber whenever a hard warning capped the score, regardless of
-            # what the number still looks like — the cap can still land
-            # somewhere that looks decent (e.g. 55%), and that's exactly
-            # the "90% great, one hard no, hidden behind a decent-looking
-            # score" case this feature exists to prevent. Otherwise amber
-            # only for a low score on its own merits.
-            grade_color = theme.ACCENT_AMBER if (grade_capped or grade < 50) else theme.ACCENT_CYAN
-            grade_label = QLabel(f"GRADE: {grade}% — {grade_reason}")
-            grade_label.setWordWrap(True)
-            grade_label.setStyleSheet(
-                f"color: {grade_color}; font-family: {theme.FONT_DISPLAY}; "
-                f"font-weight: 800; font-size: {theme.fpx(11)}px;"
-            )
-            layout.addWidget(grade_label)
-        else:
-            hint = QLabel(grade_reason)  # "Set your PROFILE for a grade."
-            hint.setStyleSheet(
-                f"color: {theme.TEXT_DIM}; font-family: {theme.FONT_MONO}; "
-                f"font-size: {theme.fpx(9)}px;"
-            )
-            layout.addWidget(hint)
-
-        if duplicate_warning:
-            warn = QLabel(f"⚠ {duplicate_warning}")
-            warn.setWordWrap(True)
-            warn.setStyleSheet(
-                f"background: {theme.ACCENT_AMBER_DIM}; color: {theme.ACCENT_AMBER}; "
-                f"border: 1px solid {theme.ACCENT_AMBER}; border-radius: {theme.RADIUS}px; "
-                f"padding: 5px 8px; font-family: {theme.FONT_MONO}; "
-                f"font-size: {theme.fpx(9)}px;"
-            )
-            layout.addWidget(warn)
-
-        for label_text, terminal in unrated_terminals:
-            row = QHBoxLayout()
-            q = QLabel(f"Compatible with your ship at {label_text}?")
-            q.setWordWrap(True)
-            q.setStyleSheet(
-                f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
-                f"font-size: {theme.fpx(9)}px;"
-            )
-            row.addWidget(q, 1)
-            good_btn = QPushButton("✅")
-            bad_btn = QPushButton("❌")
-            small_btn_style = (
-                f"background: {theme.BG_VOID}; border: 1px solid {theme.BORDER_FLAT}; "
-                f"border-radius: {theme.RADIUS}px; padding: 2px 6px; font-size: {theme.fpx(10)}px;"
-            )
-            good_btn.setStyleSheet(small_btn_style)
-            bad_btn.setStyleSheet(small_btn_style)
-            good_btn.clicked.connect(
-                lambda _checked, t=terminal, lbl=label_text, g=good_btn, b=bad_btn: self._rate(t, True, lbl, g, b)
-            )
-            bad_btn.clicked.connect(
-                lambda _checked, t=terminal, lbl=label_text, g=good_btn, b=bad_btn: self._rate(t, False, lbl, g, b)
-            )
-            row.addWidget(good_btn)
-            row.addWidget(bad_btn)
-            layout.addLayout(row)
-
-        btn_row = QHBoxLayout()
-        accept_btn = QPushButton("ACCEPT")
-        reject_btn = QPushButton("REJECT")
-        btn_style = (
-            f"background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN}; "
-            f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
-            f"padding: 4px 10px; font-family: {theme.FONT_DISPLAY}; font-weight: 700; "
-            f"font-size: {theme.fpx(10)}px;"
-        )
-        accept_btn.setStyleSheet(btn_style)
-        reject_btn.setStyleSheet(btn_style)
-        accept_btn.clicked.connect(self._accept)
-        reject_btn.clicked.connect(self._reject)
-        btn_row.addWidget(accept_btn)
-        btn_row.addWidget(reject_btn)
-        layout.addLayout(btn_row)
-
-    def _rate(self, terminal: dict, good: bool, label: str, good_btn: QPushButton, bad_btn: QPushButton):
-        # Saves immediately, doesn't close the popup — you can rate several
-        # locations before deciding ACCEPT/REJECT. Doesn't affect *this*
-        # popup's already-shown grade (recomputing live isn't worth the
-        # complexity for a rating that mainly pays off on the *next* scan
-        # of the same location) — just disables the row so it's clear the
-        # answer was recorded.
-        self._on_rate(terminal, good, label)
-        good_btn.setEnabled(False)
-        bad_btn.setEnabled(False)
-        # 2026-09-07: both buttons used to just grey out identically on
-        # click, with no way to tell which one had actually registered
-        # (a live test confirmed the click did work, but looked like it
-        # hadn't). The chosen button now stays bright with a colored
-        # border; the other visibly dims further than Qt's default
-        # disabled look.
-        chosen, other = (good_btn, bad_btn) if good else (bad_btn, good_btn)
-        chosen_color = theme.ACCENT_CYAN if good else theme.ACCENT_AMBER
-        chosen.setStyleSheet(
-            f"background: {theme.BG_VOID}; border: 2px solid {chosen_color}; "
-            f"border-radius: {theme.RADIUS}px; padding: 2px 6px; font-size: {theme.fpx(10)}px;"
-        )
-        other.setStyleSheet(
-            f"background: {theme.BG_VOID}; border: 1px solid {theme.BORDER_FLAT}; "
-            f"border-radius: {theme.RADIUS}px; padding: 2px 6px; font-size: {theme.fpx(10)}px; "
-            f"color: {theme.TEXT_DIM};"
-        )
-
-    def _accept(self):
-        self._on_accept()
-        self.close()
-
-    def _reject(self):
-        self._on_reject()
-        self.close()
-
-
-class _HaulerProfilePopup(QWidget):
-    """Ship + hauling-preference profile, set once and edited whenever —
-    added 2026-09-07 (Part 2 of the confirm-gate/grading plan, see
-    docs/DECISIONS.md). Not re-asked per scan; a later grading pass reads
-    these five fields from `self.settings["hauler_profile"]` to score a
-    freshly-scanned contract. Real top-level window, not Qt.Popup — same
-    2026-09-07 fix as `_ReviewPopup` (Qt.Popup auto-closes on any outside
-    click/focus loss, which would silently discard an in-progress edit
-    here too); only SAVE closes it."""
-
-    def __init__(
-        self, parent_widget, profile: dict, capacity: int | None, thresholds: dict | None,
-        game_log_path: str | None, accept_reminder_seconds: int, on_save,
-    ):
-        super().__init__(None, Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet(f"""
-            _HaulerProfilePopup {{
-                background: {theme.BG_PANEL}; border: 1px solid {theme.BORDER_FLAT};
-                border-radius: {theme.RADIUS}px;
-            }}
-        """)
-        self._on_save = on_save
-        self.setMinimumWidth(320)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(8)
-
-        title = QLabel("HAULER PROFILE")
-        title.setStyleSheet(
-            f"color: {theme.ACCENT_CYAN}; font-family: {theme.FONT_DISPLAY}; "
-            f"font-weight: 800; font-size: {theme.fpx(11)}px; letter-spacing: 2px;"
-        )
-        layout.addWidget(title)
-
-        ship_row = QHBoxLayout()
-        ship_label = QLabel("SHIP")
-        ship_label.setStyleSheet(
-            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
-            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
-        )
-        ship_row.addWidget(ship_label)
-        self._ship_edit = QLineEdit(profile.get("ship", ""))
-        self._ship_edit.setPlaceholderText("Ship (e.g. Hull C)")
-        self._ship_edit.setStyleSheet(
-            f"""
-            QLineEdit {{
-                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
-                padding: 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
-                font-size: {theme.fpx(11)}px;
-            }}
-            """
-        )
-        ship_row.addWidget(self._ship_edit, 1)
-        layout.addLayout(ship_row)
-
-        # Moved here from the card face, 2026-09-07, per user request —
-        # sits with the ship it's actually describing (a hold size only
-        # means something in the context of a specific ship) rather than
-        # as an unrelated standalone field on the card. Manual entry, not
-        # a ship picker — the user's actual hold size depends on cargo-
-        # grid loadout, which UEX's static vehicle data can't reflect.
-        capacity_row = QHBoxLayout()
-        capacity_label = QLabel("CARGO CAPACITY")
-        capacity_label.setStyleSheet(
-            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
-            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
-        )
-        capacity_row.addWidget(capacity_label)
-        self._capacity_edit = QLineEdit(str(capacity) if capacity else "")
-        self._capacity_edit.setValidator(QIntValidator(0, 100000, self._capacity_edit))
-        self._capacity_edit.setPlaceholderText("SCU")
-        self._capacity_edit.setStyleSheet(
-            f"""
-            QLineEdit {{
-                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
-                padding: 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
-                font-size: {theme.fpx(11)}px;
-            }}
-            """
-        )
-        capacity_row.addWidget(self._capacity_edit, 1)
-        layout.addLayout(capacity_row)
-
-        self._goal_combo = self._add_row(layout, "GOAL", PROFILE_GOAL_CHOICES, profile.get("goal"))
-        self._risk_combo = self._add_row(layout, "RISK TOLERANCE", PROFILE_RISK_CHOICES, profile.get("risk"))
-        self._time_combo = self._add_row(layout, "SESSION TIME", PROFILE_TIME_CHOICES, profile.get("time_budget"))
-        self._region_combo = self._add_row(layout, "REGION", PROFILE_REGION_CHOICES, profile.get("region_pref"))
-
-        # GRADING SCALE — added 2026-09-07 per user direction, replacing
-        # hardcoded aUEC/SCU thresholds that turned out to be miscalibrated
-        # against this project's own real captured contracts (see
-        # docs/DECISIONS.md). User-tunable instead of guessed a second
-        # time. `_grade_contract()` reads `self.settings["grading_
-        # thresholds"]` fresh on every scan — saving here takes effect on
-        # the very next scan, no restart needed.
-        scale_title = QLabel("GRADING SCALE (aUEC/SCU)")
-        scale_title.setStyleSheet(
-            f"color: {theme.ACCENT_CYAN}; font-family: {theme.FONT_DISPLAY}; "
-            f"font-weight: 800; font-size: {theme.fpx(10)}px; letter-spacing: 1px;"
-        )
-        layout.addWidget(scale_title)
-        merged_thresholds = {**DEFAULT_GRADING_THRESHOLDS, **(thresholds or {})}
-        self._great_edit = self._add_number_row(layout, "GREAT ≥", merged_thresholds["great"])
-        self._good_edit = self._add_number_row(layout, "GOOD ≥", merged_thresholds["good"])
-        self._ok_edit = self._add_number_row(layout, "OK ≥", merged_thresholds["ok"])
-
-        # GAME.LOG PATH — added alongside the OCR+Game.log verification
-        # feature (see docs/DECISIONS.md): every ACCEPT now cross-checks
-        # what OCR found against Star Citizen's own Game.log, which needs
-        # to know where that file is. Pre-filled with the common install
-        # path when it exists; BROWSE lets a different install location
-        # (or a backup log for testing) override it.
-        log_title = QLabel("GAME.LOG PATH")
-        log_title.setStyleSheet(
-            f"color: {theme.ACCENT_CYAN}; font-family: {theme.FONT_DISPLAY}; "
-            f"font-weight: 800; font-size: {theme.fpx(10)}px; letter-spacing: 1px;"
-        )
-        layout.addWidget(log_title)
-        log_row = QHBoxLayout()
-        self._game_log_edit = QLineEdit(game_log_path or "")
-        self._game_log_edit.setPlaceholderText("Path to Game.log")
-        self._game_log_edit.setStyleSheet(
-            f"""
-            QLineEdit {{
-                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
-                padding: 4px 6px; font-family: "{theme.FONT_MONO}";
-                font-size: {theme.fpx(9)}px;
-            }}
-            """
-        )
-        log_row.addWidget(self._game_log_edit, 1)
-        browse_btn = QPushButton("BROWSE")
-        browse_btn.setStyleSheet(
-            f"background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN}; "
-            f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
-            f"padding: 4px 8px; font-family: {theme.FONT_DISPLAY}; font-weight: 700; "
-            f"font-size: {theme.fpx(9)}px;"
-        )
-        browse_btn.clicked.connect(self._browse_game_log)
-        log_row.addWidget(browse_btn)
-        layout.addLayout(log_row)
-
-        # ACCEPT REMINDER — added 2026-09-08 alongside the delayed-recheck
-        # feature: if Game.log still hasn't confirmed a contract this many
-        # seconds after ACCEPT, the card shows a blinking reminder to
-        # actually accept it in-game (easy to forget when you're just
-        # testing/reviewing). 0 disables it entirely. Deliberately a plain
-        # number field here, not a slider/combo — this is expected to need
-        # real tuning against `nearest_haul_event_gap_seconds` data as more
-        # sessions run, same reasoning as the verify window itself.
-        reminder_row = QHBoxLayout()
-        reminder_label = QLabel("ACCEPT REMINDER (sec, 0=off)")
-        reminder_label.setStyleSheet(
-            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
-            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
-        )
-        reminder_row.addWidget(reminder_label)
-        self._reminder_edit = QLineEdit(str(accept_reminder_seconds))
-        self._reminder_edit.setValidator(QIntValidator(0, 3600, self._reminder_edit))
-        self._reminder_edit.setStyleSheet(
-            f"""
-            QLineEdit {{
-                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
-                padding: 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
-                font-size: {theme.fpx(11)}px;
-            }}
-            """
-        )
-        reminder_row.addWidget(self._reminder_edit, 1)
-        layout.addLayout(reminder_row)
-
-        save_btn = QPushButton("SAVE")
-        save_btn.setStyleSheet(
-            f"background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN}; "
-            f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; "
-            f"padding: 4px 10px; font-family: {theme.FONT_DISPLAY}; font-weight: 700; "
-            f"font-size: {theme.fpx(10)}px;"
-        )
-        save_btn.clicked.connect(self._save)
-        layout.addWidget(save_btn)
-
-    def _add_row(self, layout: QVBoxLayout, label_text: str, choices: list[str], current: str | None) -> QComboBox:
-        row = QHBoxLayout()
-        label = QLabel(label_text)
-        label.setStyleSheet(
-            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
-            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
-        )
-        row.addWidget(label)
-
-        combo = QComboBox()
-        combo.addItems(choices)
-        if current in choices:
-            combo.setCurrentText(current)
-        combo.setStyleSheet(
-            f"""
-            QComboBox {{
-                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
-                padding: 4px 22px 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
-                font-size: {theme.fpx(10)}px;
-            }}
-            QComboBox::drop-down {{ width: 18px; border: none; }}
-            """
-        )
-        row.addWidget(combo, 1)
-        layout.addLayout(row)
-        return combo
-
-    def _add_number_row(self, layout: QVBoxLayout, label_text: str, value: int) -> QLineEdit:
-        row = QHBoxLayout()
-        label = QLabel(label_text)
-        label.setStyleSheet(
-            f"color: {theme.TEXT_MUTED}; font-family: {theme.FONT_MONO}; "
-            f"font-size: {theme.fpx(9)}px; letter-spacing: 1px;"
-        )
-        row.addWidget(label)
-
-        edit = QLineEdit(str(value))
-        edit.setValidator(QIntValidator(0, 1_000_000, edit))
-        edit.setStyleSheet(
-            f"""
-            QLineEdit {{
-                background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-                border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
-                padding: 4px 6px; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700;
-                font-size: {theme.fpx(11)}px;
-            }}
-            """
-        )
-        row.addWidget(edit, 1)
-        layout.addLayout(row)
-        return edit
-
-    def _browse_game_log(self):
-        start_dir = os.path.dirname(self._game_log_edit.text().strip()) or ""
-        path, _ = QFileDialog.getOpenFileName(self, "Select Game.log", start_dir, "Log files (*.log);;All files (*)")
-        if path:
-            self._game_log_edit.setText(path)
-
-    def _save(self):
-        capacity_text = self._capacity_edit.text().strip()
-        reminder_text = self._reminder_edit.text().strip()
-        self._on_save(
-            {
-                "ship": self._ship_edit.text().strip(),
-                "goal": self._goal_combo.currentText(),
-                "risk": self._risk_combo.currentText(),
-                "time_budget": self._time_combo.currentText(),
-                "region_pref": self._region_combo.currentText(),
-            },
-            int(capacity_text) if capacity_text else None,
-            {
-                "great": int(self._great_edit.text() or DEFAULT_GRADING_THRESHOLDS["great"]),
-                "good": int(self._good_edit.text() or DEFAULT_GRADING_THRESHOLDS["good"]),
-                "ok": int(self._ok_edit.text() or DEFAULT_GRADING_THRESHOLDS["ok"]),
-            },
-            self._game_log_edit.text().strip() or None,
-            int(reminder_text) if reminder_text else DEFAULT_ACCEPT_REMINDER_SECONDS,
-        )
-        self.close()
 
 
 class LogisticsHubModule(ModuleBase):
@@ -3283,307 +2110,20 @@ class LogisticsHubModule(ModuleBase):
         return found
 
     # ------------------------------------------------------------------
-    # Route heuristic
+    # Route heuristic (implementation lives in routing.py)
     # ------------------------------------------------------------------
-    def _stop_nodes(self, contracts: list[dict]) -> list[tuple[int, str, int]]:
-        nodes = []
-        for i, c in enumerate(contracts):
-            for j in range(len(c.get("pickups", []))):
-                nodes.append((i, "pickup", j))
-            for j in range(len(c.get("dropoffs", []))):
-                nodes.append((i, "dropoff", j))
-        return nodes
-
-    def _node_entry(self, contracts: list[dict], node) -> dict:
-        i, role, j = node
-        key = "pickups" if role == "pickup" else "dropoffs"
-        return contracts[i][key][j]
-
-    def _node_terminal(self, contracts: list[dict], node) -> dict | None:
-        return self._node_entry(contracts, node).get("terminal")
-
-    def _node_raw(self, contracts: list[dict], node) -> str:
-        return self._node_entry(contracts, node).get("raw", "")
-
     def _plan_route(self, contracts: list[dict], route_debug: dict | None = None) -> list[tuple[int, str, int]]:
-        """Visiting order across every contract's pickup and drop-off
-        stops: a nearest-neighbour greedy pass to build an initial route,
-        then a precedence-aware 2-opt pass to fix the greedy pass's classic
-        blind spot — it can't look ahead, so it happily visits a stop early
-        even when that forces an expensive backtrack later (confirmed on a
-        real 4-contract test: it revisited Port Tressler twice — once for
-        its own contract, then again after a detour to Crusader for a
-        different contract's pickup — when picking up that Crusader cargo
-        *first* and doing every microTech stop in one pass was strictly
-        shorter). 2-opt repeatedly tries reversing a sub-segment of the
-        route and keeps the reversal if it lowers total cost, which is
-        exactly the "should I have done these in the other order" check
-        greedy construction can't do on its own.
-
-        Two things a pure "closest next stop" search would get wrong on its
-        own, both handled explicitly here:
-        - **Starting point.** Without this, the route always started from
-          whichever contract's pickup happened to be scanned first — right
-          only by coincidence. It now starts from the CURRENT LOCATION
-          picker's pick (see `_current_location_terminal`), falling back to
-          the old "just start at the first node" behavior only if no
-          location has been set yet.
-        - **Pickup-before-dropoff.** You can't drop off cargo you haven't
-          picked up. Every drop-off node is ineligible to be chosen until
-          *all* of its own contract's pickup nodes have already been
-          visited — this is a hard constraint, not a cost tiebreaker, so
-          the greedy search (and the 2-opt pass afterward) will detour to
-          a farther pickup rather than visit a nearer but not-yet-loaded
-          drop-off, and 2-opt rejects any reversal that would break it.
-
-        `route_debug`, if given, gets filled with the greedy route (before
-        2-opt) alongside the final one plus both total costs — added
-        2026-09-05 so a review of the debug log can tell whether 2-opt
-        actually improved anything on a given scan, not just see the final
-        route in isolation."""
-        nodes = self._stop_nodes(contracts)
-        n = len(nodes)
-        if n == 0:
-            return []
-
-        pickups_needed = [len(c.get("pickups", [])) for c in contracts]
-        pickups_done = [0] * len(contracts)
-
-        def eligible(idx: int) -> bool:
-            i, role, _j = nodes[idx]
-            return role == "pickup" or pickups_done[i] >= pickups_needed[i]
-
-        start_terminal = self._current_location_terminal()
-        start_raw = self._locations.display_name(start_terminal) if start_terminal else None
-        current_terminal, current_raw = start_terminal, start_raw
-
-        visited = [False] * n
-        order: list[int] = []
-
-        for step in range(n):
-            candidates = [idx for idx in range(n) if not visited[idx] and eligible(idx)]
-            if not candidates:
-                # Shouldn't happen for well-formed contracts (every dropoff
-                # eventually becomes eligible once its pickups are visited),
-                # but never hang if it somehow does.
-                break
-
-            if current_terminal is not None or current_raw is not None:
-                # Tie-break toward drop-off over pickup at equal cost (e.g.
-                # two stops at the same real station, "same stop" cost 0) —
-                # per user direction, clearing cargo you're already carrying
-                # takes priority over loading more while you're standing at
-                # a station that needs both. `min` is stable, so without
-                # this the winner on a tie was just whichever node happened
-                # to come first in `nodes` (pickups are built before
-                # drop-offs per contract in `_stop_nodes`, so pickups won
-                # every tie by accident, not by design).
-                best = min(
-                    candidates,
-                    key=lambda idx: (
-                        self._cost_to_node(contracts, nodes[idx], current_terminal, current_raw),
-                        0 if nodes[idx][1] == "dropoff" else 1,
-                    ),
-                )
-            else:
-                # No known starting point at all (location never set) — no
-                # basis to prefer one node over another for the very first
-                # stop, so just take the first eligible one deterministically.
-                best = candidates[0]
-
-            visited[best] = True
-            order.append(best)
-            i, role, _j = nodes[best]
-            if role == "pickup":
-                pickups_done[i] += 1
-            current_terminal = self._node_terminal(contracts, nodes[best])
-            current_raw = self._node_raw(contracts, nodes[best])
-
-        route = [nodes[i] for i in order]
-
-        # Alternate 2-opt (segment reversal) and Or-opt (single-stop
-        # relocation) until neither improves — 2-opt alone can never merge
-        # two non-adjacent visits to the same real terminal (one a pickup
-        # for one contract, one a dropoff for another) into a single stop,
-        # since that requires moving one node past several others without
-        # reversing anything between them, a different move type Or-opt
-        # covers. Confirmed real on live data: Everus Harbor got visited
-        # twice in one route when only 2-opt ran (see DECISIONS.md,
-        # 2026-09-05). Each accepted move in either pass strictly lowers
-        # cost, so this converges fast in practice — the round cap is a
-        # termination safety net, not expected to bind.
-        current = route
-        rounds_run = 0
-        for rounds_run in range(1, 6):
-            after = self._two_opt(contracts, current, start_terminal, start_raw, pickups_needed)
-            after = self._or_opt(contracts, after, start_terminal, start_raw, pickups_needed)
-            if after == current:
-                break
-            current = after
-        final = current
-
-        if route_debug is not None:
-            greedy_cost = self._route_cost(contracts, route, start_terminal, start_raw)
-            final_cost = self._route_cost(contracts, final, start_terminal, start_raw)
-            route_debug["greedy_order"] = [self._node_label(contracts, node) for node in route]
-            route_debug["greedy_cost"] = round(greedy_cost, 1)
-            route_debug["final_order"] = [self._node_label(contracts, node) for node in final]
-            route_debug["final_cost"] = round(final_cost, 1)
-            route_debug["optimized_improved_by"] = round(greedy_cost - final_cost, 1)
-            route_debug["rounds_run"] = rounds_run
-
-        return final
-
-    def _node_label(self, contracts: list[dict], node) -> str:
-        i, role, _j = node
-        terminal = self._node_terminal(contracts, node)
-        name = self._locations.display_name(terminal) if terminal else self._node_raw(contracts, node)
-        return f"[{role.upper()}] {name} (contract {i})"
-
-    def _route_cost(
-        self, contracts: list[dict], seq: list, start_terminal: dict | None, start_raw: str | None
-    ) -> float:
-        total = 0.0
-        prev_terminal, prev_raw = start_terminal, start_raw
-        for node in seq:
-            term = self._node_terminal(contracts, node)
-            raw = self._node_raw(contracts, node)
-            if prev_terminal and term:
-                total += self._terminal_cost(prev_terminal, term)
-            else:
-                total += COST_UNRESOLVED + self._text_cost(prev_raw or "", raw)
-            prev_terminal, prev_raw = term, raw
-        return total
-
-    @staticmethod
-    def _respects_precedence(contracts: list[dict], seq: list, pickups_needed: list[int]) -> bool:
-        pickups_done = [0] * len(contracts)
-        for node in seq:
-            i, role, _j = node
-            if role == "dropoff":
-                if pickups_done[i] < pickups_needed[i]:
-                    return False
-            else:
-                pickups_done[i] += 1
-        return True
-
-    def _two_opt(
-        self,
-        contracts: list[dict],
-        seq: list,
-        start_terminal: dict | None,
-        start_raw: str | None,
-        pickups_needed: list[int],
-    ) -> list:
-        """Standard 2-opt local search over a fixed-start path: repeatedly
-        reverse a sub-segment [i:j+1] and keep the reversal if it lowers
-        total route cost and doesn't put a drop-off before its own
-        contract's pickup. Runs until a full pass finds no improving move.
-        Cheap at the stop counts a real scan session produces (a handful
-        of contracts, rarely more than ~15-20 stops total) — O(n^2) per
-        pass, bounded number of passes since each accepted move strictly
-        lowers a bounded integer/float cost."""
-        best = list(seq)
-        best_cost = self._route_cost(contracts, best, start_terminal, start_raw)
-        n = len(best)
-
-        improved = True
-        while improved:
-            improved = False
-            for i in range(n - 1):
-                for j in range(i + 1, n):
-                    candidate = best[:i] + best[i:j + 1][::-1] + best[j + 1:]
-                    if not self._respects_precedence(contracts, candidate, pickups_needed):
-                        continue
-                    cost = self._route_cost(contracts, candidate, start_terminal, start_raw)
-                    if cost < best_cost - 1e-9:
-                        best, best_cost = candidate, cost
-                        improved = True
-        return best
-
-    def _or_opt(
-        self,
-        contracts: list[dict],
-        seq: list,
-        start_terminal: dict | None,
-        start_raw: str | None,
-        pickups_needed: list[int],
-    ) -> list:
-        """Or-opt local search: repeatedly try relocating a single stop to a
-        different position in the route, keeping the move if it lowers total
-        cost and doesn't put a drop-off before its own contract's pickup.
-        Complements `_two_opt` above, which can only reverse segments — it
-        can never merge two non-adjacent visits to the same real terminal
-        (once as a pickup for one contract, once as a dropoff for another)
-        into one stop, since that means moving one node past several others
-        without reversing anything between them. Confirmed real on live data
-        (see DECISIONS.md, 2026-09-05): Everus Harbor was visited twice in
-        one route, `_two_opt` alone never found the merge. Runs until a full
-        pass finds no improving move — same convergence pattern as
-        `_two_opt`, same cost bound at real session stop-counts."""
-        best = list(seq)
-        best_cost = self._route_cost(contracts, best, start_terminal, start_raw)
-        n = len(best)
-
-        improved = True
-        while improved:
-            improved = False
-            for i in range(n):
-                node = best[i]
-                remaining = best[:i] + best[i + 1:]
-                # Stop scanning j as soon as `best` changes — `node`/
-                # `remaining` were captured from the pre-move sequence, so
-                # continuing to build candidates from them after a move
-                # would silently discard the just-found improvement instead
-                # of building on it. The outer `while improved` loop picks
-                # up any further gains in the next full pass, same as
-                # `_two_opt`'s own convergence pattern.
-                for j in range(len(remaining) + 1):
-                    candidate = remaining[:j] + [node] + remaining[j:]
-                    if not self._respects_precedence(contracts, candidate, pickups_needed):
-                        continue
-                    cost = self._route_cost(contracts, candidate, start_terminal, start_raw)
-                    if cost < best_cost - 1e-9:
-                        best, best_cost = candidate, cost
-                        improved = True
-                        break
-                if improved:
-                    break
-        return best
-
-    def _cost_to_node(self, contracts: list[dict], node, from_terminal: dict | None, from_raw: str | None) -> float:
-        term_b = self._node_terminal(contracts, node)
-        if from_terminal and term_b:
-            return self._terminal_cost(from_terminal, term_b)
-        return COST_UNRESOLVED + self._text_cost(from_raw or "", self._node_raw(contracts, node))
+        """Visiting order over every contract's stops, starting from the
+        CURRENT LOCATION picker's terminal. See routing.RoutePlanner."""
+        return routing.RoutePlanner(self._locations).plan_route(
+            contracts, self._current_location_terminal(), route_debug)
 
     def _terminal_cost(self, a: dict, b: dict) -> float:
-        if self._locations.same_physical_place(a, b):
-            return COST_SAME_TERMINAL
-        distance = self._locations.distance(a, b)
-        if distance is not None:
-            return distance
-        # Real distance unavailable (missing orbit/system data on either
-        # side, or the UEX distance endpoints themselves failed) — fall
-        # back to the coarse tier, scaled into the same rough numeric
-        # range real distances live in (see the COST_* comment above).
-        body_keys = ("planet_name", "moon_name", "space_station_name", "city_name", "outpost_name")
-        if any(a.get(k) and a.get(k) == b.get(k) for k in body_keys):
-            return COST_SAME_BODY
-        if a.get("star_system_name") and a.get("star_system_name") == b.get("star_system_name"):
-            return COST_SAME_SYSTEM
-        return COST_DIFFERENT_SYSTEM
+        return routing.RoutePlanner(self._locations).terminal_cost(a, b)
 
     @staticmethod
     def _text_cost(a: str, b: str) -> float:
-        if not a or not b:
-            return 1.0
-        a_low, b_low = a.lower(), b.lower()
-        if a_low == b_low:
-            return 0.0
-        tokens_a = set(re.findall(r"[a-z0-9']+", a_low))
-        tokens_b = set(re.findall(r"[a-z0-9']+", b_low))
-        return 0.5 if (tokens_a & tokens_b) else 1.0
+        return routing.RoutePlanner.text_cost(a, b)
 
     # ------------------------------------------------------------------
     # Result rendering
@@ -4014,31 +2554,8 @@ class LogisticsHubModule(ModuleBase):
 
     @staticmethod
     def _freight_manifest(contracts: list[dict]) -> dict:
-        """Commodity name -> {"scu": total SCU across every contract
-        hauling it, "contract_count": how many distinct contracts that is}.
-        Read from each contract's *pickups* only — a pickup entry already
-        holds that contract's contract-wide total for a commodity (see the
-        2026-09-05 quantity-summing fix), so drop-offs would double-count
-        the same freight split across multiple destinations. Within one
-        contract, quantities are summed across its pickups first so a
-        commodity appearing at two pickups in the same contract counts
-        once at its true total rather than twice."""
-        manifest: dict[str, dict] = {}
-        for contract in contracts:
-            contract_totals: dict[str, int] = {}
-            for entry in contract.get("pickups", []):
-                for c in entry.get("commodities") or []:
-                    if isinstance(c, (list, tuple)):
-                        name, qty = c
-                    else:
-                        name, qty = c, None
-                    qty = int(qty) if qty and str(qty).isdigit() else 0
-                    contract_totals[name] = contract_totals.get(name, 0) + qty
-            for name, qty in contract_totals.items():
-                row = manifest.setdefault(name, {"scu": 0, "contract_count": 0})
-                row["scu"] += qty
-                row["contract_count"] += 1
-        return manifest
+        """Commodity name -> total SCU and contract count. See grading.freight_manifest."""
+        return grading.freight_manifest(contracts)
 
     # ------------------------------------------------------------------
     # Ship/location compatibility feedback DB + contract grading
@@ -4052,18 +2569,12 @@ class LogisticsHubModule(ModuleBase):
     # ------------------------------------------------------------------
     @staticmethod
     def _compat_key(ship: str, terminal: dict) -> str:
-        endpoint, term_id = LocationService.terminal_key(terminal)
-        return f"{ship.strip().lower()}::{endpoint}:{term_id}"
+        return grading.compat_key(ship, terminal)
 
     @staticmethod
     def _contract_terminals(contract: dict) -> list[dict]:
-        """Every *resolved* pickup/dropoff terminal in a contract — skips
-        entries that never matched real UEX data, since there's nothing to
-        key a compatibility rating on for those."""
-        return [
-            e["terminal"] for e in contract.get("pickups", []) + contract.get("dropoffs", [])
-            if e.get("terminal")
-        ]
+        """Every resolved pickup/dropoff terminal in a contract. See grading.contract_terminals."""
+        return grading.contract_terminals(contract)
 
     def _rate_compatibility(self, ship: str, terminal: dict, good: bool) -> None:
         ratings = self.settings.setdefault("ship_location_ratings", {})
@@ -4071,141 +2582,21 @@ class LogisticsHubModule(ModuleBase):
         self._save_settings()
 
     def _grade_contract(self, contract: dict, existing_contracts: list[dict]) -> tuple[int | None, str, bool]:
-        """0-100 score + one-line reason + whether a hard warning capped
-        it, for a freshly-scanned contract — or `(None, prompt, False)` if
-        the Hauler Profile isn't set yet, since grading never guesses at a
-        ship/preferences it doesn't have. Shown as a percentage rather than
-        a letter grade per user direction, 2026-09-07 — reads more
-        precisely than 5 coarse bands.
-
-        Three things cap the score regardless of how well everything else
-        scores — the exact "90% great, one hard no" case that prompted
-        this feature: a known-BAD ship/location match or a duplicate-
-        freight overlap (both cap at `GRADE_CAP_ON_WARNING`), and combined
-        cargo capacity overflow (cap at the stricter
-        `CAPACITY_OVERFLOW_CAP` — physically can't complete the run as
-        queued, a harder constraint than the other two). `capped` is
-        returned separately from the score (not inferred from it) so the
-        UI can flag it visually even when the capped score still looks
-        decent at a glance, e.g. 55%."""
-        profile = self.settings.get("hauler_profile") or {}
-        ship = (profile.get("ship") or "").strip()
-        if not ship:
-            return None, "Set your PROFILE for a grade.", False
-
-        ratings = self.settings.get("ship_location_ratings", {})
-        reasons: list[str] = []
-        points = 50  # neutral baseline
-        cap_ceiling = 100  # lowered below if a hard-warning trigger fires; the strictest one wins
-
-        bad_locations = [
-            self._locations.display_name(t) for t in self._contract_terminals(contract)
-            if ratings.get(self._compat_key(ship, t)) == "bad"
-        ]
-        if bad_locations:
-            cap_ceiling = min(cap_ceiling, GRADE_CAP_ON_WARNING)
-            # No emoji here — this line renders in the Orbitron display
-            # font (FONT_DISPLAY), which doesn't cover ⚠ and rendered it
-            # as a tofu box when tried live. `capped` itself (returned
-            # separately below) is what drives the warning color in the
-            # UI, so the text doesn't need to carry its own glyph.
-            reasons.append(f"marked BAD for {ship} at {', '.join(bad_locations)}")
-
-        # Combined peak cargo (everything already queued + this candidate)
-        # against the manually-set ship capacity — added 2026-09-07 after
-        # a live test showed a contract needing ~4x the user's actual
-        # capacity still scored decently, since grading never checked this
-        # at all (capacity checking already existed on the card's own
-        # summary line, just never wired into grading — a real oversight,
-        # not a deliberate scoring choice). Reuses the candidate route
-        # already being planned for the detour-cost check below rather
-        # than planning it twice.
-        combined_contracts = existing_contracts + [contract]
-        candidate_debug: dict = {}
-        candidate_route = self._plan_route(combined_contracts, route_debug=candidate_debug)
-        capacity = self.settings.get("cargo_capacity_scu")
-        if capacity:
-            peak = self._peak_cargo_scu(combined_contracts, candidate_route)
-            if peak > capacity:
-                cap_ceiling = min(cap_ceiling, CAPACITY_OVERFLOW_CAP)
-                reasons.append(f"{peak} SCU peak exceeds {capacity} SCU capacity by {peak - capacity}")
-
-        manifest = self._freight_manifest(existing_contracts + [contract])
-        candidate_commodities = set()
-        for entry in contract.get("pickups", []):
-            for c in entry.get("commodities") or []:
-                name = c[0] if isinstance(c, (list, tuple)) else c
-                candidate_commodities.add(name)
-        overlapping = sorted(
-            name for name in candidate_commodities
-            if manifest.get(name, {}).get("contract_count", 0) > 1
+        """0-100 score + one-line reason + whether a hard warning capped it, or
+        `(None, prompt, False)` without a Hauler Profile. See grading.grade_contract."""
+        return grading.grade_contract(
+            contract,
+            existing_contracts,
+            profile=self.settings.get("hauler_profile"),
+            ratings=self.settings.get("ship_location_ratings"),
+            capacity=self.settings.get("cargo_capacity_scu"),
+            thresholds=self.settings.get("grading_thresholds"),
+            current_terminal=self._current_location_terminal(),
+            pickup_scu=sum(_entry_scu(e) for e in contract.get("pickups", [])),
+            display_name=self._locations.display_name,
+            plan_route=self._plan_route,
+            peak_cargo_scu=self._peak_cargo_scu,
         )
-        if overlapping:
-            cap_ceiling = min(cap_ceiling, GRADE_CAP_ON_WARNING)
-            reasons.append(f"{', '.join(overlapping)} already queued elsewhere")
-
-        # Read fresh every call (not cached anywhere) so a change saved in
-        # the Hauler Profile's GRADING SCALE table takes effect on the
-        # very next scan, no restart needed.
-        thresholds = self.settings.get("grading_thresholds") or DEFAULT_GRADING_THRESHOLDS
-        reward_digits = (contract.get("reward") or "").replace(",", "")
-        reward_val = int(reward_digits) if reward_digits.isdigit() else 0
-        scu = sum(_entry_scu(e) for e in contract.get("pickups", []))
-        if reward_val and scu:
-            per_scu = reward_val / scu
-            if per_scu >= thresholds.get("great", DEFAULT_GRADING_THRESHOLDS["great"]):
-                points += 25
-                reasons.append(f"{per_scu:.0f} aUEC/SCU (great)")
-            elif per_scu >= thresholds.get("good", DEFAULT_GRADING_THRESHOLDS["good"]):
-                points += 10
-                reasons.append(f"{per_scu:.0f} aUEC/SCU (good)")
-            elif per_scu >= thresholds.get("ok", DEFAULT_GRADING_THRESHOLDS["ok"]):
-                reasons.append(f"{per_scu:.0f} aUEC/SCU (ok)")
-            else:
-                points -= 15
-                reasons.append(f"{per_scu:.0f} aUEC/SCU (low)")
-        else:
-            reasons.append("reward or cargo unknown")
-
-        baseline_debug: dict = {}
-        self._plan_route(existing_contracts, route_debug=baseline_debug)
-        # candidate_debug/candidate_route already computed above for the
-        # capacity check — reused here rather than replanning a second time.
-        marginal = candidate_debug.get("final_cost", 0.0) - baseline_debug.get("final_cost", 0.0)
-        if marginal <= 50:
-            points += 15
-            reasons.append("minimal detour")
-        elif marginal <= 150:
-            points += 5
-            reasons.append("moderate detour")
-        else:
-            points -= 15
-            reasons.append("big detour")
-
-        systems = {
-            t.get("star_system_name") for t in self._contract_terminals(contract)
-            if t.get("star_system_name")
-        }
-        current_terminal = self._current_location_terminal()
-        current_system = current_terminal.get("star_system_name") if current_terminal else None
-
-        if profile.get("region_pref") == "Current system only" and current_system and any(
-            s != current_system for s in systems
-        ):
-            points -= 10
-            reasons.append("crosses systems")
-
-        if profile.get("risk") == "Safe systems only" and systems & RISKY_SYSTEMS:
-            points -= 15
-            reasons.append(f"routes through {'/'.join(systems & RISKY_SYSTEMS)}")
-
-        points = max(0, min(100, points))
-        capped = cap_ceiling < 100
-        if capped:
-            points = min(points, cap_ceiling)
-
-        reason_text = "; ".join(reasons) if reasons else "no strong signal either way"
-        return points, reason_text, capped
 
     def _populate_manifest_rows(self, target_layout: QVBoxLayout, contracts: list[dict]):
         while target_layout.count():

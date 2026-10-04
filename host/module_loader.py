@@ -21,17 +21,20 @@ from host.config import Config
 from host.locations import LocationService
 from host.module_base import ModuleBase
 from host.paths import modules_root
+from host.services import Services
 
 logger = logging.getLogger("mobioverlay.module_loader")
 
 MODULES_ROOT = modules_root()
 
 
-def discover_modules(api_client: UexApiClient, config: Config, locations: LocationService, on_module_loading=None) -> list[ModuleBase]:
+def discover_modules(api_client: UexApiClient, config: Config, locations: LocationService, on_module_loading=None,
+                     services: Services | None = None) -> list[ModuleBase]:
     """`on_module_loading`, if given, is called with each folder name right
     before that module's file is imported/executed — lets a caller (main.py's
     splash screen) show which module is loading, since a slow one (e.g.
     Logistics Hub's `import easyocr`) can otherwise look like a frozen app."""
+    ModuleBase.install_services(services)
     loaded: list[ModuleBase] = []
     seen_module_ids: dict[str, str] = {}  # module_id -> folder name that claimed it
     if not MODULES_ROOT.exists():

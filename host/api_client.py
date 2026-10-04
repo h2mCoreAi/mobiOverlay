@@ -1,6 +1,7 @@
 """Shared UEX Corp API client, handed to every module instead of each
 module managing its own HTTP session.
 """
+import logging
 import threading
 import time
 from concurrent.futures import Future
@@ -15,6 +16,12 @@ from requests.adapters import HTTPAdapter
 # UEX's actual anonymous rate limit is unconfirmed: "120/min" was assumed
 # early on, but a real ~490/min burst (205 calls in ~25s) wasn't limited.
 DEDUPE_TTL_SECONDS = 2.0
+
+# How long a card's Retry button stays disabled after a rate-limit error, so
+# repeated immediate retries don't make the limit worse.
+RATE_LIMIT_RETRY_COOLDOWN_S = 8
+
+logger = logging.getLogger("mobioverlay.api_client")
 
 
 class UexApiError(Exception):
@@ -135,8 +142,10 @@ class UexApiClient:
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         url = self.base_url + endpoint.lstrip("/") + "/"
+        start = time.monotonic()
         try:
             resp = self._session.get(url, params=params, headers=headers, timeout=10)
+            logger.debug("GET %s -> %s in %.2fs", endpoint, resp.status_code, time.monotonic() - start)
             # Checked before raise_for_status(): if UEX reports its rate
             # limit with an HTTP error code, raise_for_status() would turn
             # it into a generic UexApiError, and the scan loops (which stop
