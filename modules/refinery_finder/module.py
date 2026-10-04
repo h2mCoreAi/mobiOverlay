@@ -21,7 +21,7 @@ from host.module_base import ModuleBase
 ALL_SYSTEMS = "All Systems"
 TOP_N = 5
 
-_LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 2px;'
+_LABEL_SMALL = theme.label_small()
 _ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 6px 8px;"
 _RANK_STYLE = f'font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(13)}px; color: {theme.ACCENT_CYAN};'
 _TERMINAL_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(11)}px; color: {theme.TEXT_PRIMARY};'
@@ -29,7 +29,7 @@ _SUBTEXT_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px
 _YIELD_STYLE = f'font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(13)}px;'
 _INFO_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
 _METHOD_ROW_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; color: {theme.TEXT_MUTED};'
-_TIMESTAMP_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;'
+_TIMESTAMP_STYLE = theme.timestamp_style()
 _COMBO_STYLE = f"""
     QComboBox {{
         background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};

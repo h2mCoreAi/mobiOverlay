@@ -29,7 +29,7 @@ FORCE_CONFIRM_TIMEOUT_MS = 4000
 MAX_RESULTS = 8
 COPY_CONFIRM_MS = 1500  # how long the COPY button shows "COPIED" before reverting, same as Logistics Hub's COPY ROUTE
 
-_LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 2px;'
+_LABEL_SMALL = theme.label_small()
 _LIST_STYLE = f"""
     QListWidget {{
         background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
@@ -51,22 +51,13 @@ _COMBO_STYLE = f"""
         font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
     }}
 """
-_ACTION_BTN_STYLE = f"""
-    QPushButton {{
-        background: transparent; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; padding: 5px 0;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;
-    }}
-    QPushButton:disabled {{
-        color: {theme.TEXT_DIM}; border: 1px solid {theme.BORDER_FLAT};
-    }}
-"""
+_ACTION_BTN_STYLE = theme.action_btn_style()
 _RESULT_ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 8px 10px;"
 _RESULT_HEADER_STYLE = f'font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(12)}px; color: {theme.ACCENT_CYAN};'
 _RESULT_TOTAL_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(11)}px; color: {theme.TEXT_PRIMARY};'
 _RESULT_LINE_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; color: {theme.TEXT_MUTED};'
 _RESULT_MISSING_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; color: {theme.ACCENT_AMBER};'
-_TIMESTAMP_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;'
+_TIMESTAMP_STYLE = theme.timestamp_style()
 
 
 class MultiCommodityFinderModule(ModuleBase):

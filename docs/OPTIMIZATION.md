@@ -17,6 +17,9 @@ expected benefit, effort/risk, and project-rule compliance.
 | M1 | ✅ Implemented | Lazy-load easyocr/PyTorch on first OCR use |
 | M2 | ✅ Implemented | Background OCR thread + thin OCR extract to `modules/logistics_hub/ocr.py` |
 | M5 | ✅ Implemented | In-flight/short-TTL request deduplication in UexApiClient |
+| N1 | ✅ Implemented | Rate-limit errors disable Retry for 8s with a countdown (`Card.set_error(cooldown_s=)`) |
+| N2 | ✅ Implemented | `UexApiClient` logs per-request timing at DEBUG |
+| M4 | 🟡 Partial | Identical `_LABEL_SMALL`, `_TIMESTAMP_STYLE`, `_ACTION_BTN_STYLE` moved to `host/theme.py`; per-module variants (combos, rows) left as is |
 
 ---
 
@@ -200,7 +203,13 @@ cache age and showing "updating location data..." on stale cache.
 
 ---
 
-### M4. Consolidate duplicate stylesheet string construction
+### M4. Consolidate duplicate stylesheet string construction 🟡 PARTIAL
+
+**Done**: styles that were byte-identical across modules now live in
+`theme.label_small()`, `theme.timestamp_style()` and `theme.action_btn_style()`
+(functions, since they read `FONT_SCALE` set after import). Modules keep their
+`_NAME = theme.fn()` constants. Remaining variants differ in padding/size and
+need visual checks to merge.
 
 **Problem**: Every module defines its own near-identical `_COMBO_STYLE`,
 `_ACTION_BTN_STYLE`, `_LABEL_SMALL`, etc.:
@@ -344,7 +353,7 @@ rework.
 
 ## Network/API-Specific Recommendations
 
-### N1. Implement exponential backoff on rate limit
+### N1. Implement exponential backoff on rate limit ✅ IMPLEMENTED (fixed 8s cooldown, not exponential)
 
 **Problem**: `UexRateLimitError` is raised but the retry is immediate (user clicks
 Retry button). Repeated immediate retries worsen the rate limit situation.
@@ -355,7 +364,7 @@ Retry button). Repeated immediate retries worsen the rate limit situation.
 
 ---
 
-### N2. Add request timing telemetry
+### N2. Add request timing telemetry ✅ IMPLEMENTED (DEBUG log in `UexApiClient._do_get`)
 
 **Problem**: No visibility into which API calls are slow or failing frequently.
 
@@ -400,9 +409,9 @@ are omitted below; this matrix only orders what's still open.
 
 | Priority | Item | Benefit | Effort | Risk |
 |----------|------|---------|--------|------|
-| 1 | M4 (Consolidate stylesheets) | Medium | Medium | Low |
-| 2 | L1 (Decompose logistics_hub) | High | High | Medium |
-| 3 | M3 (Pre-warm cache) | Medium | Medium | Low |
+| 1 | L1 (Decompose logistics_hub) | High | High | Medium |
+| 2 | M3 (Pre-warm cache) | Medium | Medium | Low |
+| 3 | M4 remainder (per-module style variants) | Low | Medium | Low |
 
 ---
 

@@ -54,18 +54,9 @@ _COMMODITY_STYLE = f'color: {theme.ACCENT_CYAN}; font-family: "{theme.FONT_DISPL
 _DEST_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
 _PROFIT_STYLE = f'color: {theme.TEXT_PRIMARY}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(14)}px; font-weight: bold;'
 _ROI_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
-_TIMESTAMP_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;'
+_TIMESTAMP_STYLE = theme.timestamp_style()
 _LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;'
-_ACTION_BTN_STYLE = f"""
-    QPushButton {{
-        background: transparent; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; padding: 5px 0;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;
-    }}
-    QPushButton:disabled {{
-        color: {theme.TEXT_DIM}; border: 1px solid {theme.BORDER_FLAT};
-    }}
-"""
+_ACTION_BTN_STYLE = theme.action_btn_style()
 
 
 class TradeRouteOptimizerModule(ModuleBase):

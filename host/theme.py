@@ -82,3 +82,29 @@ def hex_to_rgba(hex_color: str, alpha: float) -> str:
     hex_color = hex_color.lstrip("#")
     r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
     return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+# Shared widget styles. Functions, not constants: they read FONT_SCALE, which
+# main.py sets after this module is imported.
+def label_small() -> str:
+    """Small letter-spaced caption above a control."""
+    return f'color: {TEXT_MUTED}; font-family: "{FONT_MONO}"; font-size: {fpx(9)}px; letter-spacing: 2px;'
+
+
+def timestamp_style() -> str:
+    """Dim "updated X ago" line."""
+    return f'color: {TEXT_DIM}; font-family: "{FONT_MONO}"; font-size: {fpx(9)}px; letter-spacing: 1px;'
+
+
+def action_btn_style() -> str:
+    """Outlined cyan action button (RETRIEVE / SCAN style)."""
+    return f"""
+    QPushButton {{
+        background: transparent; color: {ACCENT_CYAN};
+        border: 1px solid {BORDER_CYAN}; border-radius: {RADIUS}px; padding: 5px 0;
+        font-family: "{FONT_MONO}"; font-size: {fpx(9)}px; letter-spacing: 1px;
+    }}
+    QPushButton:disabled {{
+        color: {TEXT_DIM}; border: 1px solid {BORDER_FLAT};
+    }}
+"""

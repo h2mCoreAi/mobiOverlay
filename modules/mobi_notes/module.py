@@ -36,7 +36,7 @@ STARTER_TAGS = _store_module.STARTER_TAGS
 ALL_TAGS = "All Tags"
 NEW_PAGE_SENTINEL = "+ New Page..."
 
-_LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 2px;'
+_LABEL_SMALL = theme.label_small()
 _COMBO_STYLE = f"""
     QComboBox {{
         background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
