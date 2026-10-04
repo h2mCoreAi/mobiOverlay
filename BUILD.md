@@ -51,6 +51,7 @@ next to the exe. Just double-click and go.
 - `locations_cache.json` — UEX location cache (7-day TTL)
 - `mobinotes_data.json` — mobiNotes storage
 - `logistics_hub_debug.jsonl` — Logistics Hub debug log (if used)
+- `logistics_hub_completed.jsonl` — contracts marked COMPLETE in Logistics Hub
 
 ## Running tests
 
@@ -71,6 +72,8 @@ or the test will fetch from UEX API on first run).
 
 Other test files:
 - `tests/test_api_client_dedupe.py` — UexApiClient request deduplication
+- `tests/test_core_persistence.py` — config/cache recovery, atomic saves, rate-limit detection (no network)
+- `tests/test_pill_hover_unlock.py` — click-through pill hover-to-unlock (offscreen, no hooks)
 - `tests/test_mobi_notes_store.py` — mobiNotes data store
 
 ## Test build side-by-side (before release)
@@ -104,8 +107,9 @@ handles both cases transparently (`host/paths.py`'s `modules_root()`).
 ## Release workflow
 
 1. Test the build locally (see "Test build side-by-side" above)
-2. Commit and push to `master`
-3. Tag the release: `git tag v0.2.0 && git push origin v0.2.0`
+2. Merge the PR into `master` (pushing to `master` directly needs the
+   owner's explicit OK — see `AGENTS.md`)
+3. Tag the release: `git tag vX.Y.Z && git push origin vX.Y.Z`
 4. GitHub Actions (`.github/workflows/release.yml`) automatically:
    - Builds the exe from `mobioverlay.spec`
    - Creates a zip: `mobiOverlay-vX.Y.Z-windows.zip`

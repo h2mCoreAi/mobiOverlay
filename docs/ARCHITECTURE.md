@@ -43,8 +43,10 @@ zero edits to `host/` or to any other module.
 - Own the window: always-on-top, drag, resize, opacity
 - Own the card container: free-form positioning, collapse/expand,
   stow/deploy via the tray panel, persist layout to `config.json`
-- Own the shared UEX API client (base URL, bearer token, rate-limit handling)
-  and hand it to modules rather than each module managing its own HTTP client
+- Own the shared UEX API client (base URL, rate-limit handling) and hand it
+  to modules rather than each module managing its own HTTP client. Requests
+  are anonymous; `api.uex_token` is sent as a bearer token only if the user
+  puts their own token in `config.json` (no Settings field, never shipped)
 - Own the shared LocationService (see below) for UEX location data
 - Own `config.json` read/write; modules only touch their own namespaced section
 - Own the single-instance guard preventing duplicate overlay processes
@@ -182,7 +184,7 @@ recovery affordance, just no longer the *only* one.
 
 A Windows system tray icon (`QSystemTrayIcon`) provides overlay recovery when
 the main window is minimized/stowed or if the pill lands somewhere invisible.
-Menu options: Show mobiOverlay, Exit. Double-click also shows the window.
+Menu options: Show, Stow, Quit. Double-click also shows the window.
 Icon file: `host/assets/icons/mobioverlay.png`.
 
 ## Single-instance guard (host/single_instance.py)

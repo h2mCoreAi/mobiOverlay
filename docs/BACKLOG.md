@@ -119,7 +119,7 @@ slotted into a tier. See the Status section below and
 - [CStone.space](https://dutchdemons.com/tool/cstone-space/)
 - [Schaulers Trade Route Planner](https://schaulers.space/app)
 
-## Status (v0.2.0)
+## Status (v0.3.1)
 
 **Built and shipping:**
 - Commodity Prices (tier 1.1) — `modules/commodity_prices/`

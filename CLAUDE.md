@@ -42,8 +42,12 @@ conventions, testing, and common tasks. This file is a quick reference.
 # Run from source
 python host/main.py
 
-# Run tests
+# Run tests (each file is standalone, plain asserts)
 python tests/test_logistics_hub_parsing.py
+python tests/test_api_client_dedupe.py
+python tests/test_core_persistence.py
+python tests/test_pill_hover_unlock.py
+python tests/test_mobi_notes_store.py
 
 # Build exe
 pyinstaller mobioverlay.spec --noconfirm

@@ -96,7 +96,7 @@ prevents this, but if you somehow bypass it, two keyboard hooks will race.
 ### Overlay disappeared
 
 Check the **system tray** (notification area) — the mobiOverlay icon is there.
-Double-click or right-click → Show mobiOverlay.
+Double-click it, or right-click → Show.
 
 If you stowed to pill and can't find it (e.g. it landed in a multi-monitor gap),
 use the system tray or the global hotkey to restore.

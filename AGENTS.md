@@ -26,18 +26,23 @@ mobiOverlay/
 │   ├── main.py              # entry point
 │   ├── main_window.py       # always-on-top window, tray, settings
 │   ├── card.py / card_container.py  # card system
+│   ├── module_base.py       # module contract base class
+│   ├── module_loader.py     # module discovery + contract validation
 │   ├── api_client.py        # UEX API client (pooled, deduplicated)
 │   ├── locations.py         # shared location service (cached, versioned)
 │   ├── hotkey.py            # global keyboard hook (WH_KEYBOARD_LL)
-│   ├── single_instance.py   # mutex preventing duplicate instances
+│   ├── single_instance.py   # lockfile preventing duplicate instances
 │   ├── config.py / paths.py # config persistence, frozen/source paths
+│   ├── fileio.py            # atomic writes, corrupt-file quarantine
+│   ├── theme.py / splash.py # HUD styling, startup splash
 │   └── assets/              # fonts (Orbitron, Share Tech Mono), icons
 ├── modules/                 # one folder per module, auto-discovered
 │   ├── commodity_prices/
 │   ├── trade_route_optimizer/
 │   ├── logistics_hub/       # OCR-based hauling contracts
 │   │   ├── module.py
-│   │   └── ocr.py           # extracted OCR pipeline
+│   │   ├── ocr.py           # extracted OCR pipeline
+│   │   └── gamelog_verify.py  # optional Game.log cross-check
 │   ├── refinery_finder/
 │   ├── multi_commodity_finder/
 │   ├── crosshair/
@@ -66,7 +71,7 @@ Read only what's relevant to your task:
 | `docs/DECISIONS.md` | Dated log of choices + rationale (append-only) |
 | `docs/BACKLOG.md` | Ranked module backlog with community-interest evidence |
 | `docs/OPTIMIZATION.md` | Performance improvements (Q1-Q5, M1-M5, L1-L4) |
-| `docs/modules/<name>.md` | Scope for one specific module |
+| `docs/modules/<name>.md` | Scope for one specific module (hyphenated: `modules/logistics_hub/` → `docs/modules/logistics-hub.md`) |
 | `BUILD.md` | Build, test, and release instructions |
 | `README.md` | End-user documentation |
 
@@ -216,7 +221,7 @@ not a precedent for inventing logic elsewhere.
 The single-instance guard exists for a reason. Don't bypass it. Check for
 running instances before launching another:
 ```powershell
-Get-Process -Name "python" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*host/main.py*" }
+Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'mobiOverlay.exe' -or $_.CommandLine -like '*host*main.py*' } | Select-Object ProcessId, Name, CommandLine
 ```
 
 ---
@@ -266,7 +271,7 @@ Get-Process -Name "python" -ErrorAction SilentlyContinue | Where-Object { $_.Com
    - `create_card(parent) -> Card`
    - `refresh()`
    - `shutdown()` (optional)
-2. Create `docs/modules/<name>.md` with scope and design
+2. Create `docs/modules/<name-with-hyphens>.md` with scope and design
 3. Run from source to verify auto-discovery
 4. Add to `mobioverlay.spec` if special data files needed (usually not)
 

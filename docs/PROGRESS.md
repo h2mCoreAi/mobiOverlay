@@ -20,8 +20,8 @@ Logistics Hub may order stops with greedy nearest-neighbor plus 2-opt on real UE
 ## Open
 
 - Next module candidate: Item Price Lookup / Ship Outfitting (Tier 1.4 in `docs/BACKLOG.md`).
-- Performance work still open: M3, M4, and L1 in `docs/OPTIMIZATION.md`. Q1–Q4, M1, M2, and M5 are shipped.
-- Human checks that were never closed are listed in `docs/HISTORY.md` (crosshair over the game, hotkey focus, relaunch after an OCR scan, grid-snap drag). They are unverified follow-ups, not new bugs.
+- Performance work: Q1–Q4, M1, M2, and M5 are shipped. Next up are M3, M4, and L1; Q5, L2–L4, and N1–N3 in `docs/OPTIMIZATION.md` are also unstarted.
+- Human checks that were never closed are listed in `docs/HISTORY.md` (crosshair over the game, hotkey focus, relaunch after an OCR scan, grid-snap drag). Multi-Commodity Finder has also never been recorded as human-tested. These are unverified follow-ups, not new bugs.
 
 ## Working rules that are easy to miss
 
