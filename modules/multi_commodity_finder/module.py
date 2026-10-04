@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from host import theme
-from host.api_client import UexRateLimitError
+from host.api_client import RATE_LIMIT_RETRY_COOLDOWN_S, UexRateLimitError
 from host.locations import LocationService
 from host.module_base import ModuleBase
 
@@ -370,7 +370,7 @@ class MultiCommodityFinderModule(ModuleBase):
             self._scan_timer = None
             self.scan_btn.setEnabled(True)
             self.scan_btn.setText("SCAN")
-            self.card.set_error(str(exc), retry_callback=self._start_scan)
+            self.card.set_error(str(exc), retry_callback=self._start_scan, cooldown_s=RATE_LIMIT_RETRY_COOLDOWN_S)
             return
         except Exception:
             pass  # skip commodities that individually fail; don't abort the whole scan

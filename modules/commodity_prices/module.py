@@ -14,7 +14,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QComboBox, QLabel, QHBoxLayout, QVBoxLayout, QWidget, QPushButton
 
 from host import theme
-from host.api_client import UexRateLimitError
+from host.api_client import RATE_LIMIT_RETRY_COOLDOWN_S, UexRateLimitError
 from host.module_base import ModuleBase
 
 ALL_SYSTEMS = "All Systems"
@@ -361,7 +361,7 @@ class CommodityPricesModule(ModuleBase):
             self.retrieve_btn.setEnabled(True)
             self.retrieve_btn.setText("RETRIEVE DATA")
             self.profitable_btn.setEnabled(bool(self._all_commodity_data))
-            self.card.set_error(str(exc), retry_callback=self._start_retrieve)
+            self.card.set_error(str(exc), retry_callback=self._start_retrieve, cooldown_s=RATE_LIMIT_RETRY_COOLDOWN_S)
             return
         except Exception:
             pass  # skip commodities that individually fail; don't abort the whole retrieval

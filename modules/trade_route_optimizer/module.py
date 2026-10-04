@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from host import theme
-from host.api_client import UexRateLimitError
+from host.api_client import RATE_LIMIT_RETRY_COOLDOWN_S, UexRateLimitError
 from host.module_base import ModuleBase
 
 TOP_N_ROUTES = 5
@@ -467,7 +467,7 @@ class TradeRouteOptimizerModule(ModuleBase):
             self._scan_timer = None
             self.scan_btn.setEnabled(True)
             self._update_scan_button_label()
-            self.card.set_error(str(exc), retry_callback=self._start_scan)
+            self.card.set_error(str(exc), retry_callback=self._start_scan, cooldown_s=RATE_LIMIT_RETRY_COOLDOWN_S)
             return
         except Exception:
             pass  # skip terminals that individually fail; don't abort the whole scan
