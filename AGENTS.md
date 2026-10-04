@@ -40,8 +40,12 @@ mobiOverlay/
 │   ├── commodity_prices/
 │   ├── trade_route_optimizer/
 │   ├── logistics_hub/       # OCR-based hauling contracts
-│   │   ├── module.py
-│   │   ├── ocr.py           # extracted OCR pipeline
+│   │   ├── module.py        # card + orchestration
+│   │   ├── ocr.py           # OCR pipeline
+│   │   ├── parsing.py       # contract-text parsing (pure)
+│   │   ├── routing.py       # route ordering: greedy + 2-opt + Or-opt
+│   │   ├── grading.py       # contract score, freight manifest
+│   │   ├── popups.py        # review / profile / region / banner widgets
 │   │   └── gamelog_verify.py  # optional Game.log cross-check
 │   ├── refinery_finder/
 │   ├── multi_commodity_finder/
@@ -111,6 +115,7 @@ Other test files:
 - `python tests/test_core_persistence.py` — config/cache recovery, atomic saves, rate-limit detection (no network)
 - `python tests/test_pill_hover_unlock.py` — click-through pill hover-to-unlock (offscreen, no hooks)
 - `python tests/test_mobi_notes_store.py` — mobiNotes data store
+- `python tests/test_logistics_hub_routing.py` — route ordering (no Qt, no network)
 
 **Requirement**: `locations_cache.json` must exist (run the app once first, or
 the test will fetch from UEX API).

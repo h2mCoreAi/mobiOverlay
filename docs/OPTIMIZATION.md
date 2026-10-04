@@ -18,6 +18,7 @@ expected benefit, effort/risk, and project-rule compliance.
 | M2 | ✅ Implemented | Background OCR thread + thin OCR extract to `modules/logistics_hub/ocr.py` |
 | M5 | ✅ Implemented | In-flight/short-TTL request deduplication in UexApiClient |
 | M3 | ✅ Implemented | Stale location cache is served at once and refreshed on a worker thread (`ensure_loaded(background_refresh_stale=True)`); only a first run or schema bump still blocks |
+| L1 | ✅ Implemented | `logistics_hub/module.py` 4,368 → ~2.7k lines: `parsing.py`, `routing.py`, `grading.py`, `popups.py` extracted (one commit each); old route planner checked identical on 150 random scenarios |
 | N1 | ✅ Implemented | Rate-limit errors disable Retry for 8s with a countdown (`Card.set_error(cooldown_s=)`) |
 | N2 | ✅ Implemented | `UexApiClient` logs per-request timing at DEBUG |
 | M4 | ✅ Implemented | Shared `row_style`, `text_style`, `field_style`, `label_small`, `timestamp_style`, `action_btn_style` in `host/theme.py`; every migrated style checked equivalent to the original. One-off button styles (icon/nudge/stepper) stay local |
@@ -273,7 +274,17 @@ outside the lock.
 
 ## Larger Bets (High effort, significant architectural improvement)
 
-### L1. Decompose logistics_hub/module.py (4,350 lines)
+### L1. Decompose logistics_hub/module.py (4,350 lines) ✅ IMPLEMENTED
+
+**Done** in four commits (parsing, routing, grading, popups), each gated by the
+full regression suite. `routing.py` was also compared against the old
+in-module planner on 150 random contract sets (identical routes and debug
+output) and has its own tests (`tests/test_logistics_hub_routing.py`). The
+debug-log writers, popouts and results rendering stay in `module.py`: they are
+entangled with card state, and splitting them would mean passing most of the
+card through. The pre-commit hook now covers every file in the folder.
+
+**Original plan**:
 
 **Problem**: `logistics_hub/module.py` is 4,350 lines — nearly 40% of all Python
 code in the project. It contains:
