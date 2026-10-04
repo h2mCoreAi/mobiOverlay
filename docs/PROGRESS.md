@@ -20,7 +20,7 @@ Logistics Hub may order stops with greedy nearest-neighbor plus 2-opt on real UE
 ## Open
 
 - Next module candidate: Item Price Lookup / Ship Outfitting (Tier 1.4 in `docs/BACKLOG.md`).
-- Performance work: Q1–Q4, M1, M2, M5, N1, N2 and part of M4 are on branch `cursor/optimizations-n1-n2-m4` (unmerged). Next up are M3, the rest of M4, and L1; Q5, L2–L4, and N3 in `docs/OPTIMIZATION.md` are also unstarted.
+- **Optimization pass is finished on branch `cursor/optimizations-n1-n2-m4` (unmerged, untested by the owner).** Shipped there: N1/N2, M3, M4, L1, L2, L3 (resolves Q5), L4, N3. Details and the evidence for each are in `docs/OPTIMIZATION.md`. Needs an owner test in a `dist-test` build before merge: scans no longer freeze the UI, a stale location cache loads at once, Commodity Prices restores its last download, Logistics Hub still scans/plans/grades, and the new lite exe (`MOBI_LITE=1`, built but never launched) starts.
 - Human checks that were never closed are listed in `docs/HISTORY.md` (crosshair over the game, hotkey focus, relaunch after an OCR scan, grid-snap drag). Multi-Commodity Finder has also never been recorded as human-tested. These are unverified follow-ups, not new bugs.
 
 ## Working rules that are easy to miss

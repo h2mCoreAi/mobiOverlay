@@ -23,6 +23,7 @@ expected benefit, effort/risk, and project-rule compliance.
 | L3 | ✅ Implemented (thread pool, not asyncio) | `host/background.py`; the three scan loops request on a worker thread and stay responsive |
 | N3 | ✅ Implemented | `host/price_cache.py` (SQLite); Commodity Prices restores its RETRIEVE DATA result after a restart |
 | L2 | ✅ Implemented (lightweight) | `host/services.py` `Services` dataclass; the loader installs one shared instance, modules read `self.services` |
+| L4 | ✅ Implemented (option 1: separate lite build) | `MOBI_LITE=1` spec variant, 72 MB vs ~333 MB; CI `build-lite` job attaches it to the release |
 | N1 | ✅ Implemented | Rate-limit errors disable Retry for 8s with a countdown (`Card.set_error(cooldown_s=)`) |
 | N2 | ✅ Implemented | `UexApiClient` logs per-request timing at DEBUG |
 | M4 | ✅ Implemented | Shared `row_style`, `text_style`, `field_style`, `label_small`, `timestamp_style`, `action_btn_style` in `host/theme.py`; every migrated style checked equivalent to the original. One-off button styles (icon/nudge/stepper) stay local |
@@ -387,7 +388,22 @@ The QTimer-chunked approach already provides adequate responsiveness.
 
 ---
 
-### L4. PyInstaller bundle size reduction
+### L4. PyInstaller bundle size reduction ✅ IMPLEMENTED (option 1)
+
+**Done**: `mobioverlay.spec` has a lite variant (`MOBI_LITE=1`) that leaves out
+torch, torchvision, easyocr, OpenCV, scipy, scikit-image, numpy and Pillow and
+writes `mobiOverlay-lite.exe`. Measured 72.5 MB against ~333 MB. Logistics Hub's
+existing graceful-degradation path reports that the OCR engine isn't in the
+build instead of crashing. `release.yml` gained a `build-lite` job that runs
+after the full build and attaches the lite zip to the same release, so a lite
+failure can't affect the full release. **Not yet verified**: the lite exe has
+been built but not launched (done while Star Citizen was running, which the
+safety rules forbid testing alongside), and the new CI job hasn't run.
+Options 2 (ONNX) and 3 (cloud OCR) were not attempted: ONNX is a rewrite of the
+OCR path that can't be checked here, and cloud OCR would send the player's
+screenshots to a third party, against the project's no-telemetry stance.
+
+**Original proposal**:
 
 **Problem**: The exe bundles PyTorch (for EasyOCR), which adds ~250MB+ to the
 distribution (shipped exe is ~333MB total). Most users may never use OCR.

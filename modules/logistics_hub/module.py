@@ -139,6 +139,11 @@ def _ensure_ocr_loaded() -> bool:
         # raises OSError (DLL load failed) here, which used to escape
         # _safe_scan() and leave the SCAN button disabled for good.
         _ocr_load_error = str(e)
+        if getattr(sys, "frozen", False) and isinstance(e, ImportError):
+            _ocr_load_error = (
+                f"{e} (the lite build leaves the OCR engine out — "
+                "use the full mobiOverlay.exe for contract scanning)"
+            )
         logger.warning("OCR dependencies not available: %s", e)
         return False
 
