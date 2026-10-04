@@ -21,6 +21,7 @@ expected benefit, effort/risk, and project-rule compliance.
 | L1 | ✅ Implemented | `logistics_hub/module.py` 4,368 → ~2.7k lines: `parsing.py`, `routing.py`, `grading.py`, `popups.py` extracted (one commit each); old route planner checked identical on 150 random scenarios |
 | Q5 | ✅ Resolved differently | Batching rejected (it lengthens GUI freezes); the real cost, blocking requests in timer ticks, is fixed by L3 |
 | L3 | ✅ Implemented (thread pool, not asyncio) | `host/background.py`; the three scan loops request on a worker thread and stay responsive |
+| N3 | ✅ Implemented | `host/price_cache.py` (SQLite); Commodity Prices restores its RETRIEVE DATA result after a restart |
 | N1 | ✅ Implemented | Rate-limit errors disable Retry for 8s with a countdown (`Card.set_error(cooldown_s=)`) |
 | N2 | ✅ Implemented | `UexApiClient` logs per-request timing at DEBUG |
 | M4 | ✅ Implemented | Shared `row_style`, `text_style`, `field_style`, `label_small`, `timestamp_style`, `action_btn_style` in `host/theme.py`; every migrated style checked equivalent to the original. One-off button styles (icon/nudge/stepper) stay local |
@@ -425,7 +426,22 @@ logger.debug("GET %s took %.2fs", endpoint, time.monotonic() - start)
 
 ---
 
-### N3. Consider a local SQLite cache for price data
+### N3. Consider a local SQLite cache for price data ✅ IMPLEMENTED (Commodity Prices)
+
+**Done**: `host/price_cache.py` is a small key/value cache in
+`price_cache.sqlite3` next to the exe (one short-lived connection per call,
+so any thread can use it; an unreadable file is quarantined and rebuilt).
+Commodity Prices saves each finished RETRIEVE DATA off the GUI thread and
+restores it at launch, so FIND MOST PROFITABLE works immediately. Staleness
+rules, since trading on old prices is the risk: the original fetch time is
+kept, an entry under 30 min old resumes the REFRESH IN countdown, one between
+30 min and 6 h is usable but the button stays RETRIEVE DATA and the tooltip
+says how many minutes old it is, and anything older (or dated in the future)
+is ignored. Trade Route Optimizer is deliberately not cached: its results
+depend on the budget and system filters and are invalidated when they change.
+Tests: `tests/test_price_cache.py`, `tests/test_commodity_prices_cache.py`.
+
+**Original proposal**:
 
 **Problem**: `commodities_prices` data is fetched repeatedly across modules and
 sessions. A 30-minute refresh cache helps but doesn't persist across app restarts.

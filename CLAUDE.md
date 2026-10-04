@@ -48,6 +48,10 @@ python tests/test_api_client_dedupe.py
 python tests/test_core_persistence.py
 python tests/test_pill_hover_unlock.py
 python tests/test_mobi_notes_store.py
+python tests/test_logistics_hub_routing.py
+python tests/test_background_scans.py
+python tests/test_price_cache.py
+python tests/test_commodity_prices_cache.py
 
 # Build exe
 pyinstaller mobioverlay.spec --noconfirm

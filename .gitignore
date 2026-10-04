@@ -13,6 +13,7 @@ locations_cache.json
 logistics_hub_debug.jsonl
 logistics_hub_completed.jsonl
 mobinotes_data.json
+price_cache.sqlite3*
 freeze-build*.log
 .mobioverlay.lock
 dist-test/

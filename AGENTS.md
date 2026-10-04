@@ -34,6 +34,8 @@ mobiOverlay/
 │   ├── single_instance.py   # lockfile preventing duplicate instances
 │   ├── config.py / paths.py # config persistence, frozen/source paths
 │   ├── fileio.py            # atomic writes, corrupt-file quarantine
+│   ├── background.py        # run blocking calls off the GUI thread
+│   ├── price_cache.py       # SQLite cache for bulk price data
 │   ├── theme.py / splash.py # HUD styling, startup splash
 │   └── assets/              # fonts (Orbitron, Share Tech Mono), icons
 ├── modules/                 # one folder per module, auto-discovered
@@ -116,6 +118,8 @@ Other test files:
 - `python tests/test_pill_hover_unlock.py` — click-through pill hover-to-unlock (offscreen, no hooks)
 - `python tests/test_mobi_notes_store.py` — mobiNotes data store
 - `python tests/test_logistics_hub_routing.py` — route ordering (no Qt, no network)
+- `python tests/test_background_scans.py` — worker-thread scan loops (offscreen, fake API)
+- `python tests/test_price_cache.py` / `python tests/test_commodity_prices_cache.py` — SQLite price cache and its restore/save in Commodity Prices
 
 **Requirement**: `locations_cache.json` must exist (run the app once first, or
 the test will fetch from UEX API).

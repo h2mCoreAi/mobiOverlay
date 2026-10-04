@@ -218,6 +218,14 @@ overwritten by the next save. The location cache is only written after a
 complete UEX fetch; a failed or partial fetch falls back to the older cache
 and is retried (at most every 5 minutes) on the next lookup.
 
+## Background calls and the price cache
+
+`host/background.py` runs a blocking call (a UEX request) on a small thread
+pool and delivers the result on the GUI thread; the three scan loops use it
+so a slow response never freezes the UI (see OPTIMIZATION.md, L3).
+`host/price_cache.py` is a SQLite key/value cache (`price_cache.sqlite3`) used
+by Commodity Prices to keep its bulk price download across restarts (N3).
+
 ## Global hotkey (host/hotkey.py)
 
 Uses the `keyboard` library's low-level global keyboard hook
@@ -299,7 +307,8 @@ PyInstaller onefile build — **everything in one exe**. The distinction:
 - **Persisted next to the exe** (via `host/paths.app_root()`):
   - `config.json` — layout and settings
   - `mobinotes_data.json` — mobiNotes storage
-  - `locations_cache.json` — UEX location cache (7-day TTL, versioned)
+  - `locations_cache.json` — UEX location cache (7-day TTL, versioned; an expired one is served at once and refreshed in the background)
+  - `price_cache.sqlite3` — Commodity Prices' last RETRIEVE DATA result
   - `logistics_hub_debug.jsonl` — Logistics Hub debug log
   - `logistics_hub_completed.jsonl` — completed hauling contracts log
 
