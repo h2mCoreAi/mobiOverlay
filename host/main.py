@@ -209,7 +209,7 @@ def main():
     set_status(splash, "Loading location data...")
     app.processEvents()
     locations = LocationService(api_client)
-    locations.ensure_loaded()
+    locations.ensure_loaded(background_refresh_stale=True)
 
     window = MainWindow(config)
 

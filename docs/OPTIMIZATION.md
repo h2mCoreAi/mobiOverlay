@@ -17,6 +17,7 @@ expected benefit, effort/risk, and project-rule compliance.
 | M1 | ✅ Implemented | Lazy-load easyocr/PyTorch on first OCR use |
 | M2 | ✅ Implemented | Background OCR thread + thin OCR extract to `modules/logistics_hub/ocr.py` |
 | M5 | ✅ Implemented | In-flight/short-TTL request deduplication in UexApiClient |
+| M3 | ✅ Implemented | Stale location cache is served at once and refreshed on a worker thread (`ensure_loaded(background_refresh_stale=True)`); only a first run or schema bump still blocks |
 | N1 | ✅ Implemented | Rate-limit errors disable Retry for 8s with a countdown (`Card.set_error(cooldown_s=)`) |
 | N2 | ✅ Implemented | `UexApiClient` logs per-request timing at DEBUG |
 | M4 | ✅ Implemented | Shared `row_style`, `text_style`, `field_style`, `label_small`, `timestamp_style`, `action_btn_style` in `host/theme.py`; every migrated style checked equivalent to the original. One-off button styles (icon/nudge/stepper) stay local |
@@ -185,7 +186,18 @@ in non-main threads.
 
 ---
 
-### M3. Pre-warm LocationService cache at install/first-run
+### M3. Pre-warm LocationService cache at install/first-run ✅ IMPLEMENTED
+
+**Fixed (stale-while-revalidate instead of a bundled cache)**: an expired but
+same-version `locations_cache.json` is loaded immediately and refreshed from
+UEX by `LocationService.refresh_in_background()`. The fetch builds its result
+without touching shared state (`_fetch_snapshot()`) and swaps it in only when
+complete, so a failed or partial refresh keeps the older copy. A bundled
+baseline cache was rejected: it would ship stale data for each new patch. A
+true first run (no cache) and a schema bump (`CACHE_VERSION`) still fetch
+synchronously behind the splash screen.
+
+**Original problem notes**:
 
 **Problem**: The 7-day disk cache (`locations_cache.json`) must be populated from
 live API calls on first run or after cache expiry. This adds ~2-3s of blocking
@@ -410,7 +422,6 @@ are omitted below; this matrix only orders what's still open.
 | Priority | Item | Benefit | Effort | Risk |
 |----------|------|---------|--------|------|
 | 1 | L1 (Decompose logistics_hub) | High | High | Medium |
-| 2 | M3 (Pre-warm cache) | Medium | Medium | Low |
 | 3 | M4 remainder (per-module style variants) | Low | Medium | Low |
 
 ---

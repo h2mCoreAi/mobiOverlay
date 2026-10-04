@@ -119,6 +119,43 @@ def test_failed_fetch_retries_later() -> int:
     return _with_cache_path(body)
 
 
+def _write_stale_cache(cache_path) -> dict:
+    stale = {
+        "cache_version": locations_mod.CACHE_VERSION,
+        "fetched_at": time.time() - locations_mod.CACHE_MAX_AGE_SECONDS - 60,
+        "systems": [{"id": 1, "name": "Stanton", "is_available": 1}],
+        "locations": [{"id": 99, "name": "Old Row", "_endpoint": "terminals"}],
+    }
+    cache_path.write_text(json.dumps(stale), encoding="utf-8")
+    return stale
+
+
+def test_stale_cache_refreshed_in_background() -> int:
+    def body(cache_path):
+        stale = _write_stale_cache(cache_path)
+        svc = locations_mod.LocationService(_FakeApi())
+        svc.ensure_loaded(background_refresh_stale=True)
+        assert svc._refresh_thread is not None, "stale cache didn't start a background refresh"
+        svc._refresh_thread.join(timeout=10)
+        assert len(svc.all_locations()) == len(locations_mod.LOCATION_ENDPOINTS), "refresh didn't swap in fresh data"
+        assert json.loads(cache_path.read_text(encoding="utf-8"))["fetched_at"] > stale["fetched_at"], "refresh wasn't cached"
+        return 3
+    return _with_cache_path(body)
+
+
+def test_failed_background_refresh_keeps_stale_cache() -> int:
+    def body(cache_path):
+        stale = _write_stale_cache(cache_path)
+        svc = locations_mod.LocationService(_FakeApi(fail_endpoints={"outposts"}))
+        svc.ensure_loaded(background_refresh_stale=True)
+        assert [r["name"] for r in svc.all_locations()] == ["Old Row"], "stale cache wasn't served at once"
+        svc._refresh_thread.join(timeout=10)
+        assert [r["name"] for r in svc.all_locations()] == ["Old Row"], "a partial background fetch replaced the cache"
+        assert json.loads(cache_path.read_text(encoding="utf-8"))["fetched_at"] == stale["fetched_at"]
+        return 3
+    return _with_cache_path(body)
+
+
 def test_commodities_failure_not_cached() -> int:
     api = MagicMock()
     api.get.side_effect = [UexApiError("down"), [{"id": 1, "name": "Gold", "is_visible": 1}]]
@@ -181,6 +218,8 @@ def run() -> int:
         test_failed_fetch_is_not_cached,
         test_partial_fetch_prefers_older_complete_cache,
         test_failed_fetch_retries_later,
+        test_stale_cache_refreshed_in_background,
+        test_failed_background_refresh_keeps_stale_cache,
         test_commodities_failure_not_cached,
         test_rate_limit_detected_on_http_error,
         test_non_dict_payload_is_api_error,
