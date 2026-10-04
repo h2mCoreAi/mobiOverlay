@@ -404,17 +404,10 @@ _SMALL_BTN_STYLE = f"""
     }}
     QPushButton:hover {{ background: {theme.ACCENT_CYAN_DIM}; }}
 """
-_HEADER_LABEL_STYLE = f'color: {theme.ACCENT_CYAN}; font-family: "{theme.FONT_DISPLAY}"; font-weight: 700; font-size: {theme.fpx(10)}px;'
-_LABEL_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
-_STATUS_STYLE = f'color: {theme.TEXT_PRIMARY}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
-_COMBO_STYLE = f"""
-    QComboBox {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 3px 18px 3px 6px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
-    }}
-    QComboBox::drop-down {{ width: 16px; border: none; }}
-"""
+_HEADER_LABEL_STYLE = theme.text_style(10, color=theme.ACCENT_CYAN, family=theme.FONT_DISPLAY, weight=700)
+_LABEL_STYLE = theme.text_style(9, color=theme.TEXT_MUTED)
+_STATUS_STYLE = theme.text_style(9, color=theme.TEXT_PRIMARY)
+_COMBO_STYLE = theme.field_style('QComboBox', theme.TEXT_PRIMARY, 9, padding='3px 18px 3px 6px', drop_down=16)
 _STEPPER_BTN_STYLE = f"""
     QPushButton {{
         background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};

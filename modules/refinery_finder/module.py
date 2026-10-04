@@ -22,30 +22,16 @@ ALL_SYSTEMS = "All Systems"
 TOP_N = 5
 
 _LABEL_SMALL = theme.label_small()
-_ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 6px 8px;"
-_RANK_STYLE = f'font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(13)}px; color: {theme.ACCENT_CYAN};'
-_TERMINAL_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(11)}px; color: {theme.TEXT_PRIMARY};'
-_SUBTEXT_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; color: {theme.TEXT_MUTED};'
-_YIELD_STYLE = f'font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(13)}px;'
-_INFO_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
-_METHOD_ROW_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; color: {theme.TEXT_MUTED};'
+_ROW_STYLE = theme.row_style("6px 8px")
+_RANK_STYLE = theme.text_style(13, color=theme.ACCENT_CYAN, family=theme.FONT_DISPLAY, weight=800)
+_TERMINAL_STYLE = theme.text_style(11, color=theme.TEXT_PRIMARY)
+_SUBTEXT_STYLE = theme.text_style(9, color=theme.TEXT_MUTED)
+_YIELD_STYLE = theme.text_style(13, family=theme.FONT_DISPLAY, weight=800)
+_INFO_STYLE = theme.text_style(9, color=theme.TEXT_DIM)
+_METHOD_ROW_STYLE = theme.text_style(9, color=theme.TEXT_MUTED)
 _TIMESTAMP_STYLE = theme.timestamp_style()
-_COMBO_STYLE = f"""
-    QComboBox {{
-        background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
-        font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(14)}px;
-    }}
-    QComboBox::drop-down {{ width: 18px; border: none; }}
-"""
-_SYSTEM_COMBO_STYLE = f"""
-    QComboBox {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_MUTED};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 2px 4px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
-    }}
-    QComboBox::drop-down {{ width: 16px; border: none; }}
-"""
+_COMBO_STYLE = theme.field_style('QComboBox', theme.ACCENT_CYAN, 14, padding='4px 6px', family=theme.FONT_DISPLAY, weight=800, drop_down=18)
+_SYSTEM_COMBO_STYLE = theme.field_style('QComboBox', theme.TEXT_MUTED, 9, padding='2px 4px', drop_down=16)
 
 
 class RefineryFinderModule(ModuleBase):

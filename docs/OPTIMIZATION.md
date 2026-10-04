@@ -19,7 +19,7 @@ expected benefit, effort/risk, and project-rule compliance.
 | M5 | ✅ Implemented | In-flight/short-TTL request deduplication in UexApiClient |
 | N1 | ✅ Implemented | Rate-limit errors disable Retry for 8s with a countdown (`Card.set_error(cooldown_s=)`) |
 | N2 | ✅ Implemented | `UexApiClient` logs per-request timing at DEBUG |
-| M4 | 🟡 Partial | Identical `_LABEL_SMALL`, `_TIMESTAMP_STYLE`, `_ACTION_BTN_STYLE` moved to `host/theme.py`; per-module variants (combos, rows) left as is |
+| M4 | ✅ Implemented | Shared `row_style`, `text_style`, `field_style`, `label_small`, `timestamp_style`, `action_btn_style` in `host/theme.py`; every migrated style checked equivalent to the original. One-off button styles (icon/nudge/stepper) stay local |
 
 ---
 
@@ -203,7 +203,7 @@ cache age and showing "updating location data..." on stale cache.
 
 ---
 
-### M4. Consolidate duplicate stylesheet string construction 🟡 PARTIAL
+### M4. Consolidate duplicate stylesheet string construction ✅ IMPLEMENTED
 
 **Done**: styles that were byte-identical across modules now live in
 `theme.label_small()`, `theme.timestamp_style()` and `theme.action_btn_style()`

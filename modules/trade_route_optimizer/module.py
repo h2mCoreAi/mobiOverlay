@@ -22,40 +22,16 @@ SCAN_STEP_INTERVAL_MS = 120  # be nice to the API — ~8 requests/sec while scan
 SCAN_CACHE_SECONDS = 1800  # 30 min, same as Commodity Prices' Retrieve Data
 FORCE_CONFIRM_TIMEOUT_MS = 4000
 
-_COMBO_STYLE = f"""
-    QComboBox {{
-        background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 22px 4px 6px;
-        font-family: "{theme.FONT_DISPLAY}"; font-weight: 700; font-size: {theme.fpx(12)}px;
-    }}
-    QComboBox::drop-down {{
-        width: 18px; border: none;
-    }}
-"""
-_FILTER_COMBO_STYLE = f"""
-    QComboBox {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_MUTED};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 2px 18px 2px 4px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
-    }}
-    QComboBox::drop-down {{
-        width: 16px; border: none;
-    }}
-"""
-_INVESTMENT_STYLE = f"""
-    QLineEdit {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(11)}px;
-    }}
-"""
-_ROUTE_ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 7px 9px;"
-_COMMODITY_STYLE = f'color: {theme.ACCENT_CYAN}; font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(13)}px;'
-_DEST_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
-_PROFIT_STYLE = f'color: {theme.TEXT_PRIMARY}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(14)}px; font-weight: bold;'
-_ROI_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
+_COMBO_STYLE = theme.field_style('QComboBox', theme.ACCENT_CYAN, 12, padding='4px 22px 4px 6px', family=theme.FONT_DISPLAY, weight=700, drop_down=18)
+_FILTER_COMBO_STYLE = theme.field_style('QComboBox', theme.TEXT_MUTED, 9, padding='2px 18px 2px 4px', drop_down=16)
+_INVESTMENT_STYLE = theme.field_style('QLineEdit', theme.TEXT_PRIMARY, 11, padding='4px 6px')
+_ROUTE_ROW_STYLE = theme.row_style("7px 9px")
+_COMMODITY_STYLE = theme.text_style(13, color=theme.ACCENT_CYAN, family=theme.FONT_DISPLAY, weight=800)
+_DEST_STYLE = theme.text_style(9, color=theme.TEXT_MUTED)
+_PROFIT_STYLE = theme.text_style(14, color=theme.TEXT_PRIMARY, weight='bold')
+_ROI_STYLE = theme.text_style(9, color=theme.TEXT_MUTED)
 _TIMESTAMP_STYLE = theme.timestamp_style()
-_LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;'
+_LABEL_SMALL = theme.text_style(9, color=theme.TEXT_MUTED, letter_spacing=1)
 _ACTION_BTN_STYLE = theme.action_btn_style()
 
 

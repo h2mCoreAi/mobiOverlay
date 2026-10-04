@@ -30,33 +30,15 @@ MAX_RESULTS = 8
 COPY_CONFIRM_MS = 1500  # how long the COPY button shows "COPIED" before reverting, same as Logistics Hub's COPY ROUTE
 
 _LABEL_SMALL = theme.label_small()
-_LIST_STYLE = f"""
-    QListWidget {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px;
-    }}
-"""
-_SEARCH_STYLE = f"""
-    QLineEdit {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px;
-    }}
-"""
-_COMBO_STYLE = f"""
-    QComboBox {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_MUTED};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 3px 5px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
-    }}
-"""
+_LIST_STYLE = theme.field_style('QListWidget', theme.TEXT_PRIMARY, 10)
+_SEARCH_STYLE = theme.field_style('QLineEdit', theme.TEXT_PRIMARY, 10, padding='4px 6px')
+_COMBO_STYLE = theme.field_style('QComboBox', theme.TEXT_MUTED, 9, padding='3px 5px')
 _ACTION_BTN_STYLE = theme.action_btn_style()
-_RESULT_ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 8px 10px;"
-_RESULT_HEADER_STYLE = f'font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(12)}px; color: {theme.ACCENT_CYAN};'
-_RESULT_TOTAL_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(11)}px; color: {theme.TEXT_PRIMARY};'
-_RESULT_LINE_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; color: {theme.TEXT_MUTED};'
-_RESULT_MISSING_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; color: {theme.ACCENT_AMBER};'
+_RESULT_ROW_STYLE = theme.row_style("8px 10px")
+_RESULT_HEADER_STYLE = theme.text_style(12, color=theme.ACCENT_CYAN, family=theme.FONT_DISPLAY, weight=800)
+_RESULT_TOTAL_STYLE = theme.text_style(11, color=theme.TEXT_PRIMARY)
+_RESULT_LINE_STYLE = theme.text_style(9, color=theme.TEXT_MUTED)
+_RESULT_MISSING_STYLE = theme.text_style(9, color=theme.ACCENT_AMBER)
 _TIMESTAMP_STYLE = theme.timestamp_style()
 
 
