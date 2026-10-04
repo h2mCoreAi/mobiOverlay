@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from host import theme
 from host.api_client import RATE_LIMIT_RETRY_COOLDOWN_S, UexRateLimitError
+from host.background import run_in_background
 from host.locations import LocationService
 from host.module_base import ModuleBase
 
@@ -57,6 +58,8 @@ class MultiCommodityFinderModule(ModuleBase):
         self.request_refresh = None  # injected by host after wrapping refresh()
 
         self._scan_timer: QTimer | None = None
+        self._scan_inflight = False
+        self._scan_generation = 0  # bumped per scan so a late reply from an old one is ignored
         self._scan_queue: list[str] = []
         self._scan_index = 0
         self._scanned_data: dict[str, list[dict]] = {}
@@ -317,6 +320,8 @@ class MultiCommodityFinderModule(ModuleBase):
             return
 
         self._stop_countdown()
+        self._scan_generation += 1
+        self._scan_inflight = False
         self._scan_queue = selected
         self._scan_index = 0
         self._scanned_data = {}
@@ -329,25 +334,45 @@ class MultiCommodityFinderModule(ModuleBase):
         self._scan_timer.start(SCAN_STEP_INTERVAL_MS)
 
     def _scan_step(self):
+        """One timer tick: request the next commodity on a worker thread (the
+        UI stays responsive while UEX answers). At most one request is in
+        flight, so pacing is unchanged."""
+        if self._scan_inflight:
+            return
         if self._scan_index >= len(self._scan_queue):
             self._finish_scan()
             return
 
         name = self._scan_queue[self._scan_index]
         self._scan_index += 1
-        try:
-            rows = self.api.get("commodities_prices", {"commodity_name": name})
-            self._scanned_data[name] = [r for r in rows if r.get("commodity_name") == name]
-        except UexRateLimitError as exc:
-            self._scan_timer.stop()
-            self._scan_timer = None
+        self._scan_inflight = True
+        generation = self._scan_generation
+        run_in_background(
+            lambda: self.api.get("commodities_prices", {"commodity_name": name}),
+            lambda rows: self._on_scan_rows(generation, name, rows),
+            lambda exc: self._on_scan_error(generation, exc),
+        )
+
+    def _on_scan_rows(self, generation: int, name: str, rows: list):
+        if generation != self._scan_generation:
+            return
+        self._scan_inflight = False
+        self._scanned_data[name] = [r for r in rows if r.get("commodity_name") == name]
+        self.scan_btn.setText(f"SCANNING {self._scan_index}/{len(self._scan_queue)}")
+
+    def _on_scan_error(self, generation: int, exc: Exception):
+        if generation != self._scan_generation:
+            return
+        self._scan_inflight = False
+        if isinstance(exc, UexRateLimitError):
+            if self._scan_timer is not None:
+                self._scan_timer.stop()
+                self._scan_timer = None
             self.scan_btn.setEnabled(True)
             self.scan_btn.setText("SCAN")
             self.card.set_error(str(exc), retry_callback=self._start_scan, cooldown_s=RATE_LIMIT_RETRY_COOLDOWN_S)
             return
-        except Exception:
-            pass  # skip commodities that individually fail; don't abort the whole scan
-
+        # skip commodities that individually fail; don't abort the whole scan
         self.scan_btn.setText(f"SCANNING {self._scan_index}/{len(self._scan_queue)}")
 
     def _finish_scan(self):

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QComboBox, QLabel, QHBoxLayout, QVBoxLayout, QWidg
 
 from host import theme
 from host.api_client import RATE_LIMIT_RETRY_COOLDOWN_S, UexRateLimitError
+from host.background import run_in_background
 from host.module_base import ModuleBase
 
 ALL_SYSTEMS = "All Systems"
@@ -52,6 +53,8 @@ class CommodityPricesModule(ModuleBase):
         # Retrieve Data state
         self._all_commodity_data: dict[str, list[dict]] = {}
         self._retrieve_timer: QTimer | None = None
+        self._retrieve_inflight = False
+        self._retrieve_generation = 0  # bumped per retrieval so a late reply from an old one is ignored
         self._retrieve_queue: list[str] = []
         self._retrieve_index = 0
         self._last_retrieve_time = 0.0
@@ -313,6 +316,8 @@ class CommodityPricesModule(ModuleBase):
         if not self._commodities:
             return
         self._stop_countdown()
+        self._retrieve_generation += 1
+        self._retrieve_inflight = False
         self._retrieve_queue = list(self._commodities)
         self._retrieve_index = 0
         self._all_commodity_data = {}
@@ -325,26 +330,46 @@ class CommodityPricesModule(ModuleBase):
         self._retrieve_timer.start(RETRIEVE_STEP_INTERVAL_MS)
 
     def _retrieve_step(self):
+        """One timer tick: request the next commodity on a worker thread (the
+        UI stays responsive while UEX answers). At most one request is in
+        flight, so pacing is unchanged."""
+        if self._retrieve_inflight:
+            return
         if self._retrieve_index >= len(self._retrieve_queue):
             self._finish_retrieve()
             return
 
         name = self._retrieve_queue[self._retrieve_index]
         self._retrieve_index += 1
-        try:
-            rows = self.api.get("commodities_prices", {"commodity_name": name})
-            self._all_commodity_data[name] = [r for r in rows if r.get("commodity_name") == name]
-        except UexRateLimitError as exc:
-            self._retrieve_timer.stop()
-            self._retrieve_timer = None
+        self._retrieve_inflight = True
+        generation = self._retrieve_generation
+        run_in_background(
+            lambda: self.api.get("commodities_prices", {"commodity_name": name}),
+            lambda rows: self._on_retrieve_rows(generation, name, rows),
+            lambda exc: self._on_retrieve_error(generation, exc),
+        )
+
+    def _on_retrieve_rows(self, generation: int, name: str, rows: list):
+        if generation != self._retrieve_generation:
+            return
+        self._retrieve_inflight = False
+        self._all_commodity_data[name] = [r for r in rows if r.get("commodity_name") == name]
+        self.retrieve_btn.setText(f"RETRIEVING {self._retrieve_index}/{len(self._retrieve_queue)}")
+
+    def _on_retrieve_error(self, generation: int, exc: Exception):
+        if generation != self._retrieve_generation:
+            return
+        self._retrieve_inflight = False
+        if isinstance(exc, UexRateLimitError):
+            if self._retrieve_timer is not None:
+                self._retrieve_timer.stop()
+                self._retrieve_timer = None
             self.retrieve_btn.setEnabled(True)
             self.retrieve_btn.setText("RETRIEVE DATA")
             self.profitable_btn.setEnabled(bool(self._all_commodity_data))
             self.card.set_error(str(exc), retry_callback=self._start_retrieve, cooldown_s=RATE_LIMIT_RETRY_COOLDOWN_S)
             return
-        except Exception:
-            pass  # skip commodities that individually fail; don't abort the whole retrieval
-
+        # skip commodities that individually fail; don't abort the whole retrieval
         self.retrieve_btn.setText(f"RETRIEVING {self._retrieve_index}/{len(self._retrieve_queue)}")
 
     def _finish_retrieve(self):

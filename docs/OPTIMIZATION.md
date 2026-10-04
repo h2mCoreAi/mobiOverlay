@@ -19,6 +19,8 @@ expected benefit, effort/risk, and project-rule compliance.
 | M5 | ✅ Implemented | In-flight/short-TTL request deduplication in UexApiClient |
 | M3 | ✅ Implemented | Stale location cache is served at once and refreshed on a worker thread (`ensure_loaded(background_refresh_stale=True)`); only a first run or schema bump still blocks |
 | L1 | ✅ Implemented | `logistics_hub/module.py` 4,368 → ~2.7k lines: `parsing.py`, `routing.py`, `grading.py`, `popups.py` extracted (one commit each); old route planner checked identical on 150 random scenarios |
+| Q5 | ✅ Resolved differently | Batching rejected (it lengthens GUI freezes); the real cost, blocking requests in timer ticks, is fixed by L3 |
+| L3 | ✅ Implemented (thread pool, not asyncio) | `host/background.py`; the three scan loops request on a worker thread and stay responsive |
 | N1 | ✅ Implemented | Rate-limit errors disable Retry for 8s with a countdown (`Card.set_error(cooldown_s=)`) |
 | N2 | ✅ Implemented | `UexApiClient` logs per-request timing at DEBUG |
 | M4 | ✅ Implemented | Shared `row_style`, `text_style`, `field_style`, `label_small`, `timestamp_style`, `action_btn_style` in `host/theme.py`; every migrated style checked equivalent to the original. One-off button styles (icon/nudge/stepper) stay local |
@@ -105,7 +107,15 @@ session.
 
 ---
 
-### Q5. Reduce QTimer overhead in scan loops
+### Q5. Reduce QTimer overhead in scan loops ✅ RESOLVED (not as written)
+
+**Finding**: the timer itself costs nothing measurable. What hurt was that each
+tick ran a blocking `api.get()` on the GUI thread, so a ~200-request scan kept
+the UI frozen for most of its duration. Batching 5 requests per 600 ms tick, as
+proposed below, would have made each freeze five times longer. The fix is L3:
+the request now runs on a worker thread and the 120 ms tick only paces it.
+
+**Original proposal**:
 
 **Problem**: Scan loops (Commodity Prices, Trade Route Optimizer, Multi-Commodity
 Finder) use 120ms QTimer intervals for rate limiting:
@@ -333,7 +343,20 @@ services are planned.
 
 ---
 
-### L3. Consider async/await for network calls
+### L3. Consider async/await for network calls ✅ IMPLEMENTED (as a thread pool)
+
+**Done without asyncio/qasync**: `host/background.py` runs a call on a
+2-worker `ThreadPoolExecutor` and delivers the result (or exception) back on
+the GUI thread through a queued Qt signal. Commodity Prices, Trade Route
+Optimizer and Multi-Commodity Finder keep their 120 ms pacing and their
+one-request-in-flight rule, so the request rate is unchanged; a per-scan
+generation counter drops replies from a superseded scan. `UexApiClient` was
+already thread-safe (locked dedupe). Tests: `tests/test_background_scans.py`
+(event loop stays free during a slow scan, rate limit stops the scan, stale
+replies ignored). `aiohttp`/`httpx` + `qasync` were not adopted: no new
+dependency, no packaging risk, same benefit for this usage.
+
+**Original proposal**:
 
 **Problem**: All API calls are synchronous `requests.get()`. In scan loops this is
 partially mitigated by QTimer chunking, but each individual call still blocks.
@@ -432,7 +455,6 @@ are omitted below; this matrix only orders what's still open.
 
 | Priority | Item | Benefit | Effort | Risk |
 |----------|------|---------|--------|------|
-| 1 | L1 (Decompose logistics_hub) | High | High | Medium |
 | 3 | M4 remainder (per-module style variants) | Low | Medium | Low |
 
 ---
