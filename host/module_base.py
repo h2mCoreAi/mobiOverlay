@@ -8,16 +8,29 @@ error rather than corrupting shared state or crashing the app.
 from host.api_client import UexApiClient
 from host.config import Config
 from host.locations import LocationService
+from host.price_cache import PriceCache
+from host.services import Services
 
 
 class ModuleBase:
     module_id: str = ""
     display_name: str = ""
 
+    # Set once by host/module_loader.discover_modules() so every module shares
+    # the same Services instance without each `__init__` having to forward it.
+    _shared_services: Services | None = None
+
+    @classmethod
+    def install_services(cls, services: Services | None) -> None:
+        ModuleBase._shared_services = services
+
     def __init__(self, api_client: UexApiClient, config: Config, locations: LocationService):
         self.api = api_client
         self.config = config
         self.locations = locations
+        # Outside the loader (tests, scripts) there is no shared instance:
+        # build one from what this module was given.
+        self.services = ModuleBase._shared_services or Services(api_client, config, locations, PriceCache())
         self.settings = config.module_settings(self.module_id)
 
     def create_card(self, parent):

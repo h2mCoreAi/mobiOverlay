@@ -218,6 +218,14 @@ overwritten by the next save. The location cache is only written after a
 complete UEX fetch; a failed or partial fetch falls back to the older cache
 and is retried (at most every 5 minutes) on the next lookup.
 
+## Shared services (host/services.py)
+
+`Services(api, config, locations, price_cache)` is built once in `host/main.py`
+and installed on `ModuleBase` by `discover_modules(..., services=)`. Modules
+read `self.services`; `self.api`, `self.config` and `self.locations` are
+shortcuts. Adding a shared service means one new field there and one line in
+`main.py`; no module `__init__` changes.
+
 ## Background calls and the price cache
 
 `host/background.py` runs a blocking call (a UEX request) on a small thread

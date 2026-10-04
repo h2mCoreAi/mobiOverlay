@@ -34,6 +34,7 @@ mobiOverlay/
 │   ├── single_instance.py   # lockfile preventing duplicate instances
 │   ├── config.py / paths.py # config persistence, frozen/source paths
 │   ├── fileio.py            # atomic writes, corrupt-file quarantine
+│   ├── services.py          # Services: the shared objects handed to modules
 │   ├── background.py        # run blocking calls off the GUI thread
 │   ├── price_cache.py       # SQLite cache for bulk price data
 │   ├── theme.py / splash.py # HUD styling, startup splash
@@ -118,6 +119,7 @@ Other test files:
 - `python tests/test_pill_hover_unlock.py` — click-through pill hover-to-unlock (offscreen, no hooks)
 - `python tests/test_mobi_notes_store.py` — mobiNotes data store
 - `python tests/test_logistics_hub_routing.py` — route ordering (no Qt, no network)
+- `python tests/test_services.py` — shared Services wiring
 - `python tests/test_background_scans.py` — worker-thread scan loops (offscreen, fake API)
 - `python tests/test_price_cache.py` / `python tests/test_commodity_prices_cache.py` — SQLite price cache and its restore/save in Commodity Prices
 
@@ -160,7 +162,7 @@ all 8 modules bundled inside. `config.json` and cache files persist next to the 
 - **Module contract**: `module_id`, `display_name`, `create_card()`, `refresh()`,
   optional `shutdown()`
 - **mobiOverlay Core never imports module internals** — only calls the contract
-- **Shared services passed to modules**: `api_client`, `config`, `locations`
+- **Shared services passed to modules**: `api_client`, `config`, `locations` (also bundled as `self.services`, see `host/services.py`)
 - **Config persistence**: modules touch only their own `modules.<id>` section
 - **No code comments that just narrate** — comments explain non-obvious intent only
 - **Docstrings** for public functions; skip obvious ones

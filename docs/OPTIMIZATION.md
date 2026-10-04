@@ -22,6 +22,7 @@ expected benefit, effort/risk, and project-rule compliance.
 | Q5 | ✅ Resolved differently | Batching rejected (it lengthens GUI freezes); the real cost, blocking requests in timer ticks, is fixed by L3 |
 | L3 | ✅ Implemented (thread pool, not asyncio) | `host/background.py`; the three scan loops request on a worker thread and stay responsive |
 | N3 | ✅ Implemented | `host/price_cache.py` (SQLite); Commodity Prices restores its RETRIEVE DATA result after a restart |
+| L2 | ✅ Implemented (lightweight) | `host/services.py` `Services` dataclass; the loader installs one shared instance, modules read `self.services` |
 | N1 | ✅ Implemented | Rate-limit errors disable Retry for 8s with a countdown (`Card.set_error(cooldown_s=)`) |
 | N2 | ✅ Implemented | `UexApiClient` logs per-request timing at DEBUG |
 | M4 | ✅ Implemented | Shared `row_style`, `text_style`, `field_style`, `label_small`, `timestamp_style`, `action_btn_style` in `host/theme.py`; every migrated style checked equivalent to the original. One-off button styles (icon/nudge/stepper) stay local |
@@ -325,7 +326,19 @@ the existing test suite (`tests/test_logistics_hub_parsing.py`).
 
 ---
 
-### L2. Implement a module-level dependency injection container
+### L2. Implement a module-level dependency injection container ✅ IMPLEMENTED (lightweight)
+
+**Done**: `host/services.py` defines `Services(api, config, locations, price_cache)`.
+`discover_modules(..., services=)` installs one shared instance on `ModuleBase`,
+and every module reads it as `self.services`; `self.api`/`self.config`/
+`self.locations` stay as shortcuts, so no existing module needed its `__init__`
+changed. A new shared service is now one field in `Services` plus one line in
+`host/main.py`. Without a loader (tests, scripts) `ModuleBase` builds a default
+`Services` from its own arguments. A full container with lazy construction and
+lifetimes was not built: with four services it would only add indirection.
+Commodity Prices already takes its `PriceCache` from it. Test: `tests/test_services.py`.
+
+**Original proposal**:
 
 **Problem**: Modules manually instantiate their own `LocationService`, manage their
 own timers, and duplicate setup logic. Adding a new shared service requires editing

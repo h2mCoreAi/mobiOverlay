@@ -16,7 +16,6 @@ from PySide6.QtWidgets import QComboBox, QLabel, QHBoxLayout, QVBoxLayout, QWidg
 from host import theme
 from host.api_client import RATE_LIMIT_RETRY_COOLDOWN_S, UexRateLimitError
 from host.background import run_in_background
-from host.price_cache import PriceCache
 from host.module_base import ModuleBase
 
 ALL_SYSTEMS = "All Systems"
@@ -55,7 +54,7 @@ class CommodityPricesModule(ModuleBase):
 
         # Retrieve Data state
         self._all_commodity_data: dict[str, list[dict]] = {}
-        self._price_cache = PriceCache()
+        self._price_cache = self.services.price_cache
         self._retrieve_timer: QTimer | None = None
         self._retrieve_inflight = False
         self._retrieve_generation = 0  # bumped per retrieval so a late reply from an old one is ignored

@@ -51,6 +51,7 @@ python tests/test_mobi_notes_store.py
 python tests/test_logistics_hub_routing.py
 python tests/test_background_scans.py
 python tests/test_price_cache.py
+python tests/test_services.py
 python tests/test_commodity_prices_cache.py
 
 # Build exe
