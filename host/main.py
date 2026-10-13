@@ -73,8 +73,7 @@ SLOW_CALL_WARN_SECONDS = 2.0
 
 def _plain_text(html_or_text: str) -> str:
     """Module display_name values are rich HTML (the mobi<Name> branding —
-    see docs/DECISIONS.md) but QSplashScreen.showMessage() renders plain
-    text only, so a raw display_name would print its literal <span> tags."""
+    see docs/DECISIONS.md) but the splash screen draws plain text only, so a raw display_name would print its literal <span> tags."""
     return re.sub(r"<[^>]+>", "", html_or_text)
 
 

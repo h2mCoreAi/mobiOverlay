@@ -121,6 +121,7 @@ Other test files:
 - `python tests/test_logistics_hub_routing.py` — route ordering (no Qt, no network)
 - `python tests/test_services.py` — shared Services wiring
 - `python tests/test_background_scans.py` — worker-thread scan loops (offscreen, fake API)
+- `python tests/test_mobi_throttle_reconnect.py` — mobiThrottle joystick re-init only when needed (no Qt window, no device)
 - `python tests/test_price_cache.py` / `python tests/test_commodity_prices_cache.py` — SQLite price cache and its restore/save in Commodity Prices
 
 **Requirement**: `locations_cache.json` must exist (run the app once first, or

@@ -4129,3 +4129,29 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
     rejected because it would send the player's screenshots to a third party;
     ONNX because it is an unverifiable rewrite of the OCR path. The lite exe
     was built but not launched, since Star Citizen was running.
+
+- **2026-10-13 — Startup CPU: onedir build, faster splash, fewer joystick
+  re-inits.** Owner report: launching used ~100% CPU. Measured on an idle
+  8-core PC (Star Citizen closed), same code, three changes:
+  - **Onedir build (`MOBI_ONEDIR=1`).** The onefile exe unpacks ~330 MB to a
+    new temp folder on every launch and Defender rescans it each time:
+    ~55 Defender CPU-seconds, 66% average system CPU in the first 10 s,
+    window at ~12.5 s. The onedir folder is unpacked once, so later launches
+    cost Defender ~0.1–1.4 CPU-seconds. Optional switch for now; whether it
+    becomes the release default waits on the owner's live test.
+  - **Splash is a plain frameless widget, not `QSplashScreen`.**
+    `QSplashScreen.show()` (Qt 6.11) waited a full 1.03 s every launch
+    for an expose event, opaque or translucent; the widget shows in 0.02 s
+    and keeps the same look and `show_splash`/`set_status`/`finish` calls.
+  - **mobiThrottle re-inits pygame's joystick subsystem only when needed.**
+    Each re-init blocks the GUI thread ~0.25 s. Startup did it twice in a row
+    (device list, then connect); the connect now reuses a list under 2 s
+    old. With no device connected the 5 s reconnect check re-inited every
+    time; it now does so only on SDL's JOYDEVICEADDED event, on Apply
+    Device, or once a minute as a safety net. Re-init drains the
+    JOYDEVICEADDED events it posts for already-present devices, so it can't
+    retrigger itself.
+  Result: window ~1 s after launch (onefile 12.5 s), mobiOverlay ~1.6
+  CPU-seconds (8.5), system 7–23% average in the first 10 s (66%). Not
+  changed: the initial module refreshes still make a few blocking UEX
+  requests on the GUI thread (~0.3 s of wall time, almost no CPU).

@@ -73,6 +73,23 @@ every other module is unchanged. The release workflow builds it as a separate
 `build-lite` job after the full build and attaches
 `mobiOverlay-<version>-windows-lite.zip` to the same release.
 
+## Onedir build (fast, low-CPU startup)
+
+A onefile exe unpacks itself to a new temp folder on every launch, and
+antivirus rescans it each time (measured ~55 Defender CPU-seconds and a
+~12.5 s wait before the window appears). Setting `MOBI_ONEDIR=1` writes a
+folder instead, which is unpacked only once:
+
+```powershell
+$env:MOBI_ONEDIR = "1"
+pyinstaller mobioverlay.spec --noconfirm
+```
+
+This writes `dist/mobiOverlay/` containing `mobiOverlay.exe` and `_internal/`.
+Run `mobiOverlay.exe` as usual. `config.json` and caches go next to it. Keep
+the folder together: the exe can't run without `_internal/`. Combine with
+`MOBI_LITE=1` for a lite folder.
+
 ## Running tests
 
 The test suite uses plain asserts with no test framework dependency:
@@ -95,6 +112,7 @@ Other test files:
 - `tests/test_core_persistence.py` — config/cache recovery, atomic saves, rate-limit detection (no network)
 - `tests/test_pill_hover_unlock.py` — click-through pill hover-to-unlock (offscreen, no hooks)
 - `tests/test_mobi_notes_store.py` — mobiNotes data store
+- `tests/test_mobi_throttle_reconnect.py` — joystick re-init only when needed
 
 ## Test build side-by-side (before release)
 

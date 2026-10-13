@@ -9,7 +9,7 @@ the rest of the HUD (void background, cyan border, mobiOverlay wordmark).
 """
 from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen, QPixmap
-from PySide6.QtWidgets import QSplashScreen
+from PySide6.QtWidgets import QWidget
 
 from host import theme
 
@@ -71,19 +71,46 @@ def _build_pixmap() -> QPixmap:
     return pixmap
 
 
-def show_splash() -> QSplashScreen:
-    splash = QSplashScreen(_build_pixmap())
-    splash.setAttribute(Qt.WA_TranslucentBackground)
+class Splash(QWidget):
+    """A plain frameless window, not QSplashScreen: QSplashScreen.show()
+    blocks for a full second on every launch (Qt 6.11, measured 1.03s vs
+    0.02s for this) waiting for an expose event before returning."""
+
+    def __init__(self):
+        super().__init__(None, Qt.SplashScreen | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self._pixmap = _build_pixmap()
+        self._message = ""
+        self.resize(self._pixmap.size())
+        screen = self.screen().availableGeometry()
+        self.move(screen.center() - self.rect().center())
+
+    def show_message(self, text: str):
+        self._message = text
+        # Force an immediate repaint — the caller is about to block the event
+        # loop with a slow synchronous call (module import, API fetch), so
+        # there won't be a natural repaint opportunity otherwise.
+        self.repaint()
+
+    def finish(self, _window):
+        self.close()
+
+    def mousePressEvent(self, event):
+        self.hide()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.drawPixmap(0, 0, self._pixmap)
+        painter.setPen(QColor(theme.TEXT_MUTED))
+        painter.drawText(self.rect(), int(Qt.AlignHCenter | Qt.AlignBottom), self._message)
+
+
+def show_splash() -> Splash:
+    splash = Splash()
     splash.show()
     set_status(splash, "Starting up...")
     return splash
 
 
-def set_status(splash: QSplashScreen, text: str):
-    splash.showMessage(
-        text, int(Qt.AlignHCenter | Qt.AlignBottom), QColor(theme.TEXT_MUTED)
-    )
-    # Force an immediate repaint — the caller is about to block the event
-    # loop with a slow synchronous call (module import, API fetch), so
-    # there won't be a natural repaint opportunity otherwise.
-    splash.repaint()
+def set_status(splash: Splash, text: str):
+    splash.show_message(text)

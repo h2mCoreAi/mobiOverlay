@@ -53,6 +53,7 @@ python tests/test_background_scans.py
 python tests/test_price_cache.py
 python tests/test_services.py
 python tests/test_commodity_prices_cache.py
+python tests/test_mobi_throttle_reconnect.py
 
 # Build exe
 pyinstaller mobioverlay.spec --noconfirm

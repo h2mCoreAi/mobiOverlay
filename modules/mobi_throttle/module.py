@@ -54,6 +54,13 @@ HOME_FLASH_DURATION = 0.18  # seconds
 HOME_TICK_FREQ = 1400
 HOME_TICK_MS = 45
 RECONNECT_STATUS_UNAVAILABLE = "No device connected"
+# Restarting pygame's joystick subsystem blocks the GUI thread ~0.25s. With no
+# device connected, the 5s reconnect check only does it when SDL reports a
+# device was plugged in, plus this safety-net rescan in case an event is missed.
+JOYSTICK_RESCAN_SECONDS = 60
+# A device list this recent is reused as-is (create_card lists devices just
+# before the first refresh connects).
+JOYSTICK_FRESH_SECONDS = 2
 # Corner radius for the panel background, scaled to the bar's own size
 # rather than a fixed px value — this bar is user-resizable over a wide
 # range (a thin sliver up past a normal card's width), and a fixed radius
@@ -154,9 +161,28 @@ def play_home_tick(count: int):
         QTimer.singleShot(delay, lambda: _chirp_sound.play() if _chirp_sound else None)
 
 
-def list_joysticks():
+def _reinit_joysticks():
     pygame.joystick.quit()
     pygame.joystick.init()
+    # Re-init posts a JOYDEVICEADDED for every device already present; drop
+    # them so joystick_plugged_in() only reports devices plugged in later.
+    pygame.event.pump()
+    pygame.event.clear(pygame.JOYDEVICEADDED)
+
+
+def joystick_plugged_in() -> bool:
+    """True if SDL reported a newly connected device since the last check.
+    Cheap (no subsystem restart). Drains the event queue, which nothing else
+    reads (the axis poll only pumps it)."""
+    try:
+        pygame.event.pump()
+        return any(e.type == pygame.JOYDEVICEADDED for e in pygame.event.get())
+    except Exception:
+        return False
+
+
+def list_joysticks():
+    _reinit_joysticks()
     devices = []
     for i in range(pygame.joystick.get_count()):
         j = pygame.joystick.Joystick(i)
@@ -182,14 +208,15 @@ def _default_bar_position() -> tuple[int, int]:
     return geo.x() + 100, geo.y() + 100
 
 
-def find_joystick(device_guid):
+def find_joystick(device_guid, reinit=True):
     """Finds the configured device by saved GUID, or falls back to the
     first connected device with at least one axis — deliberately no
     hardcoded device-name hint (unlike ThrottleWatch's original
     DEVICE_NAME_HINT): mobiOverlay is meant to work on someone else's rig,
-    not just this machine's VKB throttle."""
-    pygame.joystick.quit()
-    pygame.joystick.init()
+    not just this machine's VKB throttle. `reinit=False` reuses the devices
+    pygame already enumerated (only safe right after list_joysticks())."""
+    if reinit:
+        _reinit_joysticks()
     fallback = None
     for i in range(pygame.joystick.get_count()):
         j = pygame.joystick.Joystick(i)
@@ -593,6 +620,8 @@ class MobiThrottleModule(ModuleBase):
             pygame.init()
 
         self._device = None
+        self._joysticks_scanned_at = float("-inf")
+        self._rescan_requested = False
         self._prev_in_home = True
         self._last_chirp_time = 0.0
         self._flash_until = 0.0
@@ -801,6 +830,7 @@ class MobiThrottleModule(ModuleBase):
     # -- device -----------------------------------------------------
     def _refresh_device_list(self):
         self._device_list = list_joysticks()
+        self._joysticks_scanned_at = time.monotonic()
         self.device_combo.blockSignals(True)
         self.device_combo.clear()
         self.device_combo.addItem("Auto (first detected)")
@@ -831,11 +861,19 @@ class MobiThrottleModule(ModuleBase):
         # Force an immediate reconnect against the new selection instead of
         # waiting for the next refresh_interval_seconds tick.
         self._device = None
+        self._rescan_requested = True
         if self.request_refresh is not None:
             self.request_refresh()
 
     def _try_connect(self):
-        self._device = find_joystick(self.settings.get("device_guid"))
+        since_scan = time.monotonic() - self._joysticks_scanned_at
+        plugged_in = joystick_plugged_in()
+        if since_scan < JOYSTICK_FRESH_SECONDS and not self._rescan_requested:
+            self._device = find_joystick(self.settings.get("device_guid"), reinit=False)
+        elif self._rescan_requested or plugged_in or since_scan >= JOYSTICK_RESCAN_SECONDS:
+            self._rescan_requested = False
+            self._device = find_joystick(self.settings.get("device_guid"))
+            self._joysticks_scanned_at = time.monotonic()
         if self._device is not None:
             self.settings["device_name"] = self._device.get_name()
             self._save()
