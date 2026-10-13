@@ -87,13 +87,21 @@ a = Analysis(
 a.datas += modules_tree
 pyz = PYZ(a.pure)
 
+NAME = 'mobiOverlay-lite' if LITE else 'mobiOverlay'
+
+# ONEDIR build: set MOBI_ONEDIR=1 to write a folder (dist/<NAME>/<NAME>.exe plus
+# _internal/) instead of one exe. A onefile exe unpacks the whole bundle to a new
+# temp folder on every launch, and antivirus rescans it each time; a folder is
+# unpacked once, so launches are far lighter on CPU.
+ONEDIR = os.environ.get('MOBI_ONEDIR') == '1'
+
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
+    *([] if ONEDIR else [a.binaries, a.datas]),
     [],
-    name='mobiOverlay-lite' if LITE else 'mobiOverlay',
+    exclude_binaries=ONEDIR,
+    name=NAME,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -107,3 +115,6 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
+if ONEDIR:
+    coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, upx_exclude=[], name=NAME)
