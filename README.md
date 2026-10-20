@@ -8,10 +8,13 @@ MobiGlas. Dark sci-fi HUD with cyan/amber accents. Data comes from the
 
 1. **Download** the latest `mobiOverlay-vX.X.X-windows.zip` from
    [Releases](../../releases)
-2. **Extract** `mobiOverlay.exe` anywhere (e.g. `C:\Games\mobiOverlay\`)
-3. **Run** `mobiOverlay.exe`
+2. **Extract** the zip anywhere (e.g. `C:\Games\mobiOverlay\`) — keep the
+   whole folder together (`mobiOverlay.exe` plus `_internal/`)
+3. **Run** `mobiOverlay.exe` inside that folder
 
-That's it — one file, all 8 modules included. No separate folders needed.
+That's it — all 8 modules included. Extract once; later launches are fast
+(nothing re-unpacks on each start). Do not move the `.exe` out of the folder
+without `_internal/` — it will not run alone.
 
 ### Windows SmartScreen Warning
 
@@ -105,7 +108,8 @@ use the system tray or the global hotkey to restore.
 
 ```
 mobiOverlay/
-  mobiOverlay.exe          # The whole application — all 8 modules bundled inside
+  mobiOverlay.exe          # Launch this — keep it next to _internal/
+  _internal/               # Bundled app + dependencies (required)
   config.json              # Your layout/settings (created on first run)
   locations_cache.json     # UEX location cache (auto-refreshes weekly)
   mobinotes_data.json      # mobiNotes storage (if you use that module)
@@ -125,7 +129,7 @@ pip install pyinstaller
 pyinstaller mobioverlay.spec --noconfirm
 ```
 
-Output: `dist/mobiOverlay.exe` (~333 MB).
+Output: `dist/mobiOverlay/` (~333 MB) — exe plus `_internal/`.
 
 ## Privacy
 

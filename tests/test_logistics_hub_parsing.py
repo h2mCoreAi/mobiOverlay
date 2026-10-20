@@ -960,12 +960,17 @@ def run_gamelog_verify_checks() -> tuple[int, int]:
         name = "gamelog_verify_matches_and_corrects_commodity"
         total += 1
         result = gamelog_verify.verify_contract(contract, events, display_name)
+        dropoff_cargo = contract["dropoffs"][0]["commodities"]
         ok = (
             result["matched"] is True
             and result["mission_id"] == "acf855f6-8008-4cb8-baac-79be39ce99b1"
             and any(c["commodity"] == "Pressurized Ice" and c["need"] == 16 for c in result["corrections"])
             and any(c["commodity"] == "Processed Food" and c["need"] == 313 for c in result["corrections"])
-            and contract["dropoffs"][0]["commodities"] == [("Processed Food", "313")]
+            # Game.log wins for the whole stop: both SCU legs kept (the old
+            # per-leg overwrite left only the last commodity).
+            and ("Pressurized Ice", "16") in dropoff_cargo
+            and ("Processed Food", "313") in dropoff_cargo
+            and len(dropoff_cargo) == 2
             # Diagnostic fields (2026-09-08) — these are what a debug-log
             # reader actually needs to answer "why did/didn't this match",
             # not just the boolean.
@@ -980,6 +985,41 @@ def run_gamelog_verify_checks() -> tuple[int, int]:
             failures += 1
             print(f"    result={result!r}")
             print(f"    contract dropoffs after verify={contract['dropoffs']!r}")
+
+        # Boxes/Items must not be applied as SCU (would skew grading).
+        name = "gamelog_verify_skips_non_scu_units"
+        total += 1
+        boxes_events = [{
+            "mission_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "title": "Test | Boxes | Everus Harbor > Teasa Spaceport",
+            "origin": "Everus Harbor",
+            "destination": "Teasa Spaceport",
+            "legs": [{
+                "commodity": "Medical Supplies",
+                "need": 4,
+                "unit": "boxes",
+                "destination": "Teasa Spaceport",
+            }],
+        }]
+        boxes_contract = {
+            "pickups": [{"terminal": pickup_terminal, "raw": "Everus Harbor", "commodities": []}],
+            "dropoffs": [{
+                "terminal": dropoff_terminal, "raw": "Teasa Spaceport",
+                "commodities": [("Medical Supplies", "2")],
+            }],
+        }
+        boxes_result = gamelog_verify.verify_contract(boxes_contract, boxes_events, display_name)
+        ok = (
+            boxes_result["matched"] is True
+            and boxes_contract["dropoffs"][0]["commodities"] == [("Medical Supplies", "2")]
+            and any(c.get("skipped") == "non_scu_unit" for c in boxes_result["corrections"])
+            and boxes_result["reason"] == "matched_no_corrections_needed"
+        )
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+        if not ok:
+            failures += 1
+            print(f"    result={boxes_result!r}")
+            print(f"    dropoffs={boxes_contract['dropoffs']!r}")
 
         name = "gamelog_verify_no_match_for_unrelated_contract"
         total += 1
@@ -1264,9 +1304,46 @@ def run_ui_state_checks() -> tuple[int, int]:
     print(f"[{'PASS' if ok else 'FAIL'}] {name}")
     if not ok:
         failures += 1
-    popup = next((w for w in app.topLevelWidgets() if type(w).__name__ == "_ReviewPopup"), None)
-    if popup is not None:
-        popup.close()
+    # Leave the review popup open — lifecycle checks below need a live
+    # pending review (older versions closed it here).
+
+    name = "review_popup_blocks_second_scan_and_keeps_scan_disabled"
+    total += 1
+    mod._restore_scan_button()
+    pending_before = mod._pending_scan
+    mod._safe_scan()
+    app.processEvents()
+    ok = (
+        mod._pending_scan is pending_before
+        and mod._review_popup is not None
+        and mod._scan_btn is not None
+        and not mod._scan_btn.isEnabled()
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    pending={mod._pending_scan!r} popup={mod._review_popup!r} "
+              f"enabled={mod._scan_btn.isEnabled() if mod._scan_btn else None}")
+
+    name = "clear_closes_review_popup_and_reenables_scan"
+    total += 1
+    mod._clear_contracts()
+    app.processEvents()
+    open_popups = [
+        w for w in app.topLevelWidgets()
+        if type(w).__name__ == "_ReviewPopup" and w.isVisible()
+    ]
+    ok = (
+        mod._pending_scan is None
+        and mod._review_popup is None
+        and not open_popups
+        and mod._scan_btn.isEnabled()
+    )
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    if not ok:
+        failures += 1
+        print(f"    pending={mod._pending_scan!r} popup={mod._review_popup!r} "
+              f"visible={open_popups!r} enabled={mod._scan_btn.isEnabled()}")
 
     # `_verify_against_gamelog()`'s always-present diagnostic fields — the
     # thing meant to answer "why didn't Game.log help" without needing a

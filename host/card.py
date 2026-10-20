@@ -2,7 +2,7 @@
 collapsible, closable, with a built-in error state. Modules build their
 content inside `card.body` and never touch the header/chrome directly.
 """
-from PySide6.QtCore import Qt, Signal, QPoint
+from PySide6.QtCore import Qt, Signal, QPoint, QTimer
 from PySide6.QtGui import QPainter, QPen, QColor
 from PySide6.QtWidgets import (
     QFrame, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
@@ -242,22 +242,50 @@ class Card(QFrame):
 
         retry_btn = QPushButton("RETRY")
         retry_btn.setObjectName("retryBtn")
-        retry_btn.setFixedWidth(90)
+        retry_btn.setFixedWidth(110)
         retry_btn.clicked.connect(self._on_retry)
         layout.addWidget(retry_btn, alignment=Qt.AlignCenter)
         self._retry_btn = retry_btn
         self._retry_callback = None
+        self._cooldown_timer = None
+        self._cooldown_left = 0
         return w
 
-    def set_error(self, message: str, retry_callback=None):
+    def set_error(self, message: str, retry_callback=None, cooldown_s: int = 0):
+        """`cooldown_s` keeps RETRY disabled (with a countdown) for that many
+        seconds — used after a rate-limit error."""
         self.error_message.setText(message)
         self._retry_callback = retry_callback
+        self._start_retry_cooldown(cooldown_s)
         self.body.setVisible(False)
         self.error_widget.setVisible(not self._collapsed)
         self._apply_border(theme.ACCENT_AMBER)
         self.apply_size()
 
+    def _start_retry_cooldown(self, seconds: int):
+        if self._cooldown_timer is not None:
+            self._cooldown_timer.stop()
+            self._cooldown_timer = None
+        if seconds <= 0:
+            self._retry_btn.setEnabled(True)
+            self._retry_btn.setText("RETRY")
+            return
+        self._cooldown_left = seconds
+        self._retry_btn.setEnabled(False)
+        self._retry_btn.setText(f"RETRY ({seconds})")
+        self._cooldown_timer = QTimer(self)
+        self._cooldown_timer.timeout.connect(self._tick_retry_cooldown)
+        self._cooldown_timer.start(1000)
+
+    def _tick_retry_cooldown(self):
+        self._cooldown_left -= 1
+        if self._cooldown_left <= 0:
+            self._start_retry_cooldown(0)
+        else:
+            self._retry_btn.setText(f"RETRY ({self._cooldown_left})")
+
     def clear_error(self):
+        self._start_retry_cooldown(0)
         self.error_widget.setVisible(False)
         self.body.setVisible(not self._collapsed)
         self._apply_border(theme.ACCENT_CYAN)

@@ -97,7 +97,7 @@ _NUDGE_BTN_STYLE = f"""
     }}
     QPushButton:hover {{ background: {theme.ACCENT_CYAN_DIM}; }}
 """
-_OFFSET_LABEL_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
+_OFFSET_LABEL_STYLE = theme.text_style(9, color=theme.TEXT_MUTED)
 
 
 class CrosshairModule(ModuleBase):

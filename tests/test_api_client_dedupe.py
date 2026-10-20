@@ -169,6 +169,21 @@ def test_sequential_errors_not_cached():
     print("✓ test_sequential_errors_not_cached passed")
 
 
+def test_data_false_normalized_to_empty_list():
+    """UEX returns data:false for some empty ok responses — not a Python False."""
+    client = UexApiClient("https://api.example.com/")
+    fake = MagicMock()
+    fake.status_code = 200
+    fake.ok = True
+    fake.json.return_value = {"status": "ok", "http_code": 200, "data": False, "message": ""}
+    fake.raise_for_status = MagicMock()
+    client._session = MagicMock()
+    client._session.get.return_value = fake
+    result = client.get("terminals_distances", {"id_terminal_origin": 1, "id_terminal_destination": 2})
+    assert result == [], result
+    print("✓ test_data_false_normalized_to_empty_list passed")
+
+
 def run():
     """Run all tests."""
     test_concurrent_requests_dedupe()
@@ -177,6 +192,7 @@ def run():
     test_different_params_not_dedupe()
     test_concurrent_error_shared()
     test_sequential_errors_not_cached()
+    test_data_false_normalized_to_empty_list()
     print("\nAll API client dedupe tests passed!")
 
 

@@ -218,6 +218,22 @@ overwritten by the next save. The location cache is only written after a
 complete UEX fetch; a failed or partial fetch falls back to the older cache
 and is retried (at most every 5 minutes) on the next lookup.
 
+## Shared services (host/services.py)
+
+`Services(api, config, locations, price_cache)` is built once in `host/main.py`
+and installed on `ModuleBase` by `discover_modules(..., services=)`. Modules
+read `self.services`; `self.api`, `self.config` and `self.locations` are
+shortcuts. Adding a shared service means one new field there and one line in
+`main.py`; no module `__init__` changes.
+
+## Background calls and the price cache
+
+`host/background.py` runs a blocking call (a UEX request) on a small thread
+pool and delivers the result on the GUI thread; the three scan loops use it
+so a slow response never freezes the UI (see OPTIMIZATION.md, L3).
+`host/price_cache.py` is a SQLite key/value cache (`price_cache.sqlite3`) used
+by Commodity Prices to keep its bulk price download across restarts (N3).
+
 ## Global hotkey (host/hotkey.py)
 
 Uses the `keyboard` library's low-level global keyboard hook
@@ -287,9 +303,12 @@ Multi-beep sequences use `QTimer.singleShot` scheduling instead of `time.sleep`.
 
 ## Packaging
 
-PyInstaller onefile build — **everything in one exe**. The distinction:
+PyInstaller **onedir** build — `dist/mobiOverlay/mobiOverlay.exe` plus
+`_internal/` (the only packaging mode; onefile was dropped because it
+unpacks to a new temp folder on every launch). The distinction:
 
-- **Bundled inside the exe** (extracted to `sys._MEIPASS` at runtime):
+- **Bundled inside `_internal/`** (`sys._MEIPASS` at runtime — the onedir
+  contents directory, persistent on disk):
   - `host/` — the core application
   - `modules/` — all 8 modules (discovered via `host/paths.modules_root()`)
   - `host/assets/fonts/` — bundled fonts (Orbitron, Share Tech Mono)
@@ -299,12 +318,14 @@ PyInstaller onefile build — **everything in one exe**. The distinction:
 - **Persisted next to the exe** (via `host/paths.app_root()`):
   - `config.json` — layout and settings
   - `mobinotes_data.json` — mobiNotes storage
-  - `locations_cache.json` — UEX location cache (7-day TTL, versioned)
+  - `locations_cache.json` — UEX location cache (7-day TTL, versioned; an expired one is served at once and refreshed in the background)
+  - `price_cache.sqlite3` — Commodity Prices' last RETRIEVE DATA result
   - `logistics_hub_debug.jsonl` — Logistics Hub debug log
   - `logistics_hub_completed.jsonl` — completed hauling contracts log
 
-The split matters because PyInstaller's onefile temp extraction directory
-is wiped and recreated every launch — anything written there never persists.
+Keep the folder together: the exe cannot run without `_internal/`. Mutable
+data must still use `app_root()`, not `_MEIPASS`, so upgrades that replace
+`_internal/` do not wipe user settings.
 
 `host/paths.py` exposes:
 - `app_root()` — exe folder when frozen, project root from source
@@ -314,9 +335,9 @@ The module loader (`host/module_loader.py`) uses `modules_root()` for
 discovery and imports each `modules/<name>/module.py` by file path
 (`importlib.util.spec_from_file_location`).
 
-**Build output**: `dist/mobiOverlay.exe` (~333 MB with CPU-only torch, larger
+**Build output**: `dist/mobiOverlay/` (~333 MB with CPU-only torch, larger
 with CUDA). Build command: `pyinstaller mobioverlay.spec --noconfirm`.
 
 **Development workflow**: When running from source, modules are in the
-normal `modules/` folder and can be edited live. The frozen exe bundles
+normal `modules/` folder and can be edited live. The frozen build bundles
 whatever's in `modules/` at build time.

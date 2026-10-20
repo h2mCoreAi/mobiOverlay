@@ -4,6 +4,23 @@ Status: built, working, and human-verified live in the running app across
 many rounds of real captured Star Citizen contracts and several real
 accept-to-complete cycles. Full design/bug-fix history in DECISIONS.md.
 
+## Code layout
+
+`modules/logistics_hub/` is split by responsibility (L1 in `docs/OPTIMIZATION.md`).
+`module.py` keeps the card and orchestration and re-binds the old names, so
+existing references and `tests/test_logistics_hub_parsing.py` are unchanged.
+Siblings are loaded by file path (`_load_sibling`), not as a package.
+
+| File | Holds | Qt? |
+|------|-------|-----|
+| `module.py` | card, scan/review/accept flow, debug logs, popouts | yes |
+| `ocr.py` | image preprocessing, EasyOCR wrapper, column ordering | no |
+| `parsing.py` | commodity/quantity/reward/location-phrase extraction | no |
+| `routing.py` | `RoutePlanner`: greedy + 2-opt + Or-opt over UEX distances | no |
+| `grading.py` | `grade_contract`, freight manifest, ship/location key | no |
+| `popups.py` | review, Hauler Profile, region selector, reminder banner | yes |
+| `gamelog_verify.py` | optional Game.log cross-check | no |
+
 ## Scope
 
 OCR-driven hauling logistics helper: capture a screen region over an

@@ -1,16 +1,15 @@
 """Resolves the app's root directory and modules path.
 
 - `app_root()` — the exe's own folder when packaged (PyInstaller frozen
-  build), or the project root when running from source. Use this for
-  anything that must **persist** next to the app on disk: config.json,
-  notes data, cache files, etc. A frozen onefile build's temp extraction
-  directory (`sys._MEIPASS`) is wiped and recreated every launch, so
-  anything written there never actually persists.
+  onedir build), or the project root when running from source. Use this
+  for anything that must **persist** next to the app on disk: config.json,
+  notes data, cache files, etc. Do not write those under `sys._MEIPASS`
+  (`_internal/` in onedir) — that tree is replaced on upgrade.
 
 - `modules_root()` — where to discover module folders at runtime. When
-  frozen, modules are bundled *inside* the exe and extracted to
-  `sys._MEIPASS/modules`. When running from source, it's just the
-  `modules/` folder next to the project root.
+  frozen, modules live under `sys._MEIPASS/modules` (the onedir
+  `_internal/` tree). When running from source, it's just the `modules/`
+  folder next to the project root.
 
 Bundled, non-pluggable assets (fonts) should keep using __file__-relative
 paths as before — those are meant to travel inside the frozen build.
@@ -45,13 +44,11 @@ def relaunch_command() -> list[str]:
 
 
 def relaunch_env() -> dict[str, str]:
-    """Environment for the relaunched process. A onefile build that spawns
-    itself passes on PyInstaller's bootloader variables, so the new process
-    reuses this instance's sys._MEIPASS extraction folder — which this
-    instance's bootloader deletes as it exits. The new copy then finds no
-    modules (they live under _MEIPASS) and the cleanup fails with "Failed to
-    remove temporary directory". PYINSTALLER_RESET_ENVIRONMENT (PyInstaller
-    6.9+) makes the bootloader start fresh with its own extraction folder."""
+    """Environment for the relaunched process. Still set
+    PYINSTALLER_RESET_ENVIRONMENT (PyInstaller 6.9+) when frozen so a
+    relaunch never inherits a half-torn-down bootloader environment.
+    Harmless for onedir (no per-launch temp extract); required if a
+    onefile build is ever used again."""
     env = os.environ.copy()
     if getattr(sys, "frozen", False):
         env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"

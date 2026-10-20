@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
 )
 
 from host import theme
-from host.api_client import UexRateLimitError
+from host.api_client import RATE_LIMIT_RETRY_COOLDOWN_S, UexRateLimitError
+from host.background import run_in_background
 from host.module_base import ModuleBase
 
 TOP_N_ROUTES = 5
@@ -22,50 +23,17 @@ SCAN_STEP_INTERVAL_MS = 120  # be nice to the API — ~8 requests/sec while scan
 SCAN_CACHE_SECONDS = 1800  # 30 min, same as Commodity Prices' Retrieve Data
 FORCE_CONFIRM_TIMEOUT_MS = 4000
 
-_COMBO_STYLE = f"""
-    QComboBox {{
-        background: {theme.BG_VOID}; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 22px 4px 6px;
-        font-family: "{theme.FONT_DISPLAY}"; font-weight: 700; font-size: {theme.fpx(12)}px;
-    }}
-    QComboBox::drop-down {{
-        width: 18px; border: none;
-    }}
-"""
-_FILTER_COMBO_STYLE = f"""
-    QComboBox {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_MUTED};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 2px 18px 2px 4px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;
-    }}
-    QComboBox::drop-down {{
-        width: 16px; border: none;
-    }}
-"""
-_INVESTMENT_STYLE = f"""
-    QLineEdit {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(11)}px;
-    }}
-"""
-_ROUTE_ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 7px 9px;"
-_COMMODITY_STYLE = f'color: {theme.ACCENT_CYAN}; font-family: "{theme.FONT_DISPLAY}"; font-weight: 800; font-size: {theme.fpx(13)}px;'
-_DEST_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
-_PROFIT_STYLE = f'color: {theme.TEXT_PRIMARY}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(14)}px; font-weight: bold;'
-_ROI_STYLE = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
-_TIMESTAMP_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;'
-_LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;'
-_ACTION_BTN_STYLE = f"""
-    QPushButton {{
-        background: transparent; color: {theme.ACCENT_CYAN};
-        border: 1px solid {theme.BORDER_CYAN}; border-radius: {theme.RADIUS}px; padding: 5px 0;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 1px;
-    }}
-    QPushButton:disabled {{
-        color: {theme.TEXT_DIM}; border: 1px solid {theme.BORDER_FLAT};
-    }}
-"""
+_COMBO_STYLE = theme.field_style('QComboBox', theme.ACCENT_CYAN, 12, padding='4px 22px 4px 6px', family=theme.FONT_DISPLAY, weight=700, drop_down=18)
+_FILTER_COMBO_STYLE = theme.field_style('QComboBox', theme.TEXT_MUTED, 9, padding='2px 18px 2px 4px', drop_down=16)
+_INVESTMENT_STYLE = theme.field_style('QLineEdit', theme.TEXT_PRIMARY, 11, padding='4px 6px')
+_ROUTE_ROW_STYLE = theme.row_style("7px 9px")
+_COMMODITY_STYLE = theme.text_style(13, color=theme.ACCENT_CYAN, family=theme.FONT_DISPLAY, weight=800)
+_DEST_STYLE = theme.text_style(9, color=theme.TEXT_MUTED)
+_PROFIT_STYLE = theme.text_style(14, color=theme.TEXT_PRIMARY, weight='bold')
+_ROI_STYLE = theme.text_style(9, color=theme.TEXT_MUTED)
+_TIMESTAMP_STYLE = theme.timestamp_style()
+_LABEL_SMALL = theme.text_style(9, color=theme.TEXT_MUTED, letter_spacing=1)
+_ACTION_BTN_STYLE = theme.action_btn_style()
 
 
 class TradeRouteOptimizerModule(ModuleBase):
@@ -87,6 +55,8 @@ class TradeRouteOptimizerModule(ModuleBase):
         # Scan state (Any Location / BUY IN system mode — see refresh() and
         # _start_scan()). Mirrors Commodity Prices' Retrieve Data state.
         self._scan_timer: QTimer | None = None
+        self._scan_inflight = False
+        self._scan_generation = 0  # bumped per scan so a late reply from an old one is ignored
         self._scan_queue: list[dict] = []
         self._scan_index = 0
         self._scan_rows: list[dict] = []
@@ -438,6 +408,8 @@ class TradeRouteOptimizerModule(ModuleBase):
         self._scan_queue = self._candidate_terminals(self.buy_system_combo.currentText())
         if not self._scan_queue:
             return
+        self._scan_generation += 1
+        self._scan_inflight = False
         self._scan_index = 0
         self._scan_rows = []
         self.scan_btn.setEnabled(False)
@@ -448,6 +420,11 @@ class TradeRouteOptimizerModule(ModuleBase):
         self._scan_timer.start(SCAN_STEP_INTERVAL_MS)
 
     def _scan_step(self):
+        """One timer tick: request the next terminal's routes on a worker
+        thread (the UI stays responsive while UEX answers). At most one
+        request is in flight, so pacing is unchanged."""
+        if self._scan_inflight:
+            return
         if self._scan_index >= len(self._scan_queue):
             self._finish_scan()
             return
@@ -459,19 +436,34 @@ class TradeRouteOptimizerModule(ModuleBase):
         if investment_text:
             params["investment"] = investment_text
 
-        try:
-            rows = self.api.get("commodities_routes", params)
-            self._scan_rows.extend(rows)
-        except UexRateLimitError as exc:
-            self._scan_timer.stop()
-            self._scan_timer = None
+        self._scan_inflight = True
+        generation = self._scan_generation
+        run_in_background(
+            lambda: self.api.get("commodities_routes", params),
+            lambda rows: self._on_scan_rows(generation, rows),
+            lambda exc: self._on_scan_error(generation, exc),
+        )
+
+    def _on_scan_rows(self, generation: int, rows: list):
+        if generation != self._scan_generation:
+            return
+        self._scan_inflight = False
+        self._scan_rows.extend(rows)
+        self.scan_btn.setText(f"SCANNING {self._scan_index}/{len(self._scan_queue)}")
+
+    def _on_scan_error(self, generation: int, exc: Exception):
+        if generation != self._scan_generation:
+            return
+        self._scan_inflight = False
+        if isinstance(exc, UexRateLimitError):
+            if self._scan_timer is not None:
+                self._scan_timer.stop()
+                self._scan_timer = None
             self.scan_btn.setEnabled(True)
             self._update_scan_button_label()
-            self.card.set_error(str(exc), retry_callback=self._start_scan)
+            self.card.set_error(str(exc), retry_callback=self._start_scan, cooldown_s=RATE_LIMIT_RETRY_COOLDOWN_S)
             return
-        except Exception:
-            pass  # skip terminals that individually fail; don't abort the whole scan
-
+        # skip terminals that individually fail; don't abort the whole scan
         self.scan_btn.setText(f"SCANNING {self._scan_index}/{len(self._scan_queue)}")
 
     def _finish_scan(self):

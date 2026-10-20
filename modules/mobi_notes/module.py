@@ -36,34 +36,15 @@ STARTER_TAGS = _store_module.STARTER_TAGS
 ALL_TAGS = "All Tags"
 NEW_PAGE_SENTINEL = "+ New Page..."
 
-_LABEL_SMALL = f'color: {theme.TEXT_MUTED}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; letter-spacing: 2px;'
-_COMBO_STYLE = f"""
-    QComboBox {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px;
-    }}
-    QComboBox::drop-down {{ width: 18px; border: none; }}
-"""
-_LINE_STYLE = f"""
-    QLineEdit {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 4px 6px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px;
-    }}
-"""
-_TEXT_STYLE = f"""
-    QTextEdit {{
-        background: {theme.BG_VOID}; color: {theme.TEXT_PRIMARY};
-        border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 6px;
-        font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(10)}px;
-    }}
-"""
-_ROW_STYLE = f"border: 1px solid {theme.BORDER_FLAT}; border-radius: {theme.RADIUS}px; padding: 6px 8px;"
-_ROW_PINNED_STYLE = f"border: 1px solid {theme.ACCENT_CYAN}; border-radius: {theme.RADIUS}px; padding: 6px 8px;"
-_TITLE_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(11)}px; color: {theme.TEXT_PRIMARY}; font-weight: bold;'
-_SUBTEXT_STYLE = f'font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px; color: {theme.TEXT_MUTED};'
-_INFO_STYLE = f'color: {theme.TEXT_DIM}; font-family: "{theme.FONT_MONO}"; font-size: {theme.fpx(9)}px;'
+_LABEL_SMALL = theme.label_small()
+_COMBO_STYLE = theme.field_style('QComboBox', theme.TEXT_PRIMARY, 10, padding='4px 6px', drop_down=18)
+_LINE_STYLE = theme.field_style('QLineEdit', theme.TEXT_PRIMARY, 10, padding='4px 6px')
+_TEXT_STYLE = theme.field_style('QTextEdit', theme.TEXT_PRIMARY, 10, padding='6px')
+_ROW_STYLE = theme.row_style("6px 8px")
+_ROW_PINNED_STYLE = theme.row_style("6px 8px", theme.ACCENT_CYAN)
+_TITLE_STYLE = theme.text_style(11, color=theme.TEXT_PRIMARY, weight='bold')
+_SUBTEXT_STYLE = theme.text_style(9, color=theme.TEXT_MUTED)
+_INFO_STYLE = theme.text_style(9, color=theme.TEXT_DIM)
 _ICON_BTN_STYLE = f"""
     QPushButton {{
         background: transparent; color: {theme.TEXT_MUTED};
@@ -290,6 +271,9 @@ class MobiNotesModule(ModuleBase):
             return
         self.settings["current_page"] = page
         self.config.set_module_settings(self.module_id, self.settings)
+        # Editor stayed bound to the previous page's note — SAVE would
+        # silently update the wrong id while the list showed the new page.
+        self._clear_editor()
         self._render_list()
 
     def _prompt_new_page(self):
@@ -397,6 +381,8 @@ class MobiNotesModule(ModuleBase):
     def _render_list(self):
         self._clear_layout(self._list_layout)
         notes = self._current_notes()
+        if self._selected_id and self._selected_id not in {n["id"] for n in notes}:
+            self._clear_editor()
         if not notes:
             self._list_layout.addWidget(self._info_label("No notes on this page yet."))
             return

@@ -1,0 +1,7 @@
+# Lite build (MOBI_LITE=1 pyinstaller mobioverlay.spec): everything except the
+# Logistics Hub OCR stack (torch, torchvision, easyocr, OpenCV, scipy,
+# scikit-image, numpy, Pillow). See BUILD.md.
+PySide6>=6.7
+requests>=2.31
+keyboard>=0.13
+pygame-ce>=2.5.0

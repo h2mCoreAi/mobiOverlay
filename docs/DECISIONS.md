@@ -4099,3 +4099,69 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
     rewritten on lock/unlock transitions, never per poll.
   - **Rejected:** a `WH_MOUSE_LL` hook, which would sit in the path of
     every in-game mouse movement.
+
+- **2026-10-04 — Optimization pass: what was built and what was changed on
+  purpose.** Worked item by item on `cursor/optimizations-n1-n2-m4`, one
+  commit per change, full test suite green after each. Departures from the
+  plan in `docs/OPTIMIZATION.md`:
+  - **Q5 (batch scan requests) rejected.** The timer was never the cost; each
+    tick ran a blocking `api.get()` on the GUI thread, so batching five per
+    tick would have frozen the UI five times longer. Fixed at the root with L3.
+  - **L3 as a thread pool, not asyncio.** `host/background.py` runs the request
+    on a worker thread and returns the result on the GUI thread; no
+    aiohttp/qasync dependency, pacing and one-in-flight rule unchanged, stale
+    replies dropped by a per-scan generation counter.
+  - **M3 as stale-while-revalidate, not a bundled cache.** An expired location
+    cache is used immediately and refreshed on a worker thread; a bundled
+    baseline would ship stale data with every patch.
+  - **N1 is a fixed 8 s retry cooldown, not exponential backoff.** One
+    cooldown per rate-limit error is enough while the real limit is unknown.
+  - **N3 only for Commodity Prices.** Trade Route Optimizer results depend on
+    budget and filters and are invalidated when they change; caching them
+    would risk showing stale routes. Stale data is never presented as fresh:
+    the original fetch time is kept and the tooltip says how old it is.
+  - **L1 stops at four extractions** (parsing, routing, grading, popups).
+    Debug-log writers, popouts and result rendering stay in `module.py`
+    because they are entangled with card state. Route planner checked
+    identical to the old one on 150 random scenarios before it was committed.
+  - **L2 is a small `Services` dataclass**, not a container with lifetimes.
+  - **L4 via a lite build (`MOBI_LITE=1`, 72 MB vs ~333 MB).** Cloud OCR was
+    rejected because it would send the player's screenshots to a third party;
+    ONNX because it is an unverifiable rewrite of the OCR path. The lite exe
+    was built but not launched, since Star Citizen was running.
+
+- **2026-10-13 — Startup CPU: onedir build, faster splash, fewer joystick
+  re-inits.** Owner report: launching used ~100% CPU. Measured on an idle
+  8-core PC (Star Citizen closed), same code, three changes:
+  - **Onedir build (`MOBI_ONEDIR=1`).** The onefile exe unpacks ~330 MB to a
+    new temp folder on every launch and Defender rescans it each time:
+    ~55 Defender CPU-seconds, 66% average system CPU in the first 10 s,
+    window at ~12.5 s. The onedir folder is unpacked once, so later launches
+    cost Defender ~0.1–1.4 CPU-seconds. Optional switch for now; whether it
+    becomes the release default waits on the owner's live test.
+  - **Splash is a plain frameless widget, not `QSplashScreen`.**
+    `QSplashScreen.show()` (Qt 6.11) waited a full 1.03 s every launch
+    for an expose event, opaque or translucent; the widget shows in 0.02 s
+    and keeps the same look and `show_splash`/`set_status`/`finish` calls.
+  - **mobiThrottle re-inits pygame's joystick subsystem only when needed.**
+    Each re-init blocks the GUI thread ~0.25 s. Startup did it twice in a row
+    (device list, then connect); the connect now reuses a list under 2 s
+    old. With no device connected the 5 s reconnect check re-inited every
+    time; it now does so only on SDL's JOYDEVICEADDED event, on Apply
+    Device, or once a minute as a safety net. Re-init drains the
+    JOYDEVICEADDED events it posts for already-present devices, so it can't
+    retrigger itself.
+  Result: window ~1 s after launch (onefile 12.5 s), mobiOverlay ~1.6
+  CPU-seconds (8.5), system 7–23% average in the first 10 s (66%). Not
+  changed: the initial module refreshes still make a few blocking UEX
+  requests on the GUI thread (~0.3 s of wall time, almost no CPU).
+
+- **2026-10-18 — Onedir is the only packaging / release format.** Owner
+  wanted fast launch as the default distribution path. PyInstaller onefile
+  cannot "unpack once then stay fast" — it re-extracts every launch by
+  design. A self-extracting single `.exe` bootstrap was rejected: Releases
+  already ship a zip, and a custom installer adds upgrade/Relaunch edge
+  cases for little gain over "extract the zip once." `mobioverlay.spec`
+  always builds onedir (`dist/mobiOverlay/` = exe + `_internal/`);
+  `MOBI_ONEDIR` removed. `release.yml` zips that folder (and the lite
+  onedir similarly). Users keep `_internal/` next to the exe.
