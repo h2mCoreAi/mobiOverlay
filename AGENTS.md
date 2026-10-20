@@ -57,7 +57,7 @@ mobiOverlay/
 │   └── mobi_throttle/
 ├── tests/                   # regression tests (plain asserts, no framework)
 ├── docs/                    # architecture, decisions, module specs
-├── mobioverlay.spec         # PyInstaller spec (single-file exe)
+├── mobioverlay.spec         # PyInstaller spec (onedir: exe + _internal/)
 ├── requirements.txt
 ├── config.json              # generated at runtime, git-ignored
 └── locations_cache.json     # UEX cache (7-day TTL), git-ignored
@@ -136,8 +136,9 @@ pip install pyinstaller
 pyinstaller mobioverlay.spec --noconfirm
 ```
 
-Output: `dist/mobiOverlay.exe` (~333 MB with CPU-only torch). True single-file —
-all 8 modules bundled inside. `config.json` and cache files persist next to the exe.
+Output: `dist/mobiOverlay/` (~333 MB with CPU-only torch) — `mobiOverlay.exe`
+plus `_internal/` (all 8 modules). Keep the folder together.
+`config.json` and cache files persist next to the exe.
 
 ---
 

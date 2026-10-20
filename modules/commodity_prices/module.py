@@ -471,7 +471,18 @@ class CommodityPricesModule(ModuleBase):
 
             best_total = 0
             for buy_row in buy_rows:
+                buy_terminal = buy_row.get("id_terminal")
                 for sell_row in sell_rows:
+                    # Same kiosk cannot be both the buy and sell end of a
+                    # trade — hubs that quote both sides invented impossible
+                    # margins that could win "most profitable".
+                    sell_terminal = sell_row.get("id_terminal")
+                    if (
+                        buy_terminal is not None
+                        and sell_terminal is not None
+                        and buy_terminal == sell_terminal
+                    ):
+                        continue
                     margin = sell_row["price_sell"] - buy_row["price_buy"]
                     if margin <= 0:
                         continue

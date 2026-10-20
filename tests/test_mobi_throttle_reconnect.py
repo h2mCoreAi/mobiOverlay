@@ -90,6 +90,31 @@ def test_apply_device_forces_rescan_even_when_fresh() -> int:
     return 2
 
 
+def test_poll_error_requests_rescan() -> int:
+    """Transient axis-read failure must not wait for the 60s safety net."""
+    m, calls, clock = _probe()
+    m._joysticks_scanned_at = clock.now - 10
+
+    class _Boom:
+        def get_axis(self, _i):
+            raise RuntimeError("device gone")
+
+    class _Label:
+        def setText(self, _t):
+            pass
+
+    m._device = _Boom()
+    m.status_label = _Label()
+    m.settings["axis_index"] = 0
+    m.settings["axis_reverse"] = False
+    m._poll()
+    assert m._device is None
+    assert m._rescan_requested is True
+    m._try_connect()
+    assert calls == [("abc", True)], calls
+    return 3
+
+
 def run() -> int:
     checks = 0
     for t in (
@@ -99,6 +124,7 @@ def run() -> int:
         test_plug_in_event_rescans,
         test_safety_net_rescan_after_a_minute,
         test_apply_device_forces_rescan_even_when_fresh,
+        test_poll_error_requests_rescan,
     ):
         checks += t()
         print(f"[PASS] {t.__name__}")

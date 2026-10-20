@@ -12,7 +12,7 @@ so a self-built copy and the one on Releases should be identical.
 - **~8GB RAM** recommended (PyInstaller analyzing torch can be memory-heavy)
 - **10-20 minutes** build time (mostly PyInstaller collecting torch binaries)
 
-The final exe is ~333MB with CPU-only torch, larger with CUDA.
+The final onedir folder is ~333MB with CPU-only torch, larger with CUDA.
 
 ## Run from source (no build step)
 
@@ -42,9 +42,14 @@ pip install "pyinstaller>=6.9"  # 6.9+ required for Settings > Relaunch (see hos
 pyinstaller mobioverlay.spec --noconfirm
 ```
 
-This produces `dist/mobiOverlay.exe` — a **true single-file executable**
-with all 8 modules bundled inside. No separate `modules/` folder needed
-next to the exe. Just double-click and go.
+This produces `dist/mobiOverlay/` — a **onedir** folder with
+`mobiOverlay.exe` plus `_internal/` (all 8 modules and dependencies). Keep
+the folder together; the exe cannot run without `_internal/`. Double-click
+`mobiOverlay.exe` inside that folder.
+
+Onedir is the only packaging mode: a onefile exe would unpack to a new temp
+folder on every launch (measured ~12.5 s and heavy antivirus CPU). Users
+extract the release zip once; later launches stay fast.
 
 **Persisted files** (created next to the exe on first run):
 - `config.json` — layout and settings
@@ -56,7 +61,7 @@ next to the exe. Just double-click and go.
 ## Lite build (no OCR, ~70 MB)
 
 The OCR stack (torch, torchvision, easyocr, OpenCV, scipy, scikit-image,
-numpy, Pillow) is most of the full exe's size, and only Logistics Hub's
+numpy, Pillow) is most of the full build's size, and only Logistics Hub's
 contract scanning uses it. Setting `MOBI_LITE=1` leaves it out:
 
 ```powershell
@@ -66,29 +71,12 @@ $env:MOBI_LITE = "1"
 pyinstaller mobioverlay.spec --noconfirm
 ```
 
-This writes `dist/mobiOverlay-lite.exe` (about 72 MB measured, against ~333 MB
-for the full build), so it never overwrites `dist/mobiOverlay.exe`. In the lite
+This writes `dist/mobiOverlay-lite/` (about 72 MB measured, against ~333 MB
+for the full build), so it never overwrites `dist/mobiOverlay/`. In the lite
 build Logistics Hub's SCAN button reports that the OCR engine isn't included;
 every other module is unchanged. The release workflow builds it as a separate
 `build-lite` job after the full build and attaches
 `mobiOverlay-<version>-windows-lite.zip` to the same release.
-
-## Onedir build (fast, low-CPU startup)
-
-A onefile exe unpacks itself to a new temp folder on every launch, and
-antivirus rescans it each time (measured ~55 Defender CPU-seconds and a
-~12.5 s wait before the window appears). Setting `MOBI_ONEDIR=1` writes a
-folder instead, which is unpacked only once:
-
-```powershell
-$env:MOBI_ONEDIR = "1"
-pyinstaller mobioverlay.spec --noconfirm
-```
-
-This writes `dist/mobiOverlay/` containing `mobiOverlay.exe` and `_internal/`.
-Run `mobiOverlay.exe` as usual. `config.json` and caches go next to it. Keep
-the folder together: the exe can't run without `_internal/`. Combine with
-`MOBI_LITE=1` for a lite folder.
 
 ## Running tests
 

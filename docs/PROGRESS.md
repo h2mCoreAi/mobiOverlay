@@ -11,17 +11,18 @@ One-page status. Session notes are in `docs/HISTORY.md`. Older
 
 ## Shipped
 
-Eight modules in one exe (~333 MB, CPU-only torch): Commodity Prices, Trade Route Optimizer, Logistics Hub, Refinery Finder, Multi-Commodity Finder, Crosshair, mobiNotes, mobiThrottle.
+Eight modules in one onedir folder (~333 MB, CPU-only torch): Commodity Prices, Trade Route Optimizer, Logistics Hub, Refinery Finder, Multi-Commodity Finder, Crosshair, mobiNotes, mobiThrottle.
 
 Location service phases 1–5 are done. Logistics Hub writes `Config.set_shared_location()`. Commodity Prices and Trade Route Optimizer default their system filters from `shared_location()` when the user has not set one.
 
 Logistics Hub may order stops with greedy nearest-neighbor plus 2-opt on real UEX distances. That is the one exception to the no-custom-pathfinding rule in `AGENTS.md`.
 
+**Packaging:** onedir only (`dist/mobiOverlay/` = exe + `_internal/`). Release zip ships that folder; users extract once. Onefile / `MOBI_ONEDIR` opt-in removed (see `docs/DECISIONS.md`, 2026-10-18).
+
 ## Open
 
 - Next module candidate: Item Price Lookup / Ship Outfitting (Tier 1.4 in `docs/BACKLOG.md`).
-- **Optimization pass is finished on branch `cursor/optimizations-n1-n2-m4` (unmerged, untested by the owner).** Shipped there: N1/N2, M3, M4, L1, L2, L3 (resolves Q5), L4, N3. Details and the evidence for each are in `docs/OPTIMIZATION.md`. Needs an owner test in a `dist-test` build before merge: scans no longer freeze the UI, a stale location cache loads at once, Commodity Prices restores its last download, Logistics Hub still scans/plans/grades, and the new lite exe (`MOBI_LITE=1`, built but never launched) starts.
-- **Startup CPU work is on branch `cursor/startup-onedir` (stacked on the optimization branch, unmerged, awaiting the owner's live test).** Optional onedir build (`MOBI_ONEDIR=1`), a 1 s faster splash, and fewer mobiThrottle joystick re-inits. Measured: window ~1 s after launch instead of ~12.5 s, ~10x less CPU (see `docs/DECISIONS.md`, 2026-10-13). Live test: launch speed, the splash, mobiThrottle connecting (and reconnecting after unplugging the stick), Logistics Hub scanning, Settings > Relaunch. After it passes, decide whether onedir becomes the release default (needs a `release.yml` change).
+- **Reliability + packaging work is on `cursor/reliability-fixes-popup-verify-dist` (stacked on startup/optimization; unmerged).** Includes Logistics Hub review-popup / Game.log / distance / profitable / throttle / notes fixes, plus onedir-as-only-release. Needs an owner `dist-test` of a fresh onedir extract: launch twice (fast both times), splash, Settings > Relaunch, Logistics Hub SCAN, mobiThrottle connect/reconnect, lite folder if desired (`MOBI_LITE=1`).
 - Human checks that were never closed are listed in `docs/HISTORY.md` (crosshair over the game, hotkey focus, relaunch after an OCR scan, grid-snap drag). Multi-Commodity Finder has also never been recorded as human-tested. These are unverified follow-ups, not new bugs.
 
 ## Working rules that are easy to miss

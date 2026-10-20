@@ -303,9 +303,12 @@ Multi-beep sequences use `QTimer.singleShot` scheduling instead of `time.sleep`.
 
 ## Packaging
 
-PyInstaller onefile build — **everything in one exe**. The distinction:
+PyInstaller **onedir** build — `dist/mobiOverlay/mobiOverlay.exe` plus
+`_internal/` (the only packaging mode; onefile was dropped because it
+unpacks to a new temp folder on every launch). The distinction:
 
-- **Bundled inside the exe** (extracted to `sys._MEIPASS` at runtime):
+- **Bundled inside `_internal/`** (`sys._MEIPASS` at runtime — the onedir
+  contents directory, persistent on disk):
   - `host/` — the core application
   - `modules/` — all 8 modules (discovered via `host/paths.modules_root()`)
   - `host/assets/fonts/` — bundled fonts (Orbitron, Share Tech Mono)
@@ -320,8 +323,9 @@ PyInstaller onefile build — **everything in one exe**. The distinction:
   - `logistics_hub_debug.jsonl` — Logistics Hub debug log
   - `logistics_hub_completed.jsonl` — completed hauling contracts log
 
-The split matters because PyInstaller's onefile temp extraction directory
-is wiped and recreated every launch — anything written there never persists.
+Keep the folder together: the exe cannot run without `_internal/`. Mutable
+data must still use `app_root()`, not `_MEIPASS`, so upgrades that replace
+`_internal/` do not wipe user settings.
 
 `host/paths.py` exposes:
 - `app_root()` — exe folder when frozen, project root from source
@@ -331,9 +335,9 @@ The module loader (`host/module_loader.py`) uses `modules_root()` for
 discovery and imports each `modules/<name>/module.py` by file path
 (`importlib.util.spec_from_file_location`).
 
-**Build output**: `dist/mobiOverlay.exe` (~333 MB with CPU-only torch, larger
+**Build output**: `dist/mobiOverlay/` (~333 MB with CPU-only torch, larger
 with CUDA). Build command: `pyinstaller mobioverlay.spec --noconfirm`.
 
 **Development workflow**: When running from source, modules are in the
-normal `modules/` folder and can be edited live. The frozen exe bundles
+normal `modules/` folder and can be edited live. The frozen build bundles
 whatever's in `modules/` at build time.

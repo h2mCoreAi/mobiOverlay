@@ -890,13 +890,36 @@ class LogisticsHubModule(ModuleBase):
     def _save_settings(self):
         self.config.set_module_settings(self.module_id, self.settings)
 
+    def _close_review_popup(self, *, discard_pending: bool = True) -> None:
+        """Close the ACCEPT/REJECT popup if open.
+
+        When `discard_pending` is True (CLEAR, COMPLETE, or replacing a
+        stale popup), also drop `_pending_scan` so ACCEPT cannot queue a
+        contract the user is no longer looking at. Does not call the
+        reject handler — CLEAR/COMPLETE are not a REJECT log outcome.
+        """
+        popup = self._review_popup
+        self._review_popup = None
+        if discard_pending:
+            self._pending_scan = None
+            self._pending_grade = None
+        if popup is not None:
+            # Mark resolved so closeEvent does not fire REJECT (CLEAR /
+            # COMPLETE are not a user reject — they just discard the UI).
+            popup._resolved = True
+            try:
+                popup.close()
+            except Exception:
+                pass
+
     def _clear_contracts(self):
+        self._close_review_popup()
         self.settings["contracts"] = []
         self.settings["route_done"] = []
         self._save_settings()
         self._route_order = []
-        self._pending_scan = None
         self._render_results()
+        self._restore_scan_button()
         self._set_status("Contracts cleared.")
 
     def _complete_contracts(self):
@@ -1109,6 +1132,13 @@ class LogisticsHubModule(ModuleBase):
             self._set_status("Scan already in progress...")
             return
 
+        # A live review popup owns the pending contract — a second SCAN
+        # used to overwrite `_pending_scan` while the first popup stayed
+        # open, so ACCEPT could queue the wrong contract.
+        if self._pending_scan is not None or self._review_popup is not None:
+            self._set_status("Finish ACCEPT or REJECT on the review popup first.")
+            return
+
         if not self._started:
             self._started = True
             self._set_status("Ready — click SCAN CONTRACT to capture one.")
@@ -1237,11 +1267,17 @@ class LogisticsHubModule(ModuleBase):
         self._restore_scan_button()
 
     def _restore_scan_button(self):
-        """Restore scan button to normal state."""
+        """Restore scan button to normal state.
+
+        Stays disabled while a review popup is waiting for ACCEPT/REJECT
+        so a second SCAN cannot race the first pending contract.
+        """
         btn = getattr(self, "_scan_btn", None)
-        if btn is not None:
-            btn.setText("SCAN CONTRACT")
-            btn.setEnabled(True)
+        if btn is None:
+            return
+        btn.setText("SCAN CONTRACT")
+        pending = self._pending_scan is not None or self._review_popup is not None
+        btn.setEnabled(not pending)
 
     def _process_ocr_result(self, raw_text: str):
         """Process OCR text into a contract and show review popup.
@@ -1264,6 +1300,7 @@ class LogisticsHubModule(ModuleBase):
         self._pending_grade = self._grade_contract(contract, contracts)
         self._show_review_popup(contract, duplicate, self._pending_grade)
         self._set_status("Review the scan — ACCEPT or REJECT.")
+        self._restore_scan_button()
         self._log_scan_debug(
             raw_text, candidates, contract, "pending_review", debug_trace, {},
             grade=self._pending_grade,
@@ -1396,8 +1433,9 @@ class LogisticsHubModule(ModuleBase):
         if verify_result is not None:
             if verify_result.get("matched"):
                 status += (
-                    f" — Game.log verified, {len(verify_result['corrections'])} field(s) corrected."
-                    if verify_result["corrections"] else " — Game.log verified, matches OCR."
+                    f" — Game.log verified, {sum(1 for c in verify_result['corrections'] if not c.get('skipped'))} field(s) corrected."
+                    if any(not c.get("skipped") for c in verify_result["corrections"])
+                    else " — Game.log verified, matches OCR."
                 )
             elif verify_result.get("reason") == "game_log_unavailable":
                 status += " — Game.log not found, not verified."
@@ -1476,6 +1514,12 @@ class LogisticsHubModule(ModuleBase):
         def on_rate(terminal: dict, good: bool, label: str):
             self._rate_compatibility(ship, terminal, good)
             self._pending_ratings_given.append({"location": label, "rating": "good" if good else "bad"})
+
+        # Belt-and-suspenders: never leave two review popups alive. SCAN
+        # is blocked while one is pending, but CLEAR/COMPLETE and a
+        # failed prior close still need a clean slate.
+        if self._review_popup is not None:
+            self._close_review_popup(discard_pending=False)
 
         popup = _ReviewPopup(
             self._card_widget, summary_text, duplicate_warning,
@@ -1613,7 +1657,9 @@ class LogisticsHubModule(ModuleBase):
             self._add_contract(self._pending_scan, verify_result=verify_result)
             self._schedule_accept_reminder(contract_id, verify_result)
         self._pending_scan = None
+        self._pending_grade = None
         self._review_popup = None
+        self._restore_scan_button()
 
     def _schedule_accept_reminder(self, contract_id: str | None, verify_result: dict) -> None:
         """Queues a one-shot delayed recheck of Game.log for a contract
@@ -1666,7 +1712,9 @@ class LogisticsHubModule(ModuleBase):
         if self._pending_scan is not None:
             self._log_review_outcome(self._pending_scan, "rejected")
         self._pending_scan = None
+        self._pending_grade = None
         self._review_popup = None
+        self._restore_scan_button()
         self._set_status("Contract not added.")
 
     # ------------------------------------------------------------------

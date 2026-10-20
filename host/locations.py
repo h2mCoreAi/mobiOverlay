@@ -206,6 +206,10 @@ class LocationService:
         self._name_index = name_index
         self._locations = locations
         self._friendly_names = None
+        # Fresh location ids/orbits invalidate prior distance lookups
+        # (including any None that would have poisoned the session).
+        self._distance_cache.clear()
+        self._orbit_tables.clear()
         self._save_to_disk()
         logger.info("locations: background refresh swapped in %d locations", len(locations))
 
@@ -968,8 +972,30 @@ class LocationService:
             return value
 
         value = self._fetch_distance(a, b)
-        self._distance_cache[cache_key] = value
+        # Only cache real distances. Caching None after a transient UEX
+        # failure poisoned the rest of the session (Logistics Hub then
+        # used coarse fallbacks until restart).
+        if value is not None:
+            self._distance_cache[cache_key] = value
         return value
+
+    @staticmethod
+    def _distance_from_response(resp) -> float | None:
+        """terminals_distances returns one dict row on hit; tolerate a
+        single-element list the same way orbits_distances is list-shaped."""
+        if isinstance(resp, dict) and resp.get("distance") is not None:
+            try:
+                return float(resp["distance"])
+            except (TypeError, ValueError):
+                return None
+        if isinstance(resp, list):
+            for row in resp:
+                if isinstance(row, dict) and row.get("distance") is not None:
+                    try:
+                        return float(row["distance"])
+                    except (TypeError, ValueError):
+                        continue
+        return None
 
     def _fetch_distance(self, a: dict, b: dict) -> float | None:
         if (
@@ -984,11 +1010,9 @@ class LocationService:
             except Exception:
                 logger.warning("locations: terminals_distances lookup failed", exc_info=True)
                 resp = None
-            if isinstance(resp, dict) and resp.get("distance") is not None:
-                try:
-                    return float(resp["distance"])
-                except (TypeError, ValueError):
-                    pass
+            parsed = self._distance_from_response(resp)
+            if parsed is not None:
+                return parsed
 
         sys_a, sys_b = a.get("id_star_system"), b.get("id_star_system")
         orbit_a, orbit_b = a.get("id_orbit"), b.get("id_orbit")
@@ -1015,7 +1039,9 @@ class LocationService:
             )
         except Exception:
             logger.warning("locations: orbits_distances lookup failed", exc_info=True)
-            self._orbit_tables[key] = None
+            # Do not cache the failure — retry on the next lookup.
+            return None
+        if not isinstance(rows, list):
             return None
         table: dict = {}
         for row in rows:

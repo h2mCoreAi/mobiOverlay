@@ -6,9 +6,9 @@ error — it never takes the whole host down.
 
 Modules are loaded by file path (importlib.util.spec_from_file_location),
 not as a dotted "modules.<name>.module" package import. That matters once
-this is packaged: in a onefile frozen build, modules are bundled inside the
-exe and extracted to sys._MEIPASS/modules at runtime, not next to the exe.
-File-path loading works identically either way.
+this is packaged: in a frozen onedir build, modules live under
+sys._MEIPASS/modules (_internal/), not next to the exe. File-path loading
+works identically from source or frozen.
 """
 import importlib.util
 import logging

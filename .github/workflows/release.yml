@@ -1,12 +1,13 @@
 name: Build and release Windows exe
 
-# Builds mobiOverlay.exe with PyInstaller from mobioverlay.spec (the same
-# spec file anyone can use to build it themselves — see BUILD.md) and
-# publishes it as a GitHub Release asset whenever a version tag is pushed.
+# Builds the mobiOverlay onedir folder with PyInstaller from mobioverlay.spec
+# (the same spec anyone can use to build it themselves — see BUILD.md) and
+# publishes it as a GitHub Release zip whenever a version tag is pushed.
 #
-# This is a FULL build: a TRUE SINGLE-FILE EXE with all 8 modules bundled
-# inside, plus easyocr/torch/torchvision for Logistics Hub OCR.
-# Expect ~600-900MB exe, 10-20min build, ~2GB disk during build.
+# Onedir (exe + _internal/), not onefile: a single-file exe unpacks on every
+# launch and burns CPU under antivirus. Users extract the zip once; later
+# launches are fast. Expect a large zip (~300MB+), 10-20min build, ~2GB disk
+# during build (torch/easyocr for Logistics Hub OCR).
 
 on:
   push:
@@ -45,7 +46,7 @@ jobs:
           pip install -r requirements.txt
           pip install "pyinstaller>=6.9"  # 6.9+: PYINSTALLER_RESET_ENVIRONMENT, needed by Settings > Relaunch
 
-      - name: Build exe
+      - name: Build onedir folder
         run: pyinstaller mobioverlay.spec --noconfirm
 
       - name: Assemble release folder
@@ -53,8 +54,8 @@ jobs:
         run: |
           $releaseDir = "release/mobiOverlay"
           New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-          # Single-file exe — modules are bundled inside, no separate folder needed
-          Copy-Item "dist/mobiOverlay.exe" "$releaseDir/mobiOverlay.exe"
+          # Onedir: exe + _internal/ must stay together
+          Copy-Item "dist/mobiOverlay/*" $releaseDir -Recurse
           Copy-Item "README.md" "$releaseDir/README.md" -ErrorAction SilentlyContinue
 
       - name: Zip and checksum
@@ -62,7 +63,7 @@ jobs:
         run: |
           $version = "${{ github.ref_name }}"
           $zipName = "mobiOverlay-$version-windows.zip"
-          Compress-Archive -Path "release/mobiOverlay/*" -DestinationPath $zipName
+          Compress-Archive -Path "release/mobiOverlay" -DestinationPath $zipName
           $hash = Get-FileHash $zipName -Algorithm SHA256
           "$($hash.Hash)  $zipName" | Out-File "$zipName.sha256" -Encoding ascii
 
@@ -73,10 +74,14 @@ jobs:
             mobiOverlay-*-windows.zip
             mobiOverlay-*-windows.zip.sha256
           body: |
-            **True single-file exe** — all 8 modules bundled inside,
-            including Logistics Hub with OCR support (easyocr/torch).
-            Just extract and double-click, no separate folders needed.
-            
+            **Onedir package** — extract the zip once, then run
+            `mobiOverlay/mobiOverlay.exe`. Keep the whole folder together
+            (`_internal/` is required; the exe alone will not work).
+
+            All 8 modules are included, including Logistics Hub with OCR
+            (easyocr/torch). Later launches are fast — nothing re-unpacks
+            on each start.
+
             Automated build from source at this tag — built by this
             workflow (`.github/workflows/release.yml`), not compiled
             locally by a person. Check the Actions log for this run to
@@ -116,7 +121,7 @@ jobs:
           pip install -r requirements-lite.txt
           pip install "pyinstaller>=6.9"
 
-      - name: Build lite exe
+      - name: Build lite onedir folder
         env:
           MOBI_LITE: "1"
         run: pyinstaller mobioverlay.spec --noconfirm
@@ -126,10 +131,11 @@ jobs:
         run: |
           $version = "${{ github.ref_name }}"
           $zipName = "mobiOverlay-$version-windows-lite.zip"
-          New-Item -ItemType Directory -Force -Path release-lite | Out-Null
-          Copy-Item "dist/mobiOverlay-lite.exe" "release-lite/mobiOverlay-lite.exe"
-          Copy-Item "README.md" "release-lite/README.md" -ErrorAction SilentlyContinue
-          Compress-Archive -Path "release-lite/*" -DestinationPath $zipName
+          $releaseDir = "release-lite/mobiOverlay-lite"
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          Copy-Item "dist/mobiOverlay-lite/*" $releaseDir -Recurse
+          Copy-Item "README.md" "$releaseDir/README.md" -ErrorAction SilentlyContinue
+          Compress-Archive -Path "release-lite/mobiOverlay-lite" -DestinationPath $zipName
           $hash = Get-FileHash $zipName -Algorithm SHA256
           "$($hash.Hash)  $zipName" | Out-File "$zipName.sha256" -Encoding ascii
 

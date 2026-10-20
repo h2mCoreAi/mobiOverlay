@@ -99,11 +99,46 @@ def test_finished_retrieval_is_saved() -> int:
     return 2
 
 
+def test_most_profitable_ignores_same_terminal_pairs() -> int:
+    """A hub quoting buy+sell on one kiosk must not beat a real cross-terminal trade."""
+    m, _ = _module()
+    m.sell_system.setCurrentText(cp.ALL_SYSTEMS)
+    m.buy_system.setCurrentText(cp.ALL_SYSTEMS)
+    m._all_commodity_data = {
+        "Gold": [{
+            "commodity_name": "Gold", "id_terminal": 1,
+            "price_buy": 1, "price_sell": 500, "scu_buy": 1000,
+            "star_system_name": "Stanton",
+        }],
+        "Iron": [
+            {
+                "commodity_name": "Iron", "id_terminal": 1,
+                "price_buy": 10, "price_sell": 0, "scu_buy": 100,
+                "star_system_name": "Stanton",
+            },
+            {
+                "commodity_name": "Iron", "id_terminal": 2,
+                "price_buy": 0, "price_sell": 20, "scu_buy": 0,
+                "star_system_name": "Stanton",
+            },
+        ],
+    }
+    m.combo.blockSignals(True)
+    m.combo.clear()
+    m.combo.addItems(["Gold", "Iron"])
+    m.combo.setCurrentText("Gold")
+    m.combo.blockSignals(False)
+    m.find_most_profitable()
+    assert m.combo.currentText() == "Iron", m.combo.currentText()
+    return 1
+
+
 def run() -> int:
     checks = 0
     for t in (test_nothing_cached, test_fresh_cache_restored_with_countdown,
               test_middle_aged_cache_usable_but_refresh_offered,
-              test_too_old_or_malformed_cache_ignored, test_finished_retrieval_is_saved):
+              test_too_old_or_malformed_cache_ignored, test_finished_retrieval_is_saved,
+              test_most_profitable_ignores_same_terminal_pairs):
         checks += t()
         print(f"[PASS] {t.__name__}")
     print(f"\n{checks}/{checks} commodity price cache checks passed")

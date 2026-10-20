@@ -271,6 +271,9 @@ class MobiNotesModule(ModuleBase):
             return
         self.settings["current_page"] = page
         self.config.set_module_settings(self.module_id, self.settings)
+        # Editor stayed bound to the previous page's note — SAVE would
+        # silently update the wrong id while the list showed the new page.
+        self._clear_editor()
         self._render_list()
 
     def _prompt_new_page(self):
@@ -378,6 +381,8 @@ class MobiNotesModule(ModuleBase):
     def _render_list(self):
         self._clear_layout(self._list_layout)
         notes = self._current_notes()
+        if self._selected_id and self._selected_id not in {n["id"] for n in notes}:
+            self._clear_editor()
         if not notes:
             self._list_layout.addWidget(self._info_label("No notes on this page yet."))
             return

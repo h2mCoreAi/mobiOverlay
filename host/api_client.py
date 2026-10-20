@@ -176,4 +176,10 @@ class UexApiClient:
             )
         if status != "ok":
             raise UexApiError(f"UEX API error response: {payload}")
-        return payload.get("data", [])
+        # UEX uses `data: false` (not null/[]) for "ok but nothing found"
+        # on some endpoints (e.g. terminals_distances with no row). Callers
+        # iterating a list must not see a bare False.
+        data = payload.get("data", [])
+        if data is False or data is None:
+            return []
+        return data

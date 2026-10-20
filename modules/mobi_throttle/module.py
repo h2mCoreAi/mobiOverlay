@@ -887,7 +887,11 @@ class MobiThrottleModule(ModuleBase):
             pygame.event.pump()
             raw = self._device.get_axis(self.settings["axis_index"])
         except Exception:
+            # Force the next refresh()'s _try_connect to rescan instead of
+            # sitting idle until JOYSTICK_RESCAN_SECONDS (stick still
+            # plugged in after a transient HID read failure).
             self._device = None
+            self._rescan_requested = True
             self.status_label.setText(RECONNECT_STATUS_UNAVAILABLE)
             return
         value = -raw if self.settings["axis_reverse"] else raw

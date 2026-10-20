@@ -283,9 +283,13 @@ def verify_contract(
     contract: dict, log_events: list[dict], display_name, exclude_mission_ids: set[str] | None = None,
 ) -> dict:
     """Tries to match one Game.log haul event to `contract` (as built by
-    `_build_contract` from OCR) and reports what it found. Never mutates
-    `contract` itself, and never raises — the caller decides whether/how
-    to apply `corrections`.
+    `_build_contract` from OCR) and reports what it found. Never raises —
+    the caller decides whether to surface `corrections`.
+
+    On a confident match, updates matching dropoff `commodities` in place
+    (merge by commodity name; SCU legs only). Multi-commodity dropoffs keep
+    siblings; Boxes/Items legs are skipped so they cannot corrupt SCU math.
+    `corrections` still lists every applied (or skipped non-SCU) change.
 
     `display_name` is `LocationService.display_name`, passed in rather than
     imported so this stays a plain function, testable with fake data and no
@@ -372,39 +376,69 @@ def verify_contract(
             "pickup_names_tried": pickup_names,
         }
 
+    # Per dropoff: collect every matching SCU Deliver leg, then replace that
+    # stop's commodities with the full Game.log set. Applying one leg at a
+    # time used to wipe siblings (`commodities = [this_leg]`). Non-SCU legs
+    # (Boxes/Items) are never applied — they would corrupt SCU grading.
     corrections: list[dict] = []
+    scu_by_entry: dict[int, list[tuple[str, str]]] = {}
+    dropoffs = contract.get("dropoffs", [])
     for leg in best_event.get("legs", []):
         leg_destination_norm = _normalize(leg["destination"])
-        for entry in contract.get("dropoffs", []):
+        unit = (leg.get("unit") or "").lower()
+        for index, entry in enumerate(dropoffs):
             entry_name = _entry_display_name(entry, display_name)
             if not _names_overlap(leg_destination_norm, _normalize(entry_name)):
                 continue
-            existing = entry.get("commodities") or []
-            already_matches = any(
-                isinstance(c, (list, tuple))
-                and c[0].lower() == leg["commodity"].lower()
-                and str(c[1]) == str(leg["need"])
-                for c in existing
-            )
-            if already_matches:
+            existing = list(entry.get("commodities") or [])
+            if unit != "scu":
+                corrections.append(
+                    {
+                        "destination": entry_name,
+                        "commodity": leg["commodity"],
+                        "need": leg["need"],
+                        "unit": leg.get("unit"),
+                        "previous_commodities": existing,
+                        "skipped": "non_scu_unit",
+                    }
+                )
                 continue
+            scu_by_entry.setdefault(index, []).append(
+                (leg["commodity"], str(leg["need"]))
+            )
+
+    for index, legs in scu_by_entry.items():
+        entry = dropoffs[index]
+        previous = list(entry.get("commodities") or [])
+        by_name: dict[str, tuple[str, str]] = {}
+        for name, need in legs:
+            by_name[name.lower()] = (name, need)
+        rebuilt = list(by_name.values())
+        previous_norm = [
+            (c[0], str(c[1])) if isinstance(c, (list, tuple)) and len(c) >= 2 else c
+            for c in previous
+        ]
+        if rebuilt == previous_norm:
+            continue
+        for name, need in rebuilt:
             corrections.append(
                 {
-                    "destination": entry_name,
-                    "commodity": leg["commodity"],
-                    "need": leg["need"],
-                    "unit": leg["unit"],
-                    "previous_commodities": existing,
+                    "destination": _entry_display_name(entry, display_name),
+                    "commodity": name,
+                    "need": int(need) if str(need).isdigit() else need,
+                    "unit": "SCU",
+                    "previous_commodities": previous,
                 }
             )
-            entry["commodities"] = [(leg["commodity"], str(leg["need"]))]
+        entry["commodities"] = rebuilt
 
+    applied = [c for c in corrections if not c.get("skipped")]
     return {
         "matched": True,
         "mission_id": best_event["mission_id"],
         "title": best_event.get("title"),
         "corrections": corrections,
-        "reason": "matched_with_corrections" if corrections else "matched_no_corrections_needed",
+        "reason": "matched_with_corrections" if applied else "matched_no_corrections_needed",
         "candidates_considered": candidates_considered,
         "dropoff_names_tried": dropoff_names,
         "pickup_names_tried": pickup_names,

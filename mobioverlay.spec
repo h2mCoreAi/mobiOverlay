@@ -1,19 +1,26 @@
 ﻿# -*- mode: python ; coding: utf-8 -*-
 #
-# Full-product spec: bundles everything into a single mobiOverlay.exe:
+# Full-product spec: bundles everything into a onedir folder
+# (dist/mobiOverlay/mobiOverlay.exe + _internal/):
 # - All 8 modules (bundled as data, discovered at runtime from sys._MEIPASS)
 # - easyocr, torch, torchvision for Logistics Hub OCR
 # - pygame-ce for mobiThrottle joystick support
 #
-# config.json, notes data, cache files still persist NEXT TO the exe (not inside
-# it) — see host/paths.py's app_root() vs modules_root() distinction.
+# Onedir (not onefile) is the only packaging mode: a onefile exe unpacks to a
+# new temp folder on every launch and antivirus rescans it each time (~12.5 s
+# to first window). The folder is unpacked once when the user extracts the
+# release zip; later launches are fast. Keep the folder together — the exe
+# cannot run without _internal/.
 #
-# Expect a large exe and several minutes of build time (torch binaries are large).
+# config.json, notes data, cache files still persist NEXT TO the exe (not inside
+# _internal/) — see host/paths.py's app_root() vs modules_root() distinction.
+#
+# Expect a large folder and several minutes of build time (torch binaries are large).
 #
 # LITE build: set MOBI_LITE=1 to leave out the OCR stack (torch, torchvision,
 # easyocr, OpenCV, scipy, scikit-image, numpy, Pillow). Everything except
-# Logistics Hub scanning works, and the exe is a fraction of the size. It is
-# written as dist/mobiOverlay-lite.exe so it never overwrites the full build.
+# Logistics Hub scanning works, and the folder is a fraction of the size. It is
+# written as dist/mobiOverlay-lite/ so it never overwrites the full build.
 #
 #   PowerShell:  $env:MOBI_LITE = "1"; pyinstaller mobioverlay.spec --noconfirm
 
@@ -89,18 +96,11 @@ pyz = PYZ(a.pure)
 
 NAME = 'mobiOverlay-lite' if LITE else 'mobiOverlay'
 
-# ONEDIR build: set MOBI_ONEDIR=1 to write a folder (dist/<NAME>/<NAME>.exe plus
-# _internal/) instead of one exe. A onefile exe unpacks the whole bundle to a new
-# temp folder on every launch, and antivirus rescans it each time; a folder is
-# unpacked once, so launches are far lighter on CPU.
-ONEDIR = os.environ.get('MOBI_ONEDIR') == '1'
-
 exe = EXE(
     pyz,
     a.scripts,
-    *([] if ONEDIR else [a.binaries, a.datas]),
     [],
-    exclude_binaries=ONEDIR,
+    exclude_binaries=True,
     name=NAME,
     debug=False,
     bootloader_ignore_signals=False,
@@ -116,5 +116,12 @@ exe = EXE(
     entitlements_file=None,
 )
 
-if ONEDIR:
-    coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, upx_exclude=[], name=NAME)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name=NAME,
+)

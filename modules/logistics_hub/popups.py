@@ -205,6 +205,9 @@ class _ReviewPopup(QWidget):
         self._on_rate = on_rate
         self._on_accept = on_accept
         self._on_reject = on_reject
+        # Window chrome (✕ / Alt+F4) must not leave module.py holding a
+        # pending scan with no popup — treat an unbuttoned close as REJECT.
+        self._resolved = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -333,12 +336,24 @@ class _ReviewPopup(QWidget):
         )
 
     def _accept(self):
+        if self._resolved:
+            return
+        self._resolved = True
         self._on_accept()
         self.close()
 
     def _reject(self):
+        if self._resolved:
+            return
+        self._resolved = True
         self._on_reject()
         self.close()
+
+    def closeEvent(self, event):
+        if not self._resolved:
+            self._resolved = True
+            self._on_reject()
+        super().closeEvent(event)
 
 
 class _HaulerProfilePopup(QWidget):

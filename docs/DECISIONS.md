@@ -4155,3 +4155,13 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   CPU-seconds (8.5), system 7–23% average in the first 10 s (66%). Not
   changed: the initial module refreshes still make a few blocking UEX
   requests on the GUI thread (~0.3 s of wall time, almost no CPU).
+
+- **2026-10-18 — Onedir is the only packaging / release format.** Owner
+  wanted fast launch as the default distribution path. PyInstaller onefile
+  cannot "unpack once then stay fast" — it re-extracts every launch by
+  design. A self-extracting single `.exe` bootstrap was rejected: Releases
+  already ship a zip, and a custom installer adds upgrade/Relaunch edge
+  cases for little gain over "extract the zip once." `mobioverlay.spec`
+  always builds onedir (`dist/mobiOverlay/` = exe + `_internal/`);
+  `MOBI_ONEDIR` removed. `release.yml` zips that folder (and the lite
+  onedir similarly). Users keep `_internal/` next to the exe.
