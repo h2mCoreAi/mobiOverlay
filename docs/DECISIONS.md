@@ -4099,3 +4099,5 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
     rewritten on lock/unlock transitions, never per poll.
   - **Rejected:** a `WH_MOUSE_LL` hook, which would sit in the path of
     every in-game mouse movement.
+
+- **2026-10-30 - Rebrand author to "TheRealKestryl".** All apps (mobiOverlay, mobiThrottle, future) are credited to TheRealKestryl. Updated the splash byline (host/splash.py), title-bar byline (host/main_window.py) and LICENSE copyright holder. Historical entries above that mention "Kestryl" are left as written.
