@@ -631,7 +631,7 @@ class _TitleBar(QWidget):
         layout.addWidget(wordmark)
 
         self.byline_label = QLabel(
-            f'<span style="color:{theme.TEXT_MUTED}; font-size:{theme.fpx(7)}px;"> by Kestryl</span>'
+            f'<span style="color:{theme.TEXT_MUTED}; font-size:{theme.fpx(7)}px;"> by TheRealKestryl</span>'
         )
         self.byline_label.setObjectName("wordmark")
         self.byline_label.setTextInteractionFlags(Qt.NoTextInteraction)
