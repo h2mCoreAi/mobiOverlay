@@ -11,7 +11,7 @@ One-page status. Session notes are in `docs/HISTORY.md`. Older
 
 ## Shipped
 
-Eight modules in one exe (~333 MB, CPU-only torch): Commodity Prices, Trade Route Optimizer, Logistics Hub, Refinery Finder, Multi-Commodity Finder, Crosshair, mobiNotes, mobiThrottle.
+Seven modules in one exe (~333 MB, CPU-only torch): Commodity Prices, Trade Route Optimizer, Logistics Hub, Refinery Finder, Multi-Commodity Finder, Crosshair, mobiNotes. (mobiThrottle moved to its own app, github.com/h2mCoreAi/mobiThrottle, 2026-10-30.)
 
 Location service phases 1–5 are done. Logistics Hub writes `Config.set_shared_location()`. Commodity Prices and Trade Route Optimizer default their system filters from `shared_location()` when the user has not set one.
 

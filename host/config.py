@@ -37,6 +37,11 @@ DEFAULT_CONFIG = {
     },
     "api": {"uex_token": "", "uex_base_url": "https://api.uexcorp.uk/2.0/"},
     "cards": {},
+    # Keyed by module_id. Sections for modules that no longer ship (e.g.
+    # "mobi_throttle", split out to github.com/h2mCoreAi/mobiThrottle on
+    # 2026-10-30) are left untouched and simply never read — lookups are by
+    # the ids of modules actually discovered, so old config.json files load
+    # fine and a downgrade keeps its settings.
     "modules": {},
     # Cross-module state, not namespaced to any one module — Phase 5 of the
     # location-service plan (docs/DECISIONS.md, 2026-09-04). Logistics Hub's

@@ -275,15 +275,10 @@ The OCR pipeline for reading hauling contract text from screen captures:
 not at module load time, avoiding the 2.8s import cost for users who never
 use Logistics Hub (M1 optimization).
 
-## mobiThrottle home chirp (modules/mobi_throttle/module.py)
+## mobiThrottle (removed)
 
-Uses `pygame.mixer` (SDL_mixer under the hood) instead of `winsound.Beep()`
-for the home-position audio chirp. `winsound.Beep()` uses the legacy Windows
-PC speaker which doesn't play when a game has exclusive audio focus. pygame.mixer
-routes through WASAPI shared-mode, working alongside Star Citizen's audio.
-
-The mixer is initialized lazily on first chirp (22050 Hz, mono, 512-sample buffer).
-Multi-beep sequences use `QTimer.singleShot` scheduling instead of `time.sleep`.
+mobiThrottle was split into a standalone app on 2026-10-30:
+https://github.com/h2mCoreAi/mobiThrottle. mobiOverlay no longer depends on pygame-ce.
 
 ## Packaging
 
@@ -291,10 +286,10 @@ PyInstaller onefile build — **everything in one exe**. The distinction:
 
 - **Bundled inside the exe** (extracted to `sys._MEIPASS` at runtime):
   - `host/` — the core application
-  - `modules/` — all 8 modules (discovered via `host/paths.modules_root()`)
+  - `modules/` — all 7 modules (discovered via `host/paths.modules_root()`)
   - `host/assets/fonts/` — bundled fonts (Orbitron, Share Tech Mono)
   - `host/assets/icons/` — tray icon
-  - All dependencies (torch, easyocr, pygame-ce, etc.)
+  - All dependencies (torch, easyocr, etc.)
 
 - **Persisted next to the exe** (via `host/paths.app_root()`):
   - `config.json` — layout and settings

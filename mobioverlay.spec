@@ -1,9 +1,8 @@
 ﻿# -*- mode: python ; coding: utf-8 -*-
 #
 # Full-product spec: bundles everything into a single mobiOverlay.exe:
-# - All 8 modules (bundled as data, discovered at runtime from sys._MEIPASS)
+# - All 7 modules (bundled as data, discovered at runtime from sys._MEIPASS)
 # - easyocr, torch, torchvision for Logistics Hub OCR
-# - pygame-ce for mobiThrottle joystick support
 #
 # config.json, notes data, cache files still persist NEXT TO the exe (not inside
 # it) — see host/paths.py's app_root() vs modules_root() distinction.
@@ -17,7 +16,6 @@ torchvision_datas, torchvision_binaries, torchvision_hiddenimports = collect_all
 easyocr_datas, easyocr_binaries, easyocr_hiddenimports = collect_all('easyocr')
 pillow_datas = collect_data_files('PIL')
 pillow_hiddenimports = collect_submodules('PIL')
-pygame_datas, pygame_binaries, pygame_hiddenimports = collect_all('pygame')
 
 # Tree() returns TOC 3-tuples — must NOT be mixed into Analysis(datas=...) 2-tuples.
 # Attach with a.datas += Tree(...) after Analysis instead.
@@ -32,15 +30,13 @@ all_datas = (
     + torchvision_datas
     + easyocr_datas
     + pillow_datas
-    + pygame_datas
 )
-all_binaries = torch_binaries + torchvision_binaries + easyocr_binaries + pygame_binaries
+all_binaries = torch_binaries + torchvision_binaries + easyocr_binaries
 all_hiddenimports = (
     torch_hiddenimports
     + torchvision_hiddenimports
     + easyocr_hiddenimports
     + pillow_hiddenimports
-    + pygame_hiddenimports
     + [
         'PIL._tkinter_finder',
         'numpy',
