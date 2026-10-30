@@ -44,7 +44,7 @@ class ModuleBase:
         *process* actually dies, not when a Python object is merely
         destroyed — otherwise the old and new instance could briefly hold a
         live hook for the same combo at once. Any module doing the same
-        thing (see modules/mobi_throttle) needs the identical cleanup, so
+        thing (as mobiThrottle did before it became a standalone app) needs the identical cleanup, so
         it's a first-class hook here rather than a one-off fixed to the host
         window alone."""
         pass

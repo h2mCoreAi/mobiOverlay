@@ -11,7 +11,7 @@ MobiGlas. Dark sci-fi HUD with cyan/amber accents. Data comes from the
 2. **Extract** `mobiOverlay.exe` anywhere (e.g. `C:\Games\mobiOverlay\`)
 3. **Run** `mobiOverlay.exe`
 
-That's it — one file, all 8 modules included. No separate folders needed.
+That's it — one file, all 7 modules included. No separate folders needed.
 
 ### Windows SmartScreen Warning
 
@@ -37,7 +37,8 @@ All modules are included and load automatically:
 | **Multi-Commodity Finder** | Find terminals that trade multiple commodities at once |
 | **Crosshair** | Customizable centered reticle overlay |
 | **mobiNotes** | In-game notepad with pages, tags, and search |
-| **mobiThrottle** | Throttle axis visualization with saved positions (its two hotkeys are unset until you set them in the card) |
+
+Looking for the throttle monitor? **mobiThrottle** is now a standalone app: https://github.com/h2mCoreAi/mobiThrottle
 
 ### Window Controls
 
@@ -105,7 +106,7 @@ use the system tray or the global hotkey to restore.
 
 ```
 mobiOverlay/
-  mobiOverlay.exe          # The whole application — all 8 modules bundled inside
+  mobiOverlay.exe          # The whole application — all 7 modules bundled inside
   config.json              # Your layout/settings (created on first run)
   locations_cache.json     # UEX location cache (auto-refreshes weekly)
   mobinotes_data.json      # mobiNotes storage (if you use that module)

@@ -46,8 +46,7 @@ mobiOverlay/
 │   ├── refinery_finder/
 │   ├── multi_commodity_finder/
 │   ├── crosshair/
-│   ├── mobi_notes/
-│   └── mobi_throttle/
+│   └── mobi_notes/
 ├── tests/                   # regression tests (plain asserts, no framework)
 ├── docs/                    # architecture, decisions, module specs
 ├── mobioverlay.spec         # PyInstaller spec (single-file exe)
@@ -125,7 +124,7 @@ pyinstaller mobioverlay.spec --noconfirm
 ```
 
 Output: `dist/mobiOverlay.exe` (~333 MB with CPU-only torch). True single-file —
-all 8 modules bundled inside. `config.json` and cache files persist next to the exe.
+all 7 modules bundled inside. `config.json` and cache files persist next to the exe.
 
 ---
 

@@ -211,7 +211,6 @@ cache age and showing "updating location data..." on stale cache.
 - `refinery_finder/module.py:24-48`
 - `mobi_notes/module.py:39-82`
 - `crosshair/module.py:85-99`
-- `mobi_throttle/module.py:343-392`
 
 Most differ only in minor padding/sizing values.
 

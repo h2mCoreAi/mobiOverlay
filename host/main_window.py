@@ -1054,9 +1054,9 @@ class MainWindow(QWidget):
 
     def _apply_native_click_through(self, enabled: bool):
         """Sets the real WS_EX_TRANSPARENT extended window style directly
-        via Win32, the same fix mobiThrottle's bar uses for its own
-        click-through toggle (see modules/mobi_throttle/module.py,
-        set_click_through) — Qt's WA_TransparentForMouseEvents attribute
+        via Win32, the same fix mobiThrottle's bar used for its own
+        click-through toggle (mobiThrottle now lives in
+        github.com/h2mCoreAi/mobiThrottle) — Qt's WA_TransparentForMouseEvents attribute
         doesn't reliably re-push into the native window style when
         toggled on an already-shown top-level widget on this Qt/Windows
         combo, so the bit is set on the real HWND instead, which Windows

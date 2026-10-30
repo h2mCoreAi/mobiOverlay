@@ -48,8 +48,8 @@ class _CrosshairOverlay(QWidget):
         super().showEvent(event)
         # Belt-and-suspenders on top of WA_TransparentForMouseEvents above:
         # set the real WS_EX_TRANSPARENT extended window style directly via
-        # Win32 too (same fix mobiThrottle's bar uses for its own
-        # click-through toggle, modules/mobi_throttle/module.py). Qt's
+        # Win32 too (same fix mobiThrottle's bar used for its own
+        # click-through toggle; now github.com/h2mCoreAi/mobiThrottle). Qt's
         # attribute is documented elsewhere in this project to only
         # reliably reach the native window at creation time on this
         # Qt/Windows combo, which is normally satisfied here since it's

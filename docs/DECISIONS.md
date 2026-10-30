@@ -4099,3 +4099,15 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
     rewritten on lock/unlock transitions, never per poll.
   - **Rejected:** a `WH_MOUSE_LL` hook, which would sit in the path of
     every in-game mouse movement.
+
+- **2026-10-30 — mobiThrottle split into a standalone repo.**
+  mobiThrottle now lives at https://github.com/h2mCoreAi/mobiThrottle as its own
+  lightweight app (own release pipeline, GitHub-attested builds); users should get
+  it there. Removed `modules/mobi_throttle/` and `docs/modules/mobi-throttle.md`.
+  pygame-ce was used only by mobiThrottle (joystick reads + home chirp via
+  pygame.mixer; grep found no other user in host/ or modules/), so it was dropped
+  from `requirements.txt` and `mobioverlay.spec` (`collect_all('pygame')`).
+  Old `config.json` files with a `modules.mobi_throttle` / card section load
+  unchanged: settings are looked up by discovered module_id, so the stale section
+  is ignored (left in place so a downgrade keeps its settings). Covered by
+  `tests/test_retired_module_config.py`. Historical entries above are left as written.

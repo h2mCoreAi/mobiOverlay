@@ -129,9 +129,8 @@ slotted into a tier. See the Status section below and
 - Multi-Commodity Finder — `modules/multi_commodity_finder/`
 - Crosshair — `modules/crosshair/`
 - mobiNotes — `modules/mobi_notes/`
-- mobiThrottle — `modules/mobi_throttle/`
 
-**8 modules total.** Refinery Finder ranks terminals by reported yield modifier
+**7 modules total** (mobiThrottle moved to github.com/h2mCoreAi/mobiThrottle, 2026-10-30). Refinery Finder ranks terminals by reported yield modifier
 rather than computing exact SCU-in/SCU-out (UEX lacks base composition data).
 Logistics Hub is the "Multi-Stop Contract Route Optimizer" from the high-want
 section — implemented with OCR-based contract reading + 2-opt route optimization.
