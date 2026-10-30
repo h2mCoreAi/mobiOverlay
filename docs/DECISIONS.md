@@ -4165,3 +4165,5 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   always builds onedir (`dist/mobiOverlay/` = exe + `_internal/`);
   `MOBI_ONEDIR` removed. `release.yml` zips that folder (and the lite
   onedir similarly). Users keep `_internal/` next to the exe.
+
+- **2026-10-30 - Rebrand author to "TheRealKestryl".** All apps (mobiOverlay, mobiThrottle, future) are credited to TheRealKestryl. Updated the splash byline (host/splash.py), title-bar byline (host/main_window.py) and LICENSE copyright holder. Historical entries above that mention "Kestryl" are left as written.

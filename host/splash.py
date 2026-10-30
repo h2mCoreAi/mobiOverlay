@@ -59,12 +59,12 @@ def _build_pixmap() -> QPixmap:
         painter, QFont(theme.FONT_DISPLAY, 18, QFont.Weight.Bold),
         "mobi", "Overlay", y=34, h=34,
     )
-    # "by Kestryl" byline, centered below the wordmark: "by " in white,
-    # "Kestryl" in the same blue accent — mirrors _TitleBar's byline but
+    # "by TheRealKestryl" byline, centered below the wordmark: "by " in white,
+    # "TheRealKestryl" in the same blue accent — mirrors _TitleBar's byline but
     # centered on its own line rather than trailing inline.
     _draw_two_tone(
         painter, QFont(theme.FONT_DISPLAY, 10, QFont.Weight.DemiBold),
-        "by ", "Kestryl", y=70, h=22,
+        "by ", "TheRealKestryl", y=70, h=22,
     )
 
     painter.end()
