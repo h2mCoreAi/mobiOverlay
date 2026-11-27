@@ -4167,3 +4167,41 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   onedir similarly). Users keep `_internal/` next to the exe.
 
 - **2026-10-30 - Rebrand author to "TheRealKestryl".** All apps (mobiOverlay, mobiThrottle, future) are credited to TheRealKestryl. Updated the splash byline (host/splash.py), title-bar byline (host/main_window.py) and LICENSE copyright holder. Historical entries above that mention "Kestryl" are left as written.
+
+- **2026-11-27 — Taskbar restore fixes, off-thread refreshes, multi-agent
+  rules; unmerged branches consolidated.** Owner asked for an optimization
+  pass, multi-agent readiness, and a review of minimize-to-taskbar.
+  - **Consolidation.** `master` was behind four unmerged, owner-tested
+    `cursor/...` / `rebrand-therealkestryl` branches (one linear chain on
+    `master`) that already implemented every open `docs/OPTIMIZATION.md`
+    item. Redoing that work was pointless, so `claude/taskbar-perf-multiagent`
+    is cut from `rebrand-therealkestryl` and carries it all. `remove-mobithrottle`
+    is left out: removing a module is a product decision, not an optimization.
+  - **Taskbar.** The window already had `WS_MINIMIZEBOX | WS_SYSMENU`
+    (checked on a hidden native window), so taskbar-click minimize was not
+    the problem. The real bugs: tray Show was disabled while minimized and
+    only raised the window; the hotkey and tray Stow stowed or deployed a
+    window that stayed minimized. All three now restore first
+    (`bring_to_front()`, `_restore_if_minimized()`). Not done: merging the
+    `▬` stow and `🗕` minimize buttons (a UX change needing the owner's eyes),
+    and the Windows minimize animation (needs `WS_CAPTION` + `WM_NCCALCSIZE`
+    on a translucent frameless window; too risky without a visual test).
+    AppUserModelID is set for source runs only, so pinned shortcuts to the
+    packaged exe keep matching.
+  - **Module contract: optional `refresh_job()` / `finish_refresh()`.**
+    Resolves the "initial module refreshes still block the GUI thread" note
+    in the 2026-10-13 entry. Chosen over making `refresh()` itself run on a
+    worker because `refresh()` reads widgets; the split keeps widget access
+    on the GUI thread and only the network call off it. Optional, so modules
+    with no network work are untouched. `pause_when_hidden` (default True)
+    stops refresh timers while stowed/minimized.
+  - **`Config.save_soon()`** (400 ms debounce) rather than debouncing
+    `save()` itself: exit paths and tests rely on `save()` being immediate.
+  - **Logistics Hub `results_view.py` is a mixin**, not a widget class: the
+    rendering methods read and write the module's own state, so a verbatim
+    move was the lowest-risk split.
+  - **Multi-agent rules** (`AGENTS.md`): claim work in `docs/PROGRESS.md`'s
+    "In flight" table, `<agent>/<topic>` branches, parallel-safe units vs.
+    one-agent-at-a-time hot spots, append-only conventions for shared docs,
+    `tests/run_all.py` before pushing, and `scripts/decisions_index.py` to
+    search this file instead of reading all of it.

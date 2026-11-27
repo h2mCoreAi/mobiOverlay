@@ -18,6 +18,29 @@ session log that used to live in `docs/PROGRESS.md`, kept so older
 
 ---
 
+## Taskbar restore, off-thread refreshes, multi-agent prep (2026-11-27)
+
+Branch `claude/taskbar-perf-multiagent`, cut from `rebrand-therealkestryl`
+so it carries the unmerged optimization/startup/reliability/rebrand chain.
+Star Citizen and the owner's installed overlay were running during the
+session, so nothing was launched; everything was verified with offscreen
+tests (`python tests/run_all.py`: 13/13 files pass).
+
+- Taskbar: tray Show / hotkey / tray Stow now act on a minimized window
+  (`tests/test_taskbar_restore.py`). Tray Show stays enabled while minimized.
+  Source runs get their own taskbar button (AppUserModelID).
+- Module refreshes run their UEX calls on a worker thread
+  (`host/refresh.py`, `tests/test_module_refresher.py`). Refresh timers
+  pause while stowed or minimized.
+- `Config.save_soon()` debounces slider and settings saves; flushed on quit
+  and Relaunch.
+- Logistics Hub rendering moved to `results_view.py` (module.py 2,807 →
+  2,175 lines).
+- Agent tooling: `tests/run_all.py`, `scripts/decisions_index.py`,
+  "Working with multiple agents" in `AGENTS.md`, "In flight" table in
+  `docs/PROGRESS.md`.
+- Not human-tested yet. Checklist is in `docs/PROGRESS.md` (Open).
+
 ## v0.1.0 → v0.2.0 (2026-09-20)
 
 Summary of changes shipping in v0.2.0 since the initial v0.1.0 release:

@@ -48,8 +48,9 @@ All modules are included and load automatically:
   small pill showing just the wordmark; click to restore
 - **Minimize / maximize** (`🗕` / `🗖` buttons, or double-click the title bar
   to maximize) — normal Windows behavior; the overlay has a taskbar entry
-- **System tray icon** — right-click for Show/Stow/Quit; recover the overlay
-  if the pill lands somewhere invisible
+- **System tray icon** — click it (or right-click → Show) to bring the full
+  overlay back from the taskbar, the pill, or behind other windows; right-click
+  also has Stow/Quit
 - **Global hotkey** (Settings, no default — empty until you set one) —
   toggle stow/deploy while Star Citizen has focus
 - **Click-through pill** (Settings) — when enabled, clicks pass through the
@@ -99,7 +100,8 @@ prevents this, but if you somehow bypass it, two keyboard hooks will race.
 ### Overlay disappeared
 
 Check the **system tray** (notification area) — the mobiOverlay icon is there.
-Double-click it, or right-click → Show.
+Click it, or right-click → Show. That also restores it if it was minimized
+to the taskbar. The global hotkey does the same.
 
 If you stowed to pill and can't find it (e.g. it landed in a multi-monitor gap),
 use the system tray or the global hotkey to restore.

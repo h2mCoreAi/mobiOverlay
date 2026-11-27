@@ -26,7 +26,11 @@ expected benefit, effort/risk, and project-rule compliance.
 | L4 | ✅ Implemented (option 1: separate lite build) | `MOBI_LITE=1` onedir folder, ~72 MB vs ~333 MB; CI `build-lite` job attaches the lite zip |
 | N1 | ✅ Implemented | Rate-limit errors disable Retry for 8s with a countdown (`Card.set_error(cooldown_s=)`) |
 | N2 | ✅ Implemented | `UexApiClient` logs per-request timing at DEBUG |
-| M4 | ✅ Implemented | Shared `row_style`, `text_style`, `field_style`, `label_small`, `timestamp_style`, `action_btn_style` in `host/theme.py`; every migrated style checked equivalent to the original. One-off button styles (icon/nudge/stepper) stay local |
+| M4 | ✅ Implemented | Shared `row_style`, `text_style`, `field_style`, `label_small`, `timestamp_style`, `action_btn_style` in `host/theme.py`; every migrated style checked equivalent to the original. One-off button styles (icon/nudge/stepper) stay local. Remainder closed 2026-11-27: the leftover variants differ on purpose |
+| L1 (cont.) | ✅ Implemented | Result rendering and the route popout moved to `logistics_hub/results_view.py` (mixin, verbatim move): `module.py` 2,807 → 2,175 lines |
+| P1 | ✅ Implemented | Timer/startup module refreshes run their UEX call on a worker thread (`refresh_job()`/`finish_refresh()`, `host/refresh.py`) |
+| P2 | ✅ Implemented | Refresh timers pause while the cards are stowed or minimized; a missed tick is caught up on return |
+| P3 | ✅ Implemented | `Config.save_soon()` debounces bursty saves (sliders, module settings, card drags) |
 
 ---
 
@@ -494,14 +498,52 @@ Mitigate with clear "last updated X ago" indicators.
 
 ---
 
+## Pass 2 (2026-11-27)
+
+### P1. Module refreshes off the GUI thread ✅ IMPLEMENTED
+
+**Was**: L3 moved the scan loops to a worker thread, but each module's
+`refresh()` (at startup and every 5 minutes) still called UEX on the GUI
+thread: Commodity Prices (1 request), Refinery Finder (2–3), Trade Route
+Optimizer (1). A slow UEX response froze the whole overlay, hotkey included.
+
+**Fixed**: optional contract pair `refresh_job()` (GUI thread: read widgets,
+return the network callable) and `finish_refresh(data)` (GUI thread:
+render). `host/refresh.py`'s `ModuleRefresher` runs the callable through
+`host/background.py` and drops a response that a newer refresh superseded.
+Modules without `refresh_job()` keep the synchronous path. The host error
+boundary now also applies N1's rate-limit RETRY cooldown.
+
+### P2. Pause refresh timers while the cards are hidden ✅ IMPLEMENTED
+
+**Was**: stowed to the pill or minimized, every module still refreshed every
+5 minutes: UEX traffic and GUI work for cards nobody could see, during play.
+
+**Fixed**: `MainWindow.content_hidden_changed` drives
+`ModuleRefresher.set_paused()`. On return, a module whose interval passed
+refreshes at once. `pause_when_hidden = False` opts out (mobiThrottle).
+
+### P3. Debounce config saves ✅ IMPLEMENTED
+
+**Was**: every `config.save()` is a full JSON dump plus `fsync`, called per
+tick of the opacity sliders and per module-settings change.
+
+**Fixed**: `Config.save_soon()` (400 ms debounce) for bursty callers;
+`save()` stays immediate; `flush()` runs at module shutdown and before
+Relaunch's `os._exit()`.
+
+---
+
 ## Implementation Priority Matrix
 
 Items already shipped (Q1-Q4, M1, M2, M5 — see Implementation Status above)
 are omitted below; this matrix only orders what's still open.
 
-| Priority | Item | Benefit | Effort | Risk |
-|----------|------|---------|--------|------|
-| 3 | M4 remainder (per-module style variants) | Low | Medium | Low |
+Nothing open. Candidates for a future pass: a Windows minimize animation for
+the frameless window (needs `WS_CAPTION` + `WM_NCCALCSIZE` handling and a
+visual test), and moving `_populate_commodities()`'s first fetch off the GUI
+thread (cached after the first call, so it costs at most one request per
+session).
 
 ---
 

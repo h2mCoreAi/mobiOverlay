@@ -29,6 +29,18 @@ with a single class mobiOverlay Core can instantiate. That class must provide:
   return type and skips the module (with a logged error) otherwise.
 - `refresh()` — fetch/update data on its own schedule; runs inside mobiOverlay
   Core's error boundary, so a failure here degrades only this module's card
+- `refresh_job()` / `finish_refresh(data)` — optional, preferred for any
+  module that calls UEX. `refresh_job()` runs on the GUI thread, reads widget
+  state, and returns a zero-argument callable holding only the network work;
+  Core (`host/refresh.py`) runs it on a worker thread and hands its result to
+  `finish_refresh()` on the GUI thread. A response superseded by a newer
+  refresh is dropped. Modules implementing it define
+  `refresh()` as `self.finish_refresh(self.refresh_job()())`. Commodity
+  Prices, Refinery Finder and Trade Route Optimizer use it.
+- `pause_when_hidden: bool` — default True: Core stops the module's refresh
+  timer while the cards are hidden (stowed or minimized) and catches up on
+  a missed tick when they come back. mobiThrottle sets False (its bar stays
+  on screen while stowed).
 - `shutdown()` — optional cleanup hook called by `app.aboutToQuit` for every
   module before process exit (e.g. release hotkeys, close file handles)
 
@@ -180,11 +192,28 @@ overlay from the taskbar" reasoning behind the system tray icon below
 (see DECISIONS.md, 2026-09-20) — the tray icon remains as an additional
 recovery affordance, just no longer the *only* one.
 
+**Restoring from the taskbar (2026-11-27):** every way back acts on a
+minimized window instead of changing one the user can't see.
+`MainWindow.bring_to_front()` un-minimizes (keeping maximized state),
+deploys a stowed pill, and takes focus; tray Show uses it. The Stow/Deploy
+hotkey on a minimized window shows it (it used to stow or deploy it while
+it stayed minimized). Tray Stow on a minimized window shows the pill.
+`MainWindow.content_hidden_changed(bool)` fires when the cards become hidden
+(stowed or minimized) or visible again; `host/main.py` pauses card refresh
+timers on it. Source runs set their own AppUserModelID so their taskbar
+button doesn't group under python.exe; the packaged exe keeps its default
+identity so existing pinned shortcuts still match. The window already has
+`WS_MINIMIZEBOX | WS_SYSMENU`, so clicking its taskbar button minimizes it.
+It has no Windows minimize animation: that needs `WS_CAPTION` plus
+`WM_NCCALCSIZE` handling on a translucent frameless window, which wasn't
+attempted without a visual test.
+
 ## System tray icon (host/main_window.py)
 
 A Windows system tray icon (`QSystemTrayIcon`) provides overlay recovery when
 the main window is minimized/stowed or if the pill lands somewhere invisible.
-Menu options: Show, Stow, Quit. Double-click also shows the window.
+Menu options: Show (enabled while stowed or minimized), Stow, Quit.
+Clicking the icon shows the window from any state.
 Icon file: `host/assets/icons/mobioverlay.png`.
 
 ## Single-instance guard (host/single_instance.py)
@@ -217,6 +246,13 @@ mid-save can't truncate them. A file that fails to parse is moved aside to
 overwritten by the next save. The location cache is only written after a
 complete UEX fetch; a failed or partial fetch falls back to the older cache
 and is retried (at most every 5 minutes) on the next lookup.
+
+`Config.save()` writes at once. `Config.save_soon()` debounces (400 ms) for
+settings that change in bursts; `set_module_settings()`, `set_card_state()`,
+`set_shared_location()` and the opacity sliders use it, so a slider drag is
+one write instead of dozens of fsyncs. The in-memory `config.data` changes
+immediately. A pending write is flushed by any `save()`, by `Config.flush()`
+at the end of module shutdown, and before Relaunch's `os._exit()`.
 
 ## Shared services (host/services.py)
 

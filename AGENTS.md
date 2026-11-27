@@ -36,6 +36,7 @@ mobiOverlay/
 │   ├── fileio.py            # atomic writes, corrupt-file quarantine
 │   ├── services.py          # Services: the shared objects handed to modules
 │   ├── background.py        # run blocking calls off the GUI thread
+│   ├── refresh.py           # per-module refresh: error boundary, worker thread, timer pause
 │   ├── price_cache.py       # SQLite cache for bulk price data
 │   ├── theme.py / splash.py # HUD styling, startup splash
 │   └── assets/              # fonts (Orbitron, Share Tech Mono), icons
@@ -49,6 +50,7 @@ mobiOverlay/
 │   │   ├── routing.py       # route ordering: greedy + 2-opt + Or-opt
 │   │   ├── grading.py       # contract score, freight manifest
 │   │   ├── popups.py        # review / profile / region / banner widgets
+│   │   ├── results_view.py  # contracts / manifest / route rendering, route popout
 │   │   └── gamelog_verify.py  # optional Game.log cross-check
 │   ├── refinery_finder/
 │   ├── multi_commodity_finder/
@@ -56,6 +58,8 @@ mobiOverlay/
 │   ├── mobi_notes/
 │   └── mobi_throttle/
 ├── tests/                   # regression tests (plain asserts, no framework)
+│   └── run_all.py           # runs every test file, one summary
+├── scripts/                 # git hook, decisions_index.py
 ├── docs/                    # architecture, decisions, module specs
 ├── mobioverlay.spec         # PyInstaller spec (onedir: exe + _internal/)
 ├── requirements.txt
@@ -75,9 +79,9 @@ Read only what's relevant to your task:
 | `docs/PROGRESS.md` | One-page status: version, shipped, open |
 | `docs/HISTORY.md` | Session archive. Not the status |
 | `docs/ARCHITECTURE.md` | Module contract, Core responsibilities, config schema |
-| `docs/DECISIONS.md` | Dated log of choices + rationale (append-only) |
+| `docs/DECISIONS.md` | Dated log of choices + rationale (append-only). Too long to read whole: `python scripts/decisions_index.py <keyword>` lists matching entries with line numbers |
 | `docs/BACKLOG.md` | Ranked module backlog with community-interest evidence |
-| `docs/OPTIMIZATION.md` | Performance improvements (Q1-Q5, M1-M5, L1-L4) |
+| `docs/OPTIMIZATION.md` | Performance work: Q, M, L, N and P items, with status |
 | `docs/modules/<name>.md` | Scope for one specific module (hyphenated: `modules/logistics_hub/` → `docs/modules/logistics-hub.md`) |
 | `BUILD.md` | Build, test, and release instructions |
 | `README.md` | End-user documentation |
@@ -104,16 +108,18 @@ python host/main.py
 
 ## Running tests
 
-Plain asserts, no test framework dependency:
+Plain asserts, no test framework dependency. Run everything (offscreen Qt,
+UTF-8 output, one summary, non-zero exit on any failure):
 
 ```bash
-python tests/test_logistics_hub_parsing.py
+python tests/run_all.py            # every suite
+python tests/run_all.py logistics  # only files whose name contains a word
 ```
 
-This runs contract parsing fixtures, hauling resolution checks, distance
-calculations, and UI state tests (if PySide6 is available).
+Each file also runs on its own, e.g. `python tests/test_logistics_hub_parsing.py`
+(contract parsing fixtures, hauling resolution, distances, UI state).
 
-Other test files:
+Test files:
 - `python tests/test_api_client_dedupe.py` — UexApiClient deduplication
 - `python tests/test_core_persistence.py` — config/cache recovery, atomic saves, rate-limit detection (no network)
 - `python tests/test_pill_hover_unlock.py` — click-through pill hover-to-unlock (offscreen, no hooks)
@@ -123,6 +129,8 @@ Other test files:
 - `python tests/test_background_scans.py` — worker-thread scan loops (offscreen, fake API)
 - `python tests/test_mobi_throttle_reconnect.py` — mobiThrottle joystick re-init only when needed (no Qt window, no device)
 - `python tests/test_price_cache.py` / `python tests/test_commodity_prices_cache.py` — SQLite price cache and its restore/save in Commodity Prices
+- `python tests/test_module_refresher.py` — module refresh on a worker thread, stale-response drop, timer pause while hidden
+- `python tests/test_taskbar_restore.py` — tray Show / hotkey / Stow on a minimized window (offscreen)
 
 **Requirement**: `locations_cache.json` must exist (run the app once first, or
 the test will fetch from UEX API).
@@ -148,7 +156,7 @@ plus `_internal/` (all 8 modules). Keep the folder together.
 2. **Ask before pushing to `master`** — never push directly to `master`
    without the owner's explicit confirmation in the current session, even
    for docs-only commits
-3. **Name branches**: `cursor/<descriptive-name>-<suffix>` (or similar prefix)
+3. **Name branches**: `<agent>/<topic>` — e.g. `claude/taskbar-restore`, `cursor/item-lookup`
 4. **Test side-by-side** before merge:
    - Build to a separate folder: `pyinstaller mobioverlay.spec --distpath dist-test`
    - Copy to test location, copy `config.json`, run alongside Star Citizen
@@ -157,15 +165,55 @@ plus `_internal/` (all 8 modules). Keep the folder together.
 
 ---
 
+## Working with multiple agents
+
+Several agents (Claude, Cursor, Codex, ...) may work on this repo at the same
+time, each on its own branch or worktree. These rules keep their work from
+colliding:
+
+1. **Claim before you start.** Add a row to the "In flight" table in
+   `docs/PROGRESS.md` (agent, branch, area/files) in your first commit, and
+   remove it when the PR merges or is abandoned. If your area overlaps a
+   claimed row, pick other work or ask the owner.
+2. **One task per branch**, named `<agent>/<topic>`. Branch from `master`.
+   If you must stack on an unmerged branch, say so in the PR description.
+3. **Parallel-safe units:** one module folder (`modules/<name>/`) with its
+   `docs/modules/<name>.md` and its `tests/test_<name>*.py`. Logistics Hub is
+   split by concern (`parsing.py`, `routing.py`, `grading.py`, `popups.py`,
+   `results_view.py`, `ocr.py`, `gamelog_verify.py`), so two agents can work
+   in it if they claim different files.
+4. **One agent at a time (hot spots):** `host/main_window.py`, `host/main.py`,
+   `host/module_base.py` and `host/refresh.py` (the module contract),
+   `host/config.py` (config schema), `mobioverlay.spec`, `.github/workflows/`.
+   A contract or schema change also needs a `docs/DECISIONS.md` entry.
+5. **Shared docs that merge cleanly:** append new `docs/DECISIONS.md` entries
+   at the end only. Add a new section to `docs/HISTORY.md` and don't edit
+   others. In `docs/PROGRESS.md`, edit only your own rows and lines.
+6. **Before pushing:** `python tests/run_all.py` must pass. New behavior gets a
+   test (plain asserts, offscreen Qt, fake API, no network).
+7. **Running the app:** only one instance can exist on the machine (lock file
+   and global keyboard hook). Check first (safety rule 7). If the owner's or
+   another agent's instance is running, or Star Citizen is, verify with the
+   offscreen tests instead of launching.
+8. **Finding past decisions:** `python scripts/decisions_index.py <keyword>`
+   prints matching entries with line numbers. Read only those entries, at
+   that offset.
+
+---
+
 ## Coding conventions
 
 - **PySide6/Qt** for all UI — no Tkinter, no web frameworks
 - **Folder-per-module** under `modules/`, auto-discovered at startup
 - **Module contract**: `module_id`, `display_name`, `create_card()`, `refresh()`,
-  optional `shutdown()`
+  optional `shutdown()`. A module that calls UEX should also implement
+  `refresh_job()`/`finish_refresh()` so the request runs off the GUI thread
+  (see `docs/ARCHITECTURE.md`, Module contract)
 - **mobiOverlay Core never imports module internals** — only calls the contract
 - **Shared services passed to modules**: `api_client`, `config`, `locations` (also bundled as `self.services`, see `host/services.py`)
-- **Config persistence**: modules touch only their own `modules.<id>` section
+- **Config persistence**: modules touch only their own `modules.<id>` section.
+  Use `config.set_module_settings()` (debounced) for settings that change in
+  bursts; `config.save()` writes at once
 - **No code comments that just narrate** — comments explain non-obvious intent only
 - **Docstrings** for public functions; skip obvious ones
 

@@ -26,12 +26,12 @@ conventions, testing, and common tasks. This file is a quick reference.
 
 | When | Read |
 |------|------|
-| First | `AGENTS.md` — full onboarding, safety rules |
+| First | `AGENTS.md` — full onboarding, safety rules, multi-agent rules |
 | Every session | `docs/PROGRESS.md` — one-page status |
 | For old session notes | `docs/HISTORY.md` — archive, not the status |
 | For architecture | `docs/ARCHITECTURE.md` — contracts, services |
 | For a specific module | `docs/modules/<name>.md` |
-| For past decisions | `docs/DECISIONS.md` — append-only log |
+| For past decisions | `docs/DECISIONS.md` — append-only log (search it with `scripts/decisions_index.py`) |
 | For what's next | `docs/BACKLOG.md` — ranked module candidates |
 
 ---
@@ -42,18 +42,11 @@ conventions, testing, and common tasks. This file is a quick reference.
 # Run from source
 python host/main.py
 
-# Run tests (each file is standalone, plain asserts)
-python tests/test_logistics_hub_parsing.py
-python tests/test_api_client_dedupe.py
-python tests/test_core_persistence.py
-python tests/test_pill_hover_unlock.py
-python tests/test_mobi_notes_store.py
-python tests/test_logistics_hub_routing.py
-python tests/test_background_scans.py
-python tests/test_price_cache.py
-python tests/test_services.py
-python tests/test_commodity_prices_cache.py
-python tests/test_mobi_throttle_reconnect.py
+# Run all tests (offscreen, one summary; each file also runs standalone)
+python tests/run_all.py
+
+# Find past decisions without reading all of docs/DECISIONS.md
+python scripts/decisions_index.py <keyword>
 
 # Build exe
 pyinstaller mobioverlay.spec --noconfirm

@@ -22,12 +22,22 @@ Logistics Hub may order stops with greedy nearest-neighbor plus 2-opt on real UE
 ## Open
 
 - Next module candidate: Item Price Lookup / Ship Outfitting (Tier 1.4 in `docs/BACKLOG.md`).
-- **Reliability + packaging work is on `cursor/reliability-fixes-popup-verify-dist` (stacked on startup/optimization; unmerged).** Includes Logistics Hub review-popup / Game.log / distance / profitable / throttle / notes fixes, plus onedir-as-only-release. Needs an owner `dist-test` of a fresh onedir extract: launch twice (fast both times), splash, Settings > Relaunch, Logistics Hub SCAN, mobiThrottle connect/reconnect, lite folder if desired (`MOBI_LITE=1`).
+- **Unmerged work is consolidated on `claude/taskbar-perf-multiagent`.** It stacks the optimization pass, the startup/onedir work, the reliability fixes and the TheRealKestryl rebrand (all previously on `cursor/...` and `rebrand-therealkestryl` branches, never merged) with the taskbar restore fixes, off-GUI-thread module refreshes, refresh pause while hidden, debounced config saves, the Logistics Hub `results_view.py` split, and the multi-agent docs. Needs an owner `dist-test` of a fresh onedir extract: minimize to taskbar, then restore with tray Show, the hotkey and the taskbar button; stow/deploy; opacity sliders; Settings > Relaunch; Logistics Hub SCAN and route popout; mobiThrottle connect/reconnect.
+- `remove-mobithrottle` (mobiThrottle split into its own repo) is a separate, unmerged product decision. It isn't part of the branch above.
 - Human checks that were never closed are listed in `docs/HISTORY.md` (crosshair over the game, hotkey focus, relaunch after an OCR scan, grid-snap drag). Multi-Commodity Finder has also never been recorded as human-tested. These are unverified follow-ups, not new bugs.
+
+## In flight
+
+One row per active branch. Add yours in your first commit and remove it when the PR merges (see `AGENTS.md`, Working with multiple agents).
+
+| Agent | Branch | Area / files |
+|-------|--------|--------------|
+| Claude | `claude/taskbar-perf-multiagent` | `host/main_window.py`, `host/main.py`, `host/refresh.py`, `host/config.py`, `host/module_base.py`, `modules/logistics_hub/results_view.py`, agent docs |
 
 ## Working rules that are easy to miss
 
-- Work on a `cursor/...` PR branch. Never push to `master` without the owner's explicit OK in the current session.
+- Work on an `<agent>/<topic>` PR branch and claim it under "In flight" below. Never push to `master` without the owner's explicit OK in the current session. Multi-agent rules are in `AGENTS.md`.
+- Run `python tests/run_all.py` before pushing.
 - Keep this file to one page. Add session detail to `docs/HISTORY.md` and dated rationale to `docs/DECISIONS.md` (append-only).
 - Build with PyInstaller 6.9+ (Settings > Relaunch depends on it, see `host/paths.py`).
 - Local build output (`dist/`, `dist-test/`, `build/`, `freeze-build*.log`) and runtime files (`config.json`, caches, `.mobioverlay.lock`) are not project files. They are gitignored; don't document specific local paths.
