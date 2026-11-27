@@ -54,6 +54,23 @@ def parse_categories(raw) -> list[Category]:
     return out
 
 
+@dataclass
+class ContractFilter:
+    """What the player chose in a contract list's filter row."""
+    types: frozenset[str] = frozenset()   # empty: every mission type
+    system: str = ""                       # empty: any system
+    unlocked_only: bool = False
+
+    def allows(self, contract: dict, unlocked: bool | None) -> bool:
+        if self.types and contract.get("type") not in self.types:
+            return False
+        if self.system and self.system not in (contract.get("systems") or []):
+            return False
+        if self.unlocked_only and unlocked is False:
+            return False
+        return True
+
+
 def contract_key(c: dict) -> str:
     req = c.get("requires") or {}
     return f"{c.get('title')}|{c.get('giver')}|{req.get('rank', '')}"
@@ -87,6 +104,17 @@ class Catalog:
     def all_factions(self) -> list[str]:
         return sorted({r["faction"] for c in self.contracts for r in c.get("rep", [])})
 
+    def types(self) -> list[str]:
+        """Mission types, most common first."""
+        counts: dict[str, int] = {}
+        for c in self.contracts:
+            if c.get("type"):
+                counts[c["type"]] = counts.get(c["type"], 0) + 1
+        return sorted(counts, key=lambda k: (-counts[k], k))
+
+    def systems(self) -> list[str]:
+        return sorted({s for c in self.contracts for s in c.get("systems") or []})
+
 
 def load_catalog(path: Path) -> Catalog:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -107,13 +135,25 @@ def rep_gain(contract: dict, faction: str, ladder: str) -> int:
     return sum(r["amount"] for r in contract.get("rep", []) if r["faction"] == faction and r["ladder"] == ladder)
 
 
+def gate_faction(contract: dict) -> str:
+    """Whose ladder the contract's rank gate is on: the faction it pays
+    reputation to on that ladder (a giver's display name can differ from the
+    faction that holds the ladder, e.g. "Covalex Independent Contractors" vs
+    "Covalex"), else the contract's own faction."""
+    req = contract.get("requires") or {}
+    for r in contract.get("rep", []):
+        if r.get("ladder") == req.get("ladder"):
+            return r["faction"]
+    return contract.get("faction") or ""
+
+
 def is_unlocked(contract: dict, known_rep: dict[str, int]) -> bool | None:
     """True / False when the player's reputation for the contract's own gate
     is known; None when it isn't (we don't know their rank)."""
     req = contract.get("requires")
     if not req:
         return True
-    have = known_rep.get(f"{contract.get('faction')}|{req['ladder']}")
+    have = known_rep.get(f"{gate_faction(contract)}|{req['ladder']}")
     if have is None:
         return None
     return have >= req["points"]
@@ -128,7 +168,8 @@ def _allowed(c: dict, show_unlawful: bool, repeatable_only: bool) -> bool:
 
 
 def for_reputation(catalog: Catalog, faction: str, ladder: str, known_rep: dict[str, int],
-                   show_unlawful: bool = False, category: Category | None = None, limit: int = 8) -> list[dict]:
+                   show_unlawful: bool = False, category: Category | None = None, limit: int = 8,
+                   flt: ContractFilter | None = None) -> list[dict]:
     """Repeatable contracts that raise `faction`'s `ladder`, unlocked ones
     first, then by reputation per run, then by pay."""
     rows = []
@@ -138,13 +179,17 @@ def for_reputation(catalog: Catalog, faction: str, ladder: str, known_rep: dict[
             continue
         if category is not None and not category.matches(c):
             continue
-        rows.append({"contract": c, "gain": gain, "unlocked": is_unlocked(c, known_rep)})
-    rows.sort(key=lambda r: (r["unlocked"] is False, -r["gain"], -c_pay(r["contract"]), r["contract"]["title"]))
+        unlocked = is_unlocked(c, known_rep)
+        if flt is not None and not flt.allows(c, unlocked):
+            continue
+        rows.append({"contract": c, "gain": gain, "unlocked": unlocked})
+    rows.sort(key=lambda r: (r["unlocked"] is False, r["unlocked"] is None, -r["gain"], -c_pay(r["contract"]),
+                             r["contract"]["title"]))
     return _dedupe(rows)[:limit]
 
 
 def for_money(catalog: Catalog, known_rep: dict[str, int], show_unlawful: bool = False,
-              category: Category | None = None, limit: int = 8) -> list[dict]:
+              category: Category | None = None, limit: int = 8, flt: ContractFilter | None = None) -> list[dict]:
     """Repeatable contracts by aUEC per run: unlocked (or ungated) first."""
     rows = []
     for c in catalog.contracts:
@@ -152,15 +197,18 @@ def for_money(catalog: Catalog, known_rep: dict[str, int], show_unlawful: bool =
             continue
         if category is not None and not category.matches(c):
             continue
-        rows.append({"contract": c, "gain": c_pay(c), "unlocked": is_unlocked(c, known_rep)})
+        unlocked = is_unlocked(c, known_rep)
+        if flt is not None and not flt.allows(c, unlocked):
+            continue
+        rows.append({"contract": c, "gain": c_pay(c), "unlocked": unlocked})
     rows.sort(key=lambda r: (r["unlocked"] is False, r["unlocked"] is None, -r["gain"], r["contract"]["title"]))
     return _dedupe(rows)[:limit]
 
 
 def in_category(catalog: Catalog, category: Category, known_rep: dict[str, int],
-                show_unlawful: bool = False, limit: int = 12) -> list[dict]:
+                show_unlawful: bool = False, limit: int = 12, flt: ContractFilter | None = None) -> list[dict]:
     """A category's repeatable contracts, unlocked first, best paying first."""
-    return for_money(catalog, known_rep, show_unlawful, category, limit)
+    return for_money(catalog, known_rep, show_unlawful, category, limit, flt)
 
 
 def c_pay(contract: dict) -> int:

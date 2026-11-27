@@ -114,5 +114,30 @@ abandoned contracts can cost reputation).
 
 - Rank gates come from `minStanding`. Older rank-titled hauls ("Junior Rank - ...") have no gate in the data; the builder takes it from the title and marks it `from_title`.
 - Contracts that spawn ship encounters count as ship combat; Mercenary contracts without them count as FPS.
-- Known gap: some gates are missing from SCMDB (Foxwell's Red Level contracts are gated at Sr. Contractor in the wiki data, not in SCMDB), so the card shows no "needs" for them.
+
+### Cross-source check (added 2026-11-27)
+
+An earlier note here said Foxwell's Red Level contracts lacked rank gates in
+SCMDB. That was wrong: the contracts without a gate ("Red Level Contract:
+Clear PAFs, Recover Cargo, and Deliver to OLP", "... Recoup Stolen Cargo
+Haul") have no gate and no reputation in both sources. The gated ones ("Red
+Lvl. Contract: Defend Fuel Tanks") carry their gate (Sr. Contractor) in both.
+
+The catalogs now combine sources instead of relying on one:
+
+| Check, 4.10.3 live | Result |
+|--------------------|--------|
+| Contracts in both SCMDB and star-citizen.wiki (same internal name) | 841 |
+| Rank gate agrees | 817 (97%); 1 filled from the wiki; 1 conflict, recorded |
+| Reputation agrees | 799 (95%); 3 filled from the wiki; 39 conflicts recorded, mostly the giver named differently (e.g. "Eckhart Security" vs "Miles Eckhart") |
+| Contracts only the wiki has | 628, added (type inferred from the contract name) |
+| Final catalog | 1,266 contracts, 735 backed by both sources |
+
+| Check, 5.0 PTU vs the cross-checked 4.10.3 catalog | Result |
+|----------------------------------------------------|--------|
+| Unchanged (title, giver, gate, reputation) | 772 |
+| Changed | 87 |
+| New in 5.0 | 40 |
+| Gates carried over from 4.10.3 (marked) | 24 |
+| Backed by two sources | 687 |
 

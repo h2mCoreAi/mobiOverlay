@@ -549,6 +549,61 @@ def test_card_setup_flow_and_import() -> int:
     return 9
 
 
+def test_cross_source_catalogs() -> int:
+    live, ptu = _live(), _ptu()
+    lc = json.loads((PACKS / "4.10.3-live" / "contracts.json").read_text(encoding="utf-8"))
+    pc = json.loads((PACKS / "5.0-ptu" / "contracts.json").read_text(encoding="utf-8"))
+    assert lc["cross_check"]["wiki"].startswith("4.10.3-LIVE") and lc["cross_check"]["matched"] > 500
+    agree = lc["cross_check"]["gate_agree"] / lc["cross_check"]["matched"]
+    assert agree > 0.9, f"sources agree on only {agree:.0%} of rank gates"
+    assert all(c.get("sources") for c in live.catalog.contracts), "every contract names its sources"
+    both = [c for c in live.catalog.contracts if len(c["sources"]) > 1]
+    assert len(both) > 500
+    assert any(c.get("conflicts") for c in live.catalog.contracts), "disagreements are recorded, not hidden"
+    # Wiki-only contracts are in: microTech's VLRT bounty gives 4,000 Guild rep.
+    rows = k.for_reputation(live.catalog, "Bounty Hunters Guild", "BountyHunter_BountyHuntersGuild",
+                            {"Bounty Hunters Guild|BountyHunter_BountyHuntersGuild": 1}, False, None, 50)
+    vlrt = [r for r in rows if "(VLRT)" in r["contract"]["title"] and r["gain"] == 4000]
+    assert vlrt and "star-citizen.wiki" in vlrt[0]["contract"]["sources"], [r["contract"]["title"] for r in rows[:8]]
+    # 5.0 is compared with the cross-checked 4.10.3 catalog.
+    assert pc["cross_check"]["unchanged_since_previous"] > 500 and "new_since_previous" in pc["cross_check"]
+    assert any(any("cross-checked" in s for s in c["sources"]) for c in ptu.catalog.contracts)
+    carried = [c for c in ptu.catalog.contracts if (c.get("requires") or {}).get("source", "").startswith("carried")]
+    assert len(carried) == pc["cross_check"].get("gate_carried_over", 0)
+    return 8
+
+
+def test_contract_filters() -> int:
+    live = _live()
+    flt = k.ContractFilter(types=frozenset({"Delivery"}), system="Stanton")
+    rows = k.for_money(live.catalog, {}, False, None, 200, flt)
+    assert rows and all(r["contract"]["type"] == "Delivery" and "Stanton" in r["contract"]["systems"] for r in rows)
+    known = {"Covalex|Hauling": 250}
+    everything = k.for_reputation(live.catalog, "Covalex", "Hauling", known, False, None, 200)
+    unlocked = k.for_reputation(live.catalog, "Covalex", "Hauling", known, False, None, 200,
+                                k.ContractFilter(unlocked_only=True))
+    assert any(r["unlocked"] is False for r in everything) and all(r["unlocked"] is not False for r in unlocked)
+    assert "Hauling" in live.catalog.types() and {"Stanton", "Pyro", "Nyx"} <= set(live.catalog.systems())
+
+    mod, module, card, d = _make_card()
+    module._view("haul-covalex-member")
+    assert module.filter_row.isVisibleTo(card), "the filter row shows with the rep tracker"
+    module._set_filter("f_unlocked", True)
+    module.progress.set_rep("Covalex|Hauling", 250)
+    module.render()
+    texts = [module.rep_rows.itemAt(i).widget().text() for i in range(module.rep_rows.count())]
+    assert texts and not any("needs Member" in t for t in texts), texts
+    module._set_filter("f_unlocked", False)
+    module.set_view("contracts")
+    module._set_filter("f_type", "Bounty Hunter")
+    texts = [module.goal_rows.itemAt(i).widget().text() for i in range(module.goal_rows.count())]
+    assert texts and module.type_combo.currentData() == "Bounty Hunter"
+    module._view("fs-pick-city")
+    module.set_view("guide")
+    assert not module.filter_row.isVisibleTo(card), "no filter row without a contract list"
+    return 8
+
+
 def run() -> int:
     total = 0
     for test in (test_bundled_packs_pass_their_data_checks, test_bundled_content,
@@ -556,7 +611,8 @@ def run() -> int:
                  test_pack_inheritance_overrides_and_categories, test_user_files_extend_chapters_and_custom_objectives,
                  test_categories_and_contract_recommendations, test_progress_reputation_log_and_goals,
                  test_progress_store_basics, test_maths, test_import_export, test_setup_logic,
-                 test_card_walkthrough, test_card_versions_goals_and_prices, test_card_setup_flow_and_import):
+                 test_card_walkthrough, test_card_versions_goals_and_prices, test_card_setup_flow_and_import,
+                 test_cross_source_catalogs, test_contract_filters):
         total += test()
     return total
 

@@ -4287,3 +4287,18 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
     validated, with no path escapes, JSON only and size limits, and they must
     load and extend correctly before install. Nothing imported is executed.
 
+- **2026-11-27 — mobiGuide contract catalogs use several sources, and
+  contract lists get filters.** Owner: "there are thousands of sources ...
+  you don't have to trust only one", and "it should be easy to filter the
+  type of contracts". The catalog builder now joins SCMDB and the
+  star-citizen.wiki API on the game's internal contract name. Where they
+  agree, a contract is backed by both. Where one lacks a gate or reputation,
+  the other fills it, marked. Disagreements are recorded per contract and
+  shown in the card, not silently resolved. Wiki-only contracts are added.
+  PTU builds, which the wiki doesn't cover, are compared with the previous
+  patch's cross-checked catalog. This also corrected a claim in the docs (a
+  "gap" in Foxwell's gates that both sources show isn't one). It fixed a real
+  bug too: gate checks now use the faction that holds the ladder, not the
+  giver's display name. Every contract list has Type / System / Unlocked
+  filters, saved in settings.
+

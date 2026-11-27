@@ -1,7 +1,7 @@
 # Module: mobiGuide (Leveling Guide)
 
 Status: built 2026-11-27 on `claude/leveling-guide`. Offscreen tests pass
-(`tests/test_leveling_guide.py`, 135 checks); not yet run in the live
+(`tests/test_leveling_guide.py`, 151 checks); not yet run in the live
 overlay or in game.
 
 A World of Warcraft–style leveling guide for Star Citizen that works for any
@@ -27,7 +27,7 @@ Bundled packs:
 
 | Pack | Label | Builds on | Contents |
 |------|-------|-----------|----------|
-| `4.10.3-live` | 4.10.3 (live) | – | 14 chapters, 67 objectives, 853 contracts, 16 categories |
+| `4.10.3-live` | 4.10.3 (live) | – | 14 chapters, 67 objectives, 1,266 contracts (SCMDB + star-citizen.wiki), 16 categories |
 | `5.0-ptu` | 5.0 (PTU) | `4.10.3-live` | adds the Guilds chapter (7 objectives), the Guilds category, and 5.0's 899 contracts |
 
 ### pack.json
@@ -92,8 +92,20 @@ Same schema as before, plus:
 
 ### contracts.json (generated)
 
-Built by `scripts/build_contract_catalog.py` from SCMDB's game-data files
-(scmdb.net; both its newer contract list and its older mission-broker list).
+Built by `scripts/build_contract_catalog.py` from more than one source, both
+read from the game files. Each contract records which sources back it
+(`sources`) and any disagreement (`conflicts`); the catalog keeps the
+agreement statistics (`cross_check`).
+
+- **SCMDB** (scmdb.net): live and PTU builds; the primary source for mission
+  types, ship encounters and ladders.
+- **star-citizen.wiki API**: live builds only. Joined on the game's internal
+  contract name. It fills gates and reputation SCMDB lacks, adds the 628
+  contracts SCMDB doesn't carry (their mission type is inferred from the name
+  and marked `type_inferred`), and flags disagreements.
+- **The previous patch's catalog** (`--previous`): for a PTU build the wiki
+  can't check. Unchanged contracts inherit that catalog's cross-check, and a
+  gate present before but missing now is carried over, marked as such.
 
 Each contract records:
 - giver and faction
@@ -112,7 +124,8 @@ Rank - ..."); the builder infers it and marks it `from_title`.
 mkdir -p modules/leveling_guide/packs/5.1-live/chapters
 # write pack.json: id, label, patch, channel, "extends": "5.0-ptu" (or the last live pack)
 python scripts/build_contract_catalog.py --list
-python scripts/build_contract_catalog.py <scmdb version> --label "5.1 (live)" --pack modules/leveling_guide/packs/5.1-live
+python scripts/build_contract_catalog.py <scmdb version> --label "5.1 (live)" --pack modules/leveling_guide/packs/5.1-live \
+    --previous modules/leveling_guide/packs/5.0-ptu/contracts.json   # wiki cross-check is automatic for live builds
 # add chapters for what's new; reuse an objective id to replace one; list ids under "remove" to drop them
 python scripts/check_pack.py 5.1-live --write
 python tests/run_all.py leveling
@@ -157,6 +170,12 @@ Guides are data only (JSON). Nothing imported is ever executed.
 - **CONTRACTS:**
   - goals: reach a rank, save up aUEC, or buy a ship (live UEX price), with progress and **SET**;
   - the best contracts for the goal, or with no goal, the category's best-paying repeatable contracts, unlocked first.
+- **Contract filters:** a row above every contract list (reputation tracker and CONTRACTS):
+  - **Type:** every mission type in the data, e.g. Hauling, Delivery, Bounty Hunter, Mercenary, Salvage.
+  - **System:** Stanton, Pyro or Nyx.
+  - **Unlocked:** hide contracts your known rank can't take yet.
+
+  Choices are remembered. A row's tooltip names its sources, says where an inferred or carried-over gate came from, and shows any disagreement; such rows say "⚠ sources differ".
 - **↶ UNDO LAST RUN** takes back the last logged contract.
 
 Completion is always manual. No Game.log, no game input.
@@ -176,14 +195,14 @@ Completion is always manual. No Game.log, no game input.
 | `app_root()/leveling_guide_progress.json` | progress, reputation, logged runs, goals |
 | `app_root()/leveling_guide_custom.json` | your objectives |
 | `app_root()/leveling_guide/` | drop-in chapters; `packs/` holds imported packs |
-| `config.json` → `modules.leveling_guide` | `pack`, `view`, `category`, `goal`, `focus`, `show_optional`, `show_unlawful`, `compact`, `setup_done`, `setup_dismissed` |
+| `config.json` → `modules.leveling_guide` | `pack`, `view`, `category`, `goal`, `focus`, `f_type`, `f_system`, `f_unlocked`, `show_optional`, `show_unlawful`, `compact`, `setup_done`, `setup_dismissed` |
 
 ## Data and honesty rules
 
 - Reputation and pay figures are the game's **base values** from the game files.
 - "≈N to go" is the remaining target divided by the contract's reputation or pay.
 - Recommendations are sorting and filtering only. Rank gates and illegality are shown as the data records them.
-- **Known gap:** some gates are missing from SCMDB (Foxwell's Red Level contracts are gated at Sr. Contractor in the wiki data, not in SCMDB), so those rows show no "needs".
+- Contracts with no "needs" really have no rank gate: both sources agree (for example Foxwell's "Red Level Contract: Clear PAFs..."). The gated Red Level ones carry their gate.
 - Unknown ranks show "needs X?" until you set them.
 
 See `docs/leveling-guide/verification.md` for every checked claim.

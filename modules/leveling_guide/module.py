@@ -525,7 +525,8 @@ class LevelingGuideModule(ModuleBase):
         super().__init__(api_client, config, locations)
         for key, value in (("show_optional", True), ("show_unlawful", False), ("compact", False),
                            ("focus", []), ("setup_done", False), ("refresh_interval_seconds", 600),
-                           ("view", "guide"), ("category", ""), ("pack", None), ("goal", None)):
+                           ("view", "guide"), ("category", ""), ("pack", None), ("goal", None),
+                           ("f_type", ""), ("f_system", ""), ("f_unlocked", False)):
             self.settings.setdefault(key, value)
         self.progress = progress or progress_mod.ProgressStore()
         self.custom = custom or progress_mod.CustomObjectives()
@@ -673,6 +674,29 @@ class LevelingGuideModule(ModuleBase):
         self.pack_label.setToolTip("Game version this guide is for. Change it in ⚙.")
         cat_row.addWidget(self.pack_label)
         layout.addLayout(cat_row)
+
+        # -- contract filter row: shown wherever a contract list is
+        self.filter_row = QWidget()
+        fr = QHBoxLayout(self.filter_row)
+        fr.setContentsMargins(0, 0, 0, 0)
+        fr.setSpacing(4)
+        self.type_combo = QComboBox()
+        self.system_combo = QComboBox()
+        for combo, tip in ((self.type_combo, "Only this kind of contract"),
+                           (self.system_combo, "Only contracts offered in this system")):
+            combo.setStyleSheet(_COMBO_STYLE)
+            combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(8)
+            combo.setToolTip(tip)
+            fr.addWidget(combo, stretch=1)
+        self.type_combo.activated.connect(lambda i: self._set_filter("f_type", self.type_combo.itemData(i) or ""))
+        self.system_combo.activated.connect(lambda i: self._set_filter("f_system", self.system_combo.itemData(i) or ""))
+        self.unlocked_check = QCheckBox("Unlocked")
+        self.unlocked_check.setStyleSheet(_MUTED_STYLE)
+        self.unlocked_check.setToolTip("Hide contracts your known rank can't take yet")
+        self.unlocked_check.toggled.connect(lambda on: self._set_filter("f_unlocked", bool(on)))
+        fr.addWidget(self.unlocked_check)
+        layout.addWidget(self.filter_row)
 
         # ================= GUIDE view =================
         self.guide_view = QWidget()
@@ -885,8 +909,10 @@ class LevelingGuideModule(ModuleBase):
         self.contracts_view.setVisible(view == "contracts")
         if view == "guide":
             self._render_guide()
+            self._render_filters(self.rep_box.isVisibleTo(self.card))
         else:
             self._render_contracts()
+            self._render_filters(True)
         self.undo_btn.setEnabled(self.progress.last_run() is not None)
         last = self.progress.last_run()
         self.undo_btn.setToolTip(f"Take back: {last['title']}" if last else "Nothing logged yet")
@@ -899,6 +925,36 @@ class LevelingGuideModule(ModuleBase):
             self.problems_label.setText(f"⚠ {len(errors)} guide content problem(s), hover for details")
             self.problems_label.setToolTip("\n".join(errors[:30]))
         self._fit_card()
+
+    def contract_filter(self):
+        return contracts_mod.ContractFilter(
+            types=frozenset([self.settings["f_type"]]) if self.settings.get("f_type") else frozenset(),
+            system=self.settings.get("f_system") or "",
+            unlocked_only=bool(self.settings.get("f_unlocked")))
+
+    def _render_filters(self, visible: bool):
+        catalog = self.guide.catalog
+        self.filter_row.setVisible(visible and catalog is not None)
+        if not visible or catalog is None:
+            return
+        for combo, items, key, everything in ((self.type_combo, catalog.types(), "f_type", "All types"),
+                                              (self.system_combo, catalog.systems(), "f_system", "All systems")):
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem(everything, "")
+            for item in items:
+                combo.addItem(item, item)
+            idx = combo.findData(self.settings.get(key) or "")
+            combo.setCurrentIndex(max(0, idx))
+            combo.blockSignals(False)
+        self.unlocked_check.blockSignals(True)
+        self.unlocked_check.setChecked(bool(self.settings.get("f_unlocked")))
+        self.unlocked_check.blockSignals(False)
+
+    def _set_filter(self, key: str, value):
+        self.settings[key] = value
+        self._save_settings()
+        self.render()
 
     def _render_header(self):
         done = self.progress.done_ids()
@@ -1051,7 +1107,8 @@ class LevelingGuideModule(ModuleBase):
         known = self.known_rep()
         current = known.get(key)
         rows = contracts_mod.for_reputation(catalog, faction, ladder, known,
-                                            bool(self.settings.get("show_unlawful")), None, self.CONTRACT_ROWS)
+                                            bool(self.settings.get("show_unlawful")), None, self.CONTRACT_ROWS,
+                                            self.contract_filter())
         if not rows and current is None:
             self.rep_box.setVisible(False)
             return False
@@ -1066,8 +1123,8 @@ class LevelingGuideModule(ModuleBase):
         for r in rows:
             self.rep_rows.addWidget(self._contract_row(r, remaining, rep_amount=True))
         if not rows:
-            self.rep_rows.addWidget(_label("No repeatable contracts for this in the "
-                                           f"{catalog.label} data.", _DIM_STYLE))
+            self.rep_rows.addWidget(_label("No repeatable contracts match: clear the filters above, or none "
+                                           f"exist for this in the {catalog.label} data.", _DIM_STYLE))
         return True
 
     def _contract_row(self, row: dict, remaining: int, rep_amount: bool) -> QLabel:
@@ -1084,6 +1141,8 @@ class LevelingGuideModule(ModuleBase):
             bits.append(f"done ×{runs}")
         if c.get("illegal"):
             bits.append("ILLEGAL")
+        if c.get("conflicts"):
+            bits.append("⚠ sources differ")
         unlocked = row["unlocked"]
         req = c.get("requires")
         if unlocked is False and req:
@@ -1100,9 +1159,15 @@ class LevelingGuideModule(ModuleBase):
         label.setTextInteractionFlags(Qt.NoTextInteraction)
         label.setCursor(Qt.PointingHandCursor)
         label.setStyleSheet(_ROW_STYLE)
-        types = ", ".join(c.get("systems") or []) or "unknown systems"
-        label.setToolTip(f"Click when you finish one: adds its reputation and pay.\n"
-                         f"{c.get('type') or 'Contract'} · {types}")
+        systems = ", ".join(c.get("systems") or []) or "unknown systems"
+        tip = [f"Click when you finish one: adds its reputation and pay.",
+               f"{c.get('type') or 'Contract'}{' (type inferred)' if c.get('type_inferred') else ''} · {systems}",
+               "Sources: " + ", ".join(c.get("sources") or ["SCMDB"])]
+        if req and (req.get("from_title") or req.get("source")):
+            tip.append(f"Rank gate {req['rank']}: " + ("from the contract title" if req.get("from_title") else req["source"]))
+        for conflict in c.get("conflicts") or []:
+            tip.append(f"⚠ {conflict}")
+        label.setToolTip("\n".join(tip))
         label.mousePressEvent = lambda event, cc=c: self.log_run(cc)
         return label
 
@@ -1192,12 +1257,13 @@ class LevelingGuideModule(ModuleBase):
         known = self.known_rep()
         unlawful = bool(self.settings.get("show_unlawful"))
         cat = self._category()
+        flt = self.contract_filter()
         for w in (self.goal_label, self.goal_set_btn, self.goal_bar):
             w.setVisible(goal is not None)
         if goal is None:
             self.goal_title.setText(cat.title if cat else "All repeatable contracts")
             self.goal_title.setVisible(True)
-            rows = contracts_mod.for_money(catalog, known, unlawful, cat, self.GOAL_ROWS * 2)
+            rows = contracts_mod.for_money(catalog, known, unlawful, cat, self.GOAL_ROWS * 2, flt)
             self.contracts_caption.setText("BEST PAYING · click one when you finish it")
             remaining = 0
             rep_mode = False
@@ -1215,11 +1281,11 @@ class LevelingGuideModule(ModuleBase):
                 self.goal_bar.setValue(min(target, max(0, current)))
             if goal["kind"] == "rank":
                 rows = contracts_mod.for_reputation(catalog, goal["faction"], goal["ladder"], known, unlawful,
-                                                    None, self.GOAL_ROWS)
+                                                    None, self.GOAL_ROWS, flt)
                 self.contracts_caption.setText("BEST FOR THIS RANK · click one when you finish it")
                 rep_mode = True
             else:
-                rows = contracts_mod.for_money(catalog, known, unlawful, cat, self.GOAL_ROWS)
+                rows = contracts_mod.for_money(catalog, known, unlawful, cat, self.GOAL_ROWS, flt)
                 where = f" IN {cat.title.upper()}" if cat else ""
                 self.contracts_caption.setText(f"BEST PAYING{where} · click one when you finish it")
                 rep_mode = False
