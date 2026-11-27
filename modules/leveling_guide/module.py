@@ -725,6 +725,16 @@ class LevelingGuideModule(ModuleBase):
         self.now_body.setWordWrap(True)
         self.now_body.setStyleSheet(_STEP_CURRENT_STYLE)
         nl.addWidget(self.now_body)
+        self.now_rep_row = QWidget()
+        nrr = QHBoxLayout(self.now_rep_row)
+        nrr.setContentsMargins(0, 0, 0, 0)
+        self.now_rep_label = _label("", _CYAN_STYLE)
+        nrr.addWidget(self.now_rep_label, stretch=1)
+        self.now_rep_set_btn = _button("SET", _ICON_BTN, "Type in the reputation the game shows")
+        self.now_rep_set_btn.setFixedSize(44, 24)
+        self.now_rep_set_btn.clicked.connect(self._on_set_rep)
+        nrr.addWidget(self.now_rep_set_btn)
+        nl.addWidget(self.now_rep_row)
         self.now_info = _label("", _AMBER_STYLE)
         self.now_info.setTextFormat(Qt.RichText)
         nl.addWidget(self.now_info)
@@ -952,7 +962,7 @@ class LevelingGuideModule(ModuleBase):
     def render(self):
         if not hasattr(self, "title_label"):
             return
-        view = self.settings.get("view") or "guide"
+        view = self.current_view()
         show_banner = not self.settings.get("setup_done") and not self.settings.get("setup_dismissed")
         self.setup_text.setVisible(show_banner)
         self.setup_buttons.setVisible(show_banner)
@@ -988,6 +998,13 @@ class LevelingGuideModule(ModuleBase):
             self.problems_label.setText(f"⚠ {len(errors)} guide content problem(s), hover for details")
             self.problems_label.setToolTip("\n".join(errors[:30]))
         self._fit_card()
+
+    VIEWS = ("now", "guide", "contracts")
+
+    def current_view(self) -> str:
+        """The saved view, or NOW (the default) when it's unset or unknown."""
+        view = self.settings.get("view")
+        return view if view in self.VIEWS else "now"
 
     def contract_filter(self):
         return contracts_mod.ContractFilter(
@@ -1169,7 +1186,7 @@ class LevelingGuideModule(ModuleBase):
             self.now_step.setVisible(False)
             self.now_body.setText("Open <b>CONTRACTS</b> for repeatable work to earn money or reputation, "
                                   "or <b>FULL GUIDE</b> to pick another chapter or category.")
-            for w in (self.now_info, self.now_count_row, self.now_next):
+            for w in (self.now_rep_row, self.now_info, self.now_count_row, self.now_next):
                 w.setVisible(False)
             for b in (self.now_done_btn, self.now_back_btn, self.now_skip_btn):
                 b.setEnabled(False)
@@ -1201,19 +1218,22 @@ class LevelingGuideModule(ModuleBase):
                         f"(last checked {escape(str(obj.verified_patch))})")
         rep = obj.reputation
         catalog = self.guide.catalog
-        if rep and isinstance(rep.get("points"), int) and catalog is not None:
+        is_rank_up = bool(rep and isinstance(rep.get("points"), int) and catalog is not None)
+        self.now_rep_row.setVisible(is_rank_up)
+        if is_rank_up:
             key = guide_mod.rep_key(rep["faction"], rep.get("ladder", ""))
             known = self.known_rep()
             have = known.get(key)
             if have is None:
-                info.append(f"GOAL: {escape(rep['faction'])} · {escape(rep['rank'])} "
-                            f"({rep['points']:,} rep). Set your current rep in FULL GUIDE.")
+                self.now_rep_label.setText(f"GOAL: {rep['faction']} · {rep['rank']} "
+                                           f"({rep['points']:,} rep). Not set: press SET.")
             else:
-                info.append(f"GOAL: {escape(rep['rank'])}: {have:,} / {rep['points']:,} · "
-                            f"{max(0, rep['points'] - have):,} to go")
+                self.now_rep_label.setText(f"GOAL: {rep['rank']}: {have:,} / {rep['points']:,} · "
+                                           f"{max(0, rep['points'] - have):,} to go")
+            # NOW shows no filter row, so the saved filters must not narrow
+            # its pick either.
             best = contracts_mod.for_reputation(catalog, rep["faction"], rep.get("ladder", ""), known,
-                                                bool(self.settings.get("show_unlawful")), None, 1,
-                                                self.contract_filter())
+                                                bool(self.settings.get("show_unlawful")), None, 1)
             if best:
                 c = best[0]["contract"]
                 info.append(f"BEST CONTRACT TO REPEAT: {escape(c['title'])} (+{best[0]['gain']:,} rep)")
@@ -1224,7 +1244,7 @@ class LevelingGuideModule(ModuleBase):
         self.now_info.setText("<br>".join(info))
         self.now_info.setVisible(bool(info))
 
-        is_grind = obj.kind == "grind" and not (rep and isinstance(rep.get("points"), int) and catalog is not None)
+        is_grind = obj.kind == "grind" and not is_rank_up
         self.now_count_row.setVisible(is_grind)
         if is_grind:
             count = self.progress.count(obj.id)
@@ -1845,7 +1865,7 @@ class LevelingGuideModule(ModuleBase):
     # ------------------------------------------------------------------
     def _needs_prices(self) -> bool:
         wanted = False
-        if (self.settings.get("view") or "guide") == "guide":
+        if self.current_view() in ("now", "guide"):
             obj = self.current_objective()
             wanted = obj is not None and bool(obj.ship)
         else:

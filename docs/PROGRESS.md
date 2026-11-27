@@ -30,9 +30,9 @@ Logistics Hub may order stops with greedy nearest-neighbor plus 2-opt on real UE
   3. Owner `dist-test` of a fresh onedir extract: minimize to taskbar, then restore with tray Show, the hotkey and the taskbar button; stow/deploy; opacity sliders; Settings > Relaunch; Logistics Hub SCAN and route popout; mobiGuide NOW view.
   4. One PR to `master`, merged only on the owner's explicit OK. Close PRs #13, #14 and #16 as superseded.
   5. Tag v0.4.0 on `master`; Actions publishes the zip.
+- **Done 2026-11-27 on `claude/leveling-guide`:** mobiGuide NOW view fixes. NOW loads ship prices, is the fallback for an unset or unknown view, has its own rep SET, and ignores the saved contract filters it doesn't show. Tested in `test_now_view_fixes`; not yet run in the live overlay.
 - **Planned code changes (owner-approved 2026-11-27, not built yet):**
   - Logistics Hub Game.log check becomes a true opt-in: unset path means off, no default-path fallback (`gamelog_verify.default_game_log_path()`, `logistics_hub/module.py`). Update the Hauler Profile UI and README Privacy to match.
-  - mobiGuide NOW view: load ship prices in NOW, fall back to `"now"` not `"guide"`, add rep SET to NOW, stop hidden filters from changing BEST CONTRACT TO REPEAT. Details in `docs/modules/leveling-guide.md`, Planned changes.
   - mobiGuide data: split reputation and earnings for live vs PTU; add a "new character / wipe" action that archives, then resets; label "best paying" as per run.
 - **Deferred:** an in-game mobiGuide strip on the primary monitor (needs its own owner decision).
 - Human checks that were never closed are listed in `docs/HISTORY.md` (crosshair over the game, hotkey focus, relaunch after an OCR scan, grid-snap drag). Multi-Commodity Finder has also never been recorded as human-tested. These are unverified follow-ups, not new bugs.

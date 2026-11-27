@@ -167,9 +167,12 @@ Guides are data only (JSON). Nothing imported is ever executed.
 - **NOW** (the simple view): where you are (chapter and "N OF M DONE"), the
   current objective's one current step with WHERE and DONE WHEN, and one big
   **✓ DONE** button (NEXT STEP, FINISH OBJECTIVE, or NOT DONE YET to undo),
-  plus **◀ BACK** and **SKIP**. An info block shows a "not re-checked for
-  this version" warning, a rank-up's GOAL with the BEST CONTRACT TO REPEAT,
-  the cost, and a ship's live UEX price. "NEXT UP" names the next objective
+  plus **◀ BACK** and **SKIP**. A rank-up shows its GOAL with **SET** for
+  the reputation the game shows. An info block shows a "not re-checked for
+  this version" warning, the BEST CONTRACT TO REPEAT, the cost, and a
+  ship's live UEX price. NOW has no filter row, so the saved contract
+  filters don't apply to its BEST CONTRACT TO REPEAT. An unset or unknown
+  `view` falls back to NOW. "NEXT UP" names the next objective
   on the last step. When nothing is left it says ALL CAUGHT UP and points to
   CONTRACTS and FULL GUIDE.
 - **FULL GUIDE** (`view: "guide"`):
@@ -219,8 +222,8 @@ Completion is always manual. No Game.log, no game input.
   range, `contracts.c_pay`). The catalog has no duration, so nothing is
   ranked per hour.
 - **Network:** the only runtime call is UEX `vehicles_purchases_prices_all`
-  for ship prices, fetched only while a ship objective or ship goal is
-  showing, and kept for 30 minutes (`PRICE_MAX_AGE_S`). A UEX failure
+  for ship prices, fetched only while a ship objective (NOW or FULL GUIDE)
+  or a ship goal (CONTRACTS) is showing, and kept for 30 minutes (`PRICE_MAX_AGE_S`). A UEX failure
   affects only the price line. SCMDB and the wiki are used only by the
   offline catalog builder.
 - **No Game.log** (owner decision, reaffirmed 2026-11-27): completion
@@ -237,9 +240,10 @@ Completion is always manual. No Game.log, no game input.
 - Today reputation and earnings are also shared across packs, and the only
   wipe handling is ⚙ → Reset ALL progress.
 
-## Planned changes (owner-approved 2026-11-27, not built yet)
+## Planned changes (owner-approved 2026-11-27)
 
-NOW view fixes:
+NOW view fixes (**done 2026-11-27**, `test_now_view_fixes`; NOW ignores the
+hidden filters rather than showing them):
 1. **Ship price never loads in NOW.** `_needs_prices()` only checks the
    current objective when `view == "guide"`; in NOW it checks the active
    goal instead, so a ship objective shows "loading from UEX…" forever.
@@ -253,7 +257,7 @@ NOW view fixes:
    still applies the saved `f_type` / `f_system` / `f_unlocked`. Fix: NOW
    ignores them, or shows them.
 
-Data model:
+Data model (not built yet):
 5. **Split reputation and earnings for live vs PTU**, keeping objective
    progress shared.
 6. **"New character / wipe" action** that archives the current progress

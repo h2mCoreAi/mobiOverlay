@@ -13,7 +13,7 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parent.parent
@@ -494,7 +494,7 @@ def test_now_view() -> int:
     assert module.now_title.text()
     # rank-up objectives show the goal and the best contract to repeat
     module._view("haul-covalex-member")
-    assert "GOAL" in module.now_info.text() and "BEST CONTRACT" in module.now_info.text(), module.now_info.text()
+    assert "GOAL" in module.now_rep_label.text() and "BEST CONTRACT" in module.now_info.text(), module.now_info.text()
     # the other tabs still work and the choice is remembered
     module.guide_tab.click()
     assert module.guide_view.isVisibleTo(card) and not module.now_view.isVisibleTo(card)
@@ -508,6 +508,53 @@ def test_now_view() -> int:
     module._advance()
     assert not module.now_done_btn.isEnabled() and "CAUGHT UP" in module.now_where.text()
     return 14
+
+
+def test_now_view_fixes() -> int:
+    """NOW loads ship prices, is the fallback view, can SET rep, and ignores
+    the filters it doesn't show (owner decisions 2026-11-27)."""
+    api = _FakeApi()
+    mod, module, card, d = _make_card(api, view=None)
+
+    # 1. A ship objective in NOW fetches its UEX price.
+    module._view("mining-buy-golem")
+    assert module.settings["view"] == "now" and module._needs_prices(), "NOW needs the ship price"
+    assert "loading" in module.now_info.text().lower(), module.now_info.text()
+    module.refresh()
+    assert api.calls == 1 and "1,005,480" in module.now_info.text(), module.now_info.text()
+    assert not module._needs_prices(), "a fresh price isn't fetched again"
+
+    # 2. An unset or unknown view falls back to NOW, the default.
+    for bad in (None, "", "bogus"):
+        module.settings["view"] = bad
+        module.render()
+        assert module.current_view() == "now" and module.now_view.isVisibleTo(card), bad
+        assert not module.guide_view.isVisibleTo(card) and not module.contracts_view.isVisibleTo(card), bad
+
+    # 3. A rank-up in NOW has its own SET for reputation.
+    module._view("haul-covalex-member")
+    assert module.now_rep_row.isVisibleTo(card) and module.now_rep_set_btn.isEnabled()
+    assert "press SET" in module.now_rep_label.text() and "FULL GUIDE" not in module.now_rep_label.text()
+    with patch.object(mod.QInputDialog, "getInt", return_value=(250, True)):
+        module.now_rep_set_btn.click()
+    assert module.progress.rep("Covalex|Hauling") == 250
+    assert "250 / 5,250" in module.now_rep_label.text(), module.now_rep_label.text()
+    module._view("fs-pick-city")
+    assert not module.now_rep_row.isVisibleTo(card), "no SET row without a rank-up"
+
+    # 4. Saved filters stay hidden in NOW and don't change its pick.
+    module._view("haul-covalex-member")
+    unfiltered = module.now_info.text()
+    assert "BEST CONTRACT" in unfiltered
+    module.settings.update(f_type="Bounty Hunter", f_system="Nyx", f_unlocked=True)
+    module.render()
+    assert not module.filter_row.isVisibleTo(card)
+    assert module.now_info.text() == unfiltered, (module.now_info.text(), unfiltered)
+    module.set_view("guide")
+    texts = [module.rep_rows.itemAt(i).widget().text() for i in range(module.rep_rows.count())]
+    assert module.filter_row.isVisibleTo(card) and not any("+1</span>" in t for t in texts), \
+        "FULL GUIDE still applies the filters it shows"
+    return 17
 
 
 def test_card_versions_goals_and_prices() -> int:
@@ -648,7 +695,7 @@ def run() -> int:
                  test_pack_inheritance_overrides_and_categories, test_user_files_extend_chapters_and_custom_objectives,
                  test_categories_and_contract_recommendations, test_progress_reputation_log_and_goals,
                  test_progress_store_basics, test_maths, test_import_export, test_setup_logic,
-                 test_card_walkthrough, test_now_view, test_card_versions_goals_and_prices, test_card_setup_flow_and_import,
+                 test_card_walkthrough, test_now_view, test_now_view_fixes, test_card_versions_goals_and_prices, test_card_setup_flow_and_import,
                  test_cross_source_catalogs, test_contract_filters):
         total += test()
     return total
