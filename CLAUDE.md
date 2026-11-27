@@ -1,68 +1,34 @@
 # mobiOverlay
 
-Modular, always-on-top Star Citizen data overlay. Dark sci-fi HUD styled after
-MobiGlas. Data comes from the UEX Corp API (community-sourced SC trade/economy
-data) — no game memory reads, no log parsing by default (see docs/DECISIONS.md
-for why), except one opt-in exception: Logistics Hub can optionally cross-check
-scanned contracts against the player's own `Game.log` for post-accept
-verification (user-configured path, never a trigger or data source on its own
-— see AGENTS.md).
+**Read `AGENTS.md` first.** It is the canonical onboarding file for every AI
+agent: what mobiOverlay is and who it's for, the data charter, repo layout,
+safety rules, multi-agent rules and conventions. Then read `docs/PROGRESS.md`
+(one-page status, open work, branch plan). This file is only a pointer and a
+safety summary; if it ever disagrees with `AGENTS.md`, `AGENTS.md` wins.
 
-**See `AGENTS.md` for full AI agent onboarding** — safety rules, coding
-conventions, testing, and common tasks. This file is a quick reference.
-
----
-
-## Locked architecture decisions
-
-- UI: PySide6/Qt (chosen for reliable one-file PyInstaller packaging)
-- Modules: folder-per-module under `modules/`, auto-discovered at startup
-- Cards: draggable/collapsible/closable, layout persisted to `config.json`
-- mobiOverlay Core (`host/`) never imports module internals — only calls the contract
-
----
-
-## Docs to read
-
-| When | Read |
-|------|------|
-| First | `AGENTS.md` — full onboarding, safety rules, multi-agent rules |
-| Every session | `docs/PROGRESS.md` — one-page status |
-| For old session notes | `docs/HISTORY.md` — archive, not the status |
-| For architecture | `docs/ARCHITECTURE.md` — contracts, services |
-| For a specific module | `docs/modules/<name>.md` |
-| For past decisions | `docs/DECISIONS.md` — append-only log (search it with `scripts/decisions_index.py`) |
-| For what's next | `docs/BACKLOG.md` — ranked module candidates |
-
----
+In one line: a fast, safe, read-only Star Citizen companion HUD (PySide6,
+always-on-top, MobiGlas-styled) showing UEX trade data and a verified
+leveling guide, for any player.
 
 ## Quick commands
 
 ```bash
-# Run from source
-python host/main.py
-
-# Run all tests (offscreen, one summary; each file also runs standalone)
-python tests/run_all.py
-
-# Find past decisions without reading all of docs/DECISIONS.md
-python scripts/decisions_index.py <keyword>
-
-# Build exe
-pyinstaller mobioverlay.spec --noconfirm
+python host/main.py                         # run from source
+python tests/run_all.py                     # all tests, offscreen
+python scripts/decisions_index.py <keyword> # search docs/DECISIONS.md
+pyinstaller mobioverlay.spec --noconfirm    # build (onedir)
 ```
 
----
+## Safety rules (summary; full text in AGENTS.md)
 
-## Safety rules (summary — see AGENTS.md for full list)
-
-1. **Never force-kill SC processes** — only kill mobiOverlay
-2. **Never leave overlay running unattended** alongside SC
+1. **Never force-kill SC processes**; only kill mobiOverlay
+2. **Never leave the overlay running unattended** alongside SC
 3. **Never send hotkey keystrokes** while SC may be live
-4. **Never move overlay** onto the primary/gaming monitor
+4. **Never move the overlay onto the owner's primary/gaming monitor while
+   testing** (an agent-testing rule, not a product rule)
 5. **Never embed UEX tokens** in distributed code
-6. **Never invent API logic** UEX doesn't compute (one documented exception:
-   Logistics Hub's 2-opt route ordering over real UEX distances — see AGENTS.md)
+6. **Never invent game/API logic** UEX or the game doesn't provide (one
+   exception: Logistics Hub's route ordering over real UEX distances)
 7. **Never run two mobiOverlay instances** at once
-8. **Never push directly to `master`** without asking the owner first
-   (work on a PR branch by default — see AGENTS.md)
+8. **Never push to `master`** without the owner's explicit OK in the
+   current session; work on an `<agent>/<topic>` branch

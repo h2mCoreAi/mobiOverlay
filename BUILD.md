@@ -43,7 +43,7 @@ pyinstaller mobioverlay.spec --noconfirm
 ```
 
 This produces `dist/mobiOverlay/` — a **onedir** folder with
-`mobiOverlay.exe` plus `_internal/` (all 8 modules and dependencies). Keep
+`mobiOverlay.exe` plus `_internal/` (every module and all dependencies). Keep
 the folder together; the exe cannot run without `_internal/`. Double-click
 `mobiOverlay.exe` inside that folder.
 

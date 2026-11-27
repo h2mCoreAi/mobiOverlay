@@ -12,7 +12,7 @@ MobiGlas. Dark sci-fi HUD with cyan/amber accents. Data comes from the
    whole folder together (`mobiOverlay.exe` plus `_internal/`)
 3. **Run** `mobiOverlay.exe` inside that folder
 
-That's it — all 9 modules included. Extract once; later launches are fast
+That's it — every module is included. Extract once; later launches are fast
 (nothing re-unpacks on each start). Do not move the `.exe` out of the folder
 without `_internal/` — it will not run alone.
 
@@ -40,7 +40,8 @@ All modules are included and load automatically:
 | **Multi-Commodity Finder** | Find terminals that trade multiple commodities at once |
 | **Crosshair** | Customizable centered reticle overlay |
 | **mobiNotes** | In-game notepad with pages, tags, and search |
-| **mobiThrottle** | Throttle axis visualization with saved positions (its two hotkeys are unset until you set them in the card) |
+| **mobiGuide** | Step-by-step leveling guide per game patch: one next step at a time, reputation tracking, goals and the best repeatable contracts. You tick steps off yourself |
+| **mobiThrottle** | Throttle axis visualization with saved positions. Moving to its own app, [mobiThrottle](https://github.com/h2mCoreAi/mobiThrottle); it leaves mobiOverlay in v0.4.0 |
 
 ### Window Controls
 
@@ -117,6 +118,10 @@ mobiOverlay/
   mobinotes_data.json      # mobiNotes storage (if you use that module)
   logistics_hub_debug.jsonl  # OCR debug log (if you use Logistics Hub)
   logistics_hub_completed.jsonl  # Contracts you marked COMPLETE
+  price_cache.sqlite3      # Commodity Prices' last result
+  leveling_guide_progress.json  # mobiGuide progress, reputation, goals
+  leveling_guide_custom.json    # Objectives you added to mobiGuide
+  leveling_guide/          # Imported mobiGuide guides and packs
   .mobioverlay.lock        # Single-instance guard (safe to ignore)
 ```
 
@@ -135,9 +140,13 @@ Output: `dist/mobiOverlay/` (~333 MB) — exe plus `_internal/`.
 
 ## Privacy
 
-- No game memory reads, no log parsing (except optional Game.log verification
-  in Logistics Hub, which you enable by setting the path yourself)
-- No telemetry, no network calls except to the public UEX Corp API
+- No game memory reads and no input sent to the game
+- Logistics Hub reads your own `Game.log` once when you press ACCEPT, to
+  double-check the contract. Today it looks in the default LIVE install
+  folder unless you set a path; making it off until you turn it on is planned
+- mobiGuide never reads `Game.log`: you tick steps off yourself
+- No telemetry, no network calls except to the public UEX Corp API (plus
+  EasyOCR's one-time model download on the first Logistics Hub scan)
 - No UEX auth token embedded — the app uses only anonymous public endpoints
 
 ## License

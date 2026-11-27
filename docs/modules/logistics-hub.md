@@ -191,6 +191,14 @@ against real sources.
 
 ## Game.log verification
 
+> **Planned change (owner decision, DECISIONS 2026-11-27):** this check
+> becomes a true opt-in, off until the user turns it on. **Current code
+> isn't opt-in:** with no `game_log_path` set, `default_game_log_path()`
+> falls back to `C:\Program Files\Roberts Space Industries\StarCitizen\LIVE\Game.log`
+> (`gamelog_verify.py`; `module.py` sets `log_path_source: "default_lookup"`),
+> so the check runs on every ACCEPT when that file exists. Tracked in
+> `docs/PROGRESS.md`, Open.
+
 OCR remains the only scan trigger and primary data source — Game.log
 verification is a one-shot correction pass, not a replacement or a live
 tracker. See `modules/logistics_hub/gamelog_verify.py` (pure functions,
@@ -344,8 +352,8 @@ land here, never touched by CLEAR LOG.
 - `cargo_capacity_scu`: manual hold size (SCU)
 - `grading_thresholds`: `{great, good, ok}` aUEC/SCU
 - `ship_location_ratings`: `{"<ship>::<endpoint>:<id>": "good"|"bad"}`
-- `game_log_path`: path to `Game.log`, or unset (falls back to the
-  common install path if present)
+- `game_log_path`: path to `Game.log`, or unset (today falls back to the
+  common install path if present; planned: unset means the check is off)
 - `game_log_verify_window_seconds`: verify-window size, config-only, no
   UI (expected to need real tuning; see Game.log verification above)
 - `accept_reminder_seconds`: delay before the reminder banner can fire,

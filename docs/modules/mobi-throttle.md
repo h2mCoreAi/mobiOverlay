@@ -1,7 +1,12 @@
 # mobiThrottle
 
-Ports ThrottleWatch (a separate, already-shipping standalone SC overlay —
-`D:\Documents\Mitch\Star Citizen\ThrottleWatch\throttle_watch.py`, Tkinter)
+**Retired from mobiOverlay.** mobiThrottle is now its own app,
+[h2mCoreAi/mobiThrottle](https://github.com/h2mCoreAi/mobiThrottle)
+(PR #17, merged to `master` 2026-10-30). This doc and `modules/mobi_throttle/`
+remain only on branches cut before that merge and are dropped when they rebase
+onto `master`. Don't build on this module here.
+
+Ports ThrottleWatch (the owner's earlier standalone Tkinter SC overlay)
 into mobiOverlay as a native module. Not a copy/paste port — rewritten
 against mobiOverlay's actual stack (PySide6, `host/` services, config.json
 module namespace) since several of ThrottleWatch's mechanisms exist only to

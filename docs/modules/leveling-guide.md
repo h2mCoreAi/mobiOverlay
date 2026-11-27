@@ -1,8 +1,9 @@
 # Module: mobiGuide (Leveling Guide)
 
-Status: built 2026-11-27 on `claude/leveling-guide`. Offscreen tests pass
-(`tests/test_leveling_guide.py`, 151 checks); not yet run in the live
-overlay or in game.
+Status: built 2026-11-27 on `claude/leveling-guide`, not on `master` yet.
+Offscreen tests in `tests/test_leveling_guide.py`; not yet run in the live
+overlay or in game. Planned to ship in v0.4.0 (see `docs/PROGRESS.md`).
+Known issues and planned changes are listed under **Planned changes** below.
 
 A World of Warcraft–style leveling guide for Star Citizen that works for any
 player, at any level, on any patch:
@@ -160,8 +161,18 @@ Guides are data only (JSON). Nothing imported is ever executed.
   2. ranks already held, per faction ladder (seeds the reputation tracker and ticks off everything up to them)
   3. categories to focus on, outlaw, optional, compact
   4. how to use it
-- **GUIDE / CONTRACTS** tabs and a **category** picker, shared by both views.
-- **GUIDE:**
+- **NOW / FULL GUIDE / CONTRACTS** tabs. **NOW** is the default view
+  (`view: "now"`, owner-confirmed 2026-11-27). FULL GUIDE and CONTRACTS share
+  a **category** picker.
+- **NOW** (the simple view): where you are (chapter and "N OF M DONE"), the
+  current objective's one current step with WHERE and DONE WHEN, and one big
+  **✓ DONE** button (NEXT STEP, FINISH OBJECTIVE, or NOT DONE YET to undo),
+  plus **◀ BACK** and **SKIP**. An info block shows a "not re-checked for
+  this version" warning, a rank-up's GOAL with the BEST CONTRACT TO REPEAT,
+  the cost, and a ship's live UEX price. "NEXT UP" names the next objective
+  on the last step. When nothing is left it says ALL CAUGHT UP and points to
+  CONTRACTS and FULL GUIDE.
+- **FULL GUIDE** (`view: "guide"`):
   - chapter picker filtered by category;
   - the current objective: badges, why, target, reward, cost, live UEX price for purchases, and a **CHECKED ON** badge when the facts aren't confirmed for the chosen version;
   - steps with **DONE WHEN**;
@@ -195,7 +206,7 @@ Completion is always manual. No Game.log, no game input.
 | `app_root()/leveling_guide_progress.json` | progress, reputation, logged runs, goals |
 | `app_root()/leveling_guide_custom.json` | your objectives |
 | `app_root()/leveling_guide/` | drop-in chapters; `packs/` holds imported packs |
-| `config.json` → `modules.leveling_guide` | `pack`, `view`, `category`, `goal`, `focus`, `f_type`, `f_system`, `f_unlocked`, `show_optional`, `show_unlawful`, `compact`, `setup_done`, `setup_dismissed` |
+| `config.json` → `modules.leveling_guide` | `pack`, `view` (`now` default, `guide`, `contracts`), `category`, `goal`, `focus`, `f_type`, `f_system`, `f_unlocked`, `show_optional`, `show_unlawful`, `compact`, `setup_done`, `setup_dismissed`, `refresh_interval_seconds` |
 
 ## Data and honesty rules
 
@@ -204,5 +215,51 @@ Completion is always manual. No Game.log, no game input.
 - Recommendations are sorting and filtering only. Rank gates and illegality are shown as the data records them.
 - Contracts with no "needs" really have no rank gate: both sources agree (for example Foxwell's "Red Level Contract: Clear PAFs..."). The gated Red Level ones carry their gate.
 - Unknown ranks show "needs X?" until you set them.
+- "Best paying" means the most aUEC **per run** (top of the contract's reward
+  range, `contracts.c_pay`). The catalog has no duration, so nothing is
+  ranked per hour.
+- **Network:** the only runtime call is UEX `vehicles_purchases_prices_all`
+  for ship prices, fetched only while a ship objective or ship goal is
+  showing, and kept for 30 minutes (`PRICE_MAX_AGE_S`). A UEX failure
+  affects only the price line. SCMDB and the wiki are used only by the
+  offline catalog builder.
+- **No Game.log** (owner decision, reaffirmed 2026-11-27): completion
+  stays manual. Changing that needs a new dated, owner-approved DECISIONS
+  entry.
+
+## Progress model
+
+- One file, `leveling_guide_progress.json`, keyed by objective id
+  (done / skipped / step / count). Objective progress is shared across packs
+  on purpose: an objective id means the same thing on every patch.
+- Reputation is keyed `"faction|ladder"`, plus a run log (last 500), goals
+  and earned aUEC. `known_rep()` also infers rep from finished rank-ups.
+- Today reputation and earnings are also shared across packs, and the only
+  wipe handling is ⚙ → Reset ALL progress.
+
+## Planned changes (owner-approved 2026-11-27, not built yet)
+
+NOW view fixes:
+1. **Ship price never loads in NOW.** `_needs_prices()` only checks the
+   current objective when `view == "guide"`; in NOW it checks the active
+   goal instead, so a ship objective shows "loading from UEX…" forever.
+   Fix: treat `now` like `guide`.
+2. **Fallback mismatch.** `render()` and `_needs_prices()` use
+   `settings.get("view") or "guide"` while the default is `"now"`. Fix: fall
+   back to `"now"`.
+3. **No way to set rep in NOW.** A rank-up with unknown rep says "Set your
+   current rep in FULL GUIDE". Fix: add the SET control to NOW.
+4. **Hidden filters.** NOW hides the filter row but BEST CONTRACT TO REPEAT
+   still applies the saved `f_type` / `f_system` / `f_unlocked`. Fix: NOW
+   ignores them, or shows them.
+
+Data model:
+5. **Split reputation and earnings for live vs PTU**, keeping objective
+   progress shared.
+6. **"New character / wipe" action** that archives the current progress
+   file, then resets.
+7. **Label "best paying" as per run** in the card.
+
+Each change needs a test in `tests/test_leveling_guide.py`.
 
 See `docs/leveling-guide/verification.md` for every checked claim.

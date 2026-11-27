@@ -329,6 +329,10 @@ use Logistics Hub (M1 optimization).
 
 ## mobiThrottle home chirp (modules/mobi_throttle/module.py)
 
+Retired from mobiOverlay: mobiThrottle is its own app now
+(h2mCoreAi/mobiThrottle, PR #17). This section and the module folder go when
+`claude/leveling-guide` rebases onto `master`.
+
 Uses `pygame.mixer` (SDL_mixer under the hood) instead of `winsound.Beep()`
 for the home-position audio chirp. `winsound.Beep()` uses the legacy Windows
 PC speaker which doesn't play when a game has exclusive audio focus. pygame.mixer
@@ -346,7 +350,7 @@ unpacks to a new temp folder on every launch). The distinction:
 - **Bundled inside `_internal/`** (`sys._MEIPASS` at runtime — the onedir
   contents directory, persistent on disk):
   - `host/` — the core application
-  - `modules/` — all 9 modules (discovered via `host/paths.modules_root()`)
+  - `modules/` — every module folder (discovered via `host/paths.modules_root()`)
   - `host/assets/fonts/` — bundled fonts (Orbitron, Share Tech Mono)
   - `host/assets/icons/` — tray icon
   - All dependencies (torch, easyocr, pygame-ce, etc.)

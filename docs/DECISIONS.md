@@ -4302,3 +4302,46 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   giver's display name. Every contract list has Type / System / Unlocked
   filters, saved in settings.
 
+- **2026-11-27 — Purpose, audience and data charter written down for
+  agents.** Owner goal: any AI agent can pick up the repo cold from the docs.
+  Owner-confirmed vision: a fast, safe, read-only Star Citizen companion HUD
+  for any player, showing UEX trade data and a verified leveling guide, that
+  never touches the game. The old "UEX data only, no log parsing" line no
+  longer described the app, so the charter in `AGENTS.md` now says: runtime
+  data only from UEX; static mobiGuide packs generated offline from named
+  sources and shipped as JSON; nothing computed the game or UEX doesn't
+  provide except Logistics Hub route ordering; Game.log read only by
+  Logistics Hub's one-shot check at ACCEPT. `AGENTS.md` stays canonical and
+  `CLAUDE.md` is cut to a pointer plus the safety summary, so the two can't
+  drift. Module counts are no longer hard-coded in docs.
+
+- **2026-11-27 — Logistics Hub's Game.log check becomes a true opt-in;
+  mobiGuide stays manual.** The check was documented as user-configured, but
+  with no path set the code falls back to the default LIVE install path, so
+  it runs on every ACCEPT when that file exists. Owner decision: unset means
+  off. Planned code change, tracked in `docs/PROGRESS.md`; until it lands the
+  docs say what the code does today. mobiGuide keeps manual completion only:
+  no Game.log progress detection without a new owner-approved entry.
+
+- **2026-11-27 — Safety rule 4 is an agent-testing rule; in-game strip
+  deferred.** "Never move the overlay onto the primary monitor" protects the
+  owner's live gaming screen during agent testing. It isn't a product rule:
+  the default launch spot is a non-primary monitor, users may drag the window
+  anywhere, and Crosshair draws on the primary display by design. An in-game
+  mobiGuide strip on the primary monitor is deferred to a later decision.
+
+- **2026-11-27 — mobiGuide NOW view is the default; fixes and data model
+  changes approved.** NOW (one step, one button) stays the default view for
+  everyone. Approved, not built yet: load ship prices in NOW, fall back to
+  "now" instead of "guide", add rep SET to NOW, and stop NOW's hidden filters
+  from changing BEST CONTRACT TO REPEAT. Objective progress stays shared
+  across packs; reputation and earnings split live vs PTU; a "new character /
+  wipe" action archives then resets. "Best paying" stays aUEC per run and is
+  labelled that way, since the catalog has no duration data.
+
+- **2026-11-27 — Merge plan, branding and v0.4.0.** mobiThrottle stays a
+  separate app (`h2mCoreAi/mobiThrottle`, PR #17); `claude/leveling-guide`
+  drops its leftover copy when it rebases onto `master`. Order: rebase, tests,
+  owner dist-test of the onedir build, one PR merged on the owner's OK, close
+  PRs #13, #14 and #16 as superseded. Branding is TheRealKestryl. mobiGuide,
+  onedir packaging and the mobiThrottle removal ship together as v0.4.0.

@@ -9,12 +9,55 @@ docs as needed.
 ## What is mobiOverlay?
 
 A modular, always-on-top Star Citizen data overlay styled after the in-game
-MobiGlas. Dark sci-fi HUD with cyan/amber accents. Data comes from the
-[UEX Corp API](https://uexcorp.uk/) (community-sourced SC trade/economy data).
+MobiGlas. Dark sci-fi HUD with cyan/amber accents.
 
-**No game memory reads, no log parsing** (except optional Game.log verification
-in Logistics Hub, user-configured). No telemetry. No embedded UEX auth token —
-anonymous public API endpoints only.
+**Vision (owner-confirmed 2026-11-27):** a fast, safe, read-only Star Citizen
+companion HUD. It shows trade and economy data (UEX) and a verified leveling
+guide in a draggable overlay. It never touches the game: no memory reads, no
+input injection, no telemetry.
+
+**Audience:** any Star Citizen player. The repo is public and MIT-licensed,
+and GitHub Actions publishes release zips. The owner (TheRealKestryl) is the
+only developer and tester and its first user, so "works on the owner's
+machine next to a live game" is the bar every change has to clear.
+
+### Data charter
+
+- **Runtime data comes only from the [UEX Corp API](https://uexcorp.uk/)**,
+  displayed as-is with client-side filtering and sorting. Anonymous public
+  endpoints only; no embedded token (a user's own token in `config.json`,
+  `api.uex_token`, is optional).
+  No network calls except UEX, plus EasyOCR's one-time model download on the
+  first Logistics Hub scan.
+- **Static content packs** (mobiGuide) ship as JSON. Contract catalogs are
+  generated offline by `scripts/build_contract_catalog.py` from SCMDB and
+  the star-citizen.wiki API, cross-checked and stamped with the game build.
+  Chapter facts are hand-checked against named sources (RSI Knowledge Base
+  and others), listed in `docs/leveling-guide/verification.md`. The app
+  never calls those sources at runtime; mobiGuide's only network call is
+  UEX ship prices.
+- **Nothing is computed that the game or UEX doesn't provide.** The one
+  carve-out is Logistics Hub's route ordering (safety rule 6).
+- **Game.log** is read only by Logistics Hub's one-shot check when you press
+  ACCEPT, on the user's own file. Owner decision 2026-11-27: it becomes a
+  true opt-in (off unless the user turns it on). **Today's code still falls
+  back to the default LIVE install path when no path is set**, so it runs
+  whenever that file exists; the fix is planned work in `docs/PROGRESS.md`.
+  mobiGuide never reads Game.log: completion is manual only.
+
+### Related projects
+
+- **ThrottleWatch:** the owner's earlier standalone Tkinter throttle overlay.
+  mobiThrottle and `host/hotkey.py` were ported from it.
+- **[h2mCoreAi/mobiThrottle](https://github.com/h2mCoreAi/mobiThrottle):**
+  mobiThrottle split out into its own app (PR #17, 2026-10-30). The
+  `modules/mobi_throttle/` folder on `claude/leveling-guide` is a leftover
+  that is dropped when that branch rebases onto `master`.
+- **SubliminalsTV-Projects/sc-overlay:** a third-party app that reads
+  hauling data live from Game.log. Its documented log line shapes were
+  studied and confirmed against the owner's own log, and Logistics Hub's
+  one-shot check is its own Python implementation (DECISIONS 2026-09-08).
+  mobiOverlay deliberately doesn't replicate its live tracking or payouts.
 
 ---
 
@@ -57,7 +100,7 @@ mobiOverlay/
 │   ├── crosshair/
 │   ├── mobi_notes/
 │   ├── leveling_guide/      # mobiGuide: per-patch packs in packs/<id>/ (see docs/modules/leveling-guide.md)
-│   └── mobi_throttle/
+│   └── mobi_throttle/       # retired: lives in h2mCoreAi/mobiThrottle; dropped on rebase onto master
 ├── tests/                   # regression tests (plain asserts, no framework)
 │   └── run_all.py           # runs every test file, one summary
 ├── scripts/                 # git hook, decisions_index.py
@@ -84,6 +127,7 @@ Read only what's relevant to your task:
 | `docs/BACKLOG.md` | Ranked module backlog with community-interest evidence |
 | `docs/OPTIMIZATION.md` | Performance work: Q, M, L, N and P items, with status |
 | `docs/modules/<name>.md` | Scope for one specific module (hyphenated: `modules/logistics_hub/` → `docs/modules/logistics-hub.md`) |
+| `docs/leveling-guide/` | mobiGuide research and `verification.md` (every checked game claim) |
 | `BUILD.md` | Build, test, and release instructions |
 | `README.md` | End-user documentation |
 
@@ -147,7 +191,7 @@ pyinstaller mobioverlay.spec --noconfirm
 ```
 
 Output: `dist/mobiOverlay/` (~333 MB with CPU-only torch) — `mobiOverlay.exe`
-plus `_internal/` (all 9 modules). Keep the folder together.
+plus `_internal/` (every folder under `modules/`). Keep the folder together.
 `config.json` and cache files persist next to the exe.
 
 ---
@@ -252,11 +296,19 @@ into a running mobiOverlay instance while SC might be active — two instances
 can race on the same `WH_KEYBOARD_LL` hook, and synthetic input can trigger
 unintended game actions.
 
-### 4. Never move the overlay onto the primary/gaming monitor
+### 4. Never move the overlay onto the primary/gaming monitor while testing
 
-The owner's primary display is their active gaming monitor. Never reposition
-the mobiOverlay window there for testing. Use `PrintWindow` to capture the
-overlay's content without moving it.
+This is a rule for agents testing on the owner's machine. The owner's primary
+display is their active gaming monitor. Never reposition the mobiOverlay
+window there for testing. Use `PrintWindow` to capture the overlay's content
+without moving it.
+
+It is not a product rule. The product default is a non-primary monitor
+(`_default_launch_position()` in `host/main_window.py`), users may drag the
+overlay anywhere, and Crosshair draws on the primary display by design
+(click-through, it never moves the window). An in-game mobiGuide strip on
+the primary monitor is deferred: it needs its own owner decision and
+DECISIONS entry before anyone builds it.
 
 ### 5. Never embed a shared UEX token in the distributed app
 
@@ -278,6 +330,10 @@ improvement) — the distances are real UEX data, only the ordering logic is
 ours. Scoped and justified in `docs/BACKLOG.md`'s "Multi-Stop Contract
 Route Optimizer" entry; this is the one deliberate carve-out from this rule,
 not a precedent for inventing logic elsewhere.
+
+mobiGuide's recommendations (best contracts for a rank or goal, "≈N to go")
+are sorting and filtering of game-file values from its static packs, not
+invented logic. See `docs/modules/leveling-guide.md`, Data and honesty rules.
 
 ### 7. Never run two mobiOverlay instances at once
 
