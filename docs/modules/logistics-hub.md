@@ -13,7 +13,8 @@ Siblings are loaded by file path (`_load_sibling`), not as a package.
 
 | File | Holds | Qt? |
 |------|-------|-----|
-| `module.py` | card, scan/review/accept flow, debug logs, popouts | yes |
+| `module.py` | card, scan/review/accept flow, debug logs | yes |
+| `results_view.py` | `ResultsViewMixin`: contracts/manifest/route rendering, route popout | yes |
 | `ocr.py` | image preprocessing, EasyOCR wrapper, column ordering | no |
 | `parsing.py` | commodity/quantity/reward/location-phrase extraction | no |
 | `routing.py` | `RoutePlanner`: greedy + 2-opt + Or-opt over UEX distances | no |
