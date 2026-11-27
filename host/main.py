@@ -55,6 +55,7 @@ from host.locations import LocationService
 from host.main_window import MainWindow
 from host.module_loader import discover_modules
 from host.price_cache import PriceCache
+from host.refresh import ModuleRefresher, timed_call
 from host.services import Services
 from host.splash import show_splash, set_status
 
@@ -63,12 +64,6 @@ logger = logging.getLogger("mobioverlay")
 
 FONTS_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
 DEFAULT_REFRESH_SECONDS = 300
-# Modules run synchronously on the GUI thread (see docs/ARCHITECTURE.md) —
-# there's no preemptive timeout possible without a threading/process
-# redesign, so this is a soft, diagnostic-only watchdog: it logs a warning
-# after the fact so a slow module is visible in the log rather than just
-# manifesting as "the app feels laggy" with no lead.
-SLOW_CALL_WARN_SECONDS = 2.0
 
 
 def _plain_text(html_or_text: str) -> str:
@@ -84,37 +79,20 @@ def load_fonts():
             logger.warning("Failed to load bundled font: %s", font_file.name)
 
 
-def _timed_call(module, label, fn):
-    start = time.monotonic()
-    result = fn()
-    elapsed = time.monotonic() - start
-    if elapsed > SLOW_CALL_WARN_SECONDS:
-        logger.warning(
-            "Module '%s' %s took %.1fs — this blocks the whole UI thread "
-            "while it runs (see docs/ARCHITECTURE.md, module contract)",
-            getattr(module, "module_id", "?"), label, elapsed,
-        )
-    return result
-
-
-def wrap_refresh(module, card):
-    def safe_refresh():
-        try:
-            _timed_call(module, "refresh()", module.refresh)
-            card.clear_error()
-        except Exception as exc:
-            logger.exception("Module '%s' refresh failed", module.module_id)
-            card.set_error(str(exc), retry_callback=safe_refresh)
-    return safe_refresh
+def _refresh_interval_seconds(module) -> float:
+    try:
+        return float(module.settings.get("refresh_interval_seconds", DEFAULT_REFRESH_SECONDS) or 0)
+    except (TypeError, ValueError):
+        return DEFAULT_REFRESH_SECONDS
 
 
 def safe_create_card(module, parent):
-    """create_card() runs once at startup, before wrap_refresh's error
+    """create_card() runs once at startup, before ModuleRefresher's error
     boundary exists for this module — an unguarded exception or a bad
     return type here used to propagate straight out of main() and crash
     the whole app before any other module got a chance to load."""
     try:
-        card = _timed_call(module, "create_card()", lambda: module.create_card(parent))
+        card = timed_call(module, "create_card()", lambda: module.create_card(parent))
     except Exception:
         logger.exception(
             "Module '%s' create_card() raised — skipping this module",
@@ -136,13 +114,27 @@ def _install_excepthook():
     slot/callback (button click, timer, drag handler, hotkey signal) — it
     just prints to stderr via sys.excepthook, which the packaged exe
     (console=False) sends nowhere, so these were invisible AND unlogged.
-    Only module refresh() has its own boundary (wrap_refresh); this covers
+    Only module refresh() has its own boundary (host/refresh.py); this covers
     everything else so a bug in, say, a drag handler degrades instead of
     silently vanishing.
     """
     def _hook(exc_type, exc_value, exc_tb):
         logger.error("Unhandled exception", exc_info=(exc_type, exc_value, exc_tb))
     sys.excepthook = _hook
+
+
+def _set_taskbar_identity():
+    """A source run is python.exe to Windows, so its taskbar button grouped
+    with every other Python window and showed Python's icon. An explicit
+    AppUserModelID gives it its own button and the window's own icon.
+    Source runs only: the packaged exe already has its own identity, and
+    changing it would split the button from any shortcut the user pinned."""
+    if sys.platform != "win32" or getattr(sys, "frozen", False):
+        return
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("mobiOverlay.Overlay.Source")
+    except (AttributeError, OSError):
+        logger.debug("Could not set AppUserModelID", exc_info=True)
 
 
 def _show_already_running_dialog(message: str):
@@ -184,6 +176,7 @@ def main():
         return
 
     startup_start = time.monotonic()
+    _set_taskbar_identity()
     app = QApplication(sys.argv)
     # Without this, closing any popout/detail window a module opens (e.g.
     # Logistics Hub's route popout) while MainWindow itself happens to be
@@ -224,7 +217,7 @@ def main():
     if not modules:
         logger.warning("No modules loaded — the overlay will show an empty container.")
 
-    timers = []  # keep references alive
+    refreshers: list[ModuleRefresher] = []  # keep references alive
     for module in modules:
         set_status(splash, f"Starting {_plain_text(module.display_name)}...")
         card = safe_create_card(module, window.card_container)
@@ -234,20 +227,15 @@ def main():
         # that (CardContainer has no layout manager, so nothing resizes it
         # automatically). Force the layout to recompute now.
         card.apply_size()
-        safe_refresh = wrap_refresh(module, card)
-        module.request_refresh = safe_refresh
+        refresher = ModuleRefresher(module, card, _refresh_interval_seconds(module))
+        module.request_refresh = refresher.refresh
+        refresher.start()  # initial fetch, then the timer
+        refreshers.append(refresher)
 
-        safe_refresh()  # initial fetch
-
-        try:
-            interval_s = float(module.settings.get("refresh_interval_seconds", DEFAULT_REFRESH_SECONDS) or 0)
-        except (TypeError, ValueError):
-            interval_s = DEFAULT_REFRESH_SECONDS
-        if interval_s > 0:
-            timer = QTimer()
-            timer.timeout.connect(safe_refresh)
-            timer.start(int(interval_s * 1000))
-            timers.append(timer)
+    def _on_content_hidden_changed(hidden: bool):
+        for refresher in refreshers:
+            refresher.set_paused(hidden)
+    window.content_hidden_changed.connect(_on_content_hidden_changed)
 
     modules_shut_down = False
 
@@ -258,13 +246,15 @@ def main():
         if modules_shut_down:
             return
         modules_shut_down = True
-        for timer in timers:
-            timer.stop()
+        for refresher in refreshers:
+            refresher.stop()
         for module in modules:
             try:
                 module.shutdown()
             except Exception:
                 logger.exception("Module '%s' shutdown() failed", getattr(module, "module_id", "?"))
+        # The event loop is ending, so a debounced save_soon() would never fire.
+        config.flush()
     app.aboutToQuit.connect(_shutdown_modules)
     window.add_before_exit(_shutdown_modules)
     window.add_before_exit(lambda: _instance_lock.__exit__(None, None, None))

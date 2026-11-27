@@ -342,13 +342,16 @@ class TradeRouteOptimizerModule(ModuleBase):
         self._apply_dest_filter()
 
     def refresh(self):
+        self.finish_refresh(self.refresh_job()())
+
+    def refresh_job(self):
         origin_name = self.origin_combo.currentText()
         if origin_name == ANY_LOCATION:
             # Any Location has no single fast call to make — results only
             # ever come from an explicit SCAN (see _start_scan()). No-op
             # rather than raise, so auto-refresh/startup don't error every
             # tick while in this mode.
-            return
+            return lambda: None
         terminal = self._origin_choices.get(origin_name)
         if terminal is None:
             raise ValueError(f"Unknown terminal: {origin_name}")
@@ -357,8 +360,12 @@ class TradeRouteOptimizerModule(ModuleBase):
         investment_text = self.investment_input.text().strip()
         if investment_text:
             params["investment"] = investment_text
+        return lambda: (origin_name, investment_text, self.api.get("commodities_routes", params))
 
-        rows = self.api.get("commodities_routes", params)
+    def finish_refresh(self, data):
+        if data is None:
+            return
+        origin_name, investment_text, rows = data
         if not rows:
             raise ValueError(f"No profitable routes found from {origin_name}")
 

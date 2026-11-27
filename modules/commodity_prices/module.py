@@ -197,6 +197,9 @@ class CommodityPricesModule(ModuleBase):
         self._apply_filters()
 
     def refresh(self):
+        self.finish_refresh(self.refresh_job()())
+
+    def refresh_job(self):
         if self.combo.count() == 0:
             # The commodity list couldn't be fetched at startup (offline,
             # UEX down) — retry it here rather than stay empty all session.
@@ -204,7 +207,10 @@ class CommodityPricesModule(ModuleBase):
         name = self.combo.currentText()
         if not name:
             raise ValueError("No commodity selected — the commodity list couldn't be loaded from UEX yet")
+        return lambda: (name, self.api.get("commodities_prices", {"commodity_name": name}))
 
+    def finish_refresh(self, data):
+        name, fetched = data
         # An empty result is a legitimate state (some commodities genuinely
         # have no active listings right now), not an error — _apply_filters
         # already renders "no terminals buying/selling" gracefully per row,
@@ -216,8 +222,7 @@ class CommodityPricesModule(ModuleBase):
         # which without this filter could get picked as the "best" price
         # for the wrong item entirely. Confirmed live: this is exactly what
         # was inflating Diamond's reported sell price 10x.
-        rows = [r for r in self.api.get("commodities_prices", {"commodity_name": name})
-                if r.get("commodity_name") == name]
+        rows = [r for r in fetched if r.get("commodity_name") == name]
         self._last_rows = rows
         self._repopulate_system_filters(rows)
         self._apply_filters()

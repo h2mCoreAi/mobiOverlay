@@ -580,6 +580,9 @@ class MobiThrottleModule(ModuleBase):
         f'<span style="color:{theme.TEXT_PRIMARY};">mobi</span>'
         f'<span style="color:{theme.ACCENT_CYAN};">Throttle</span>'
     )
+    # The throttle bar is its own window and stays up while the cards are
+    # stowed, so its device reconnect check must keep running.
+    pause_when_hidden = False
 
     DEFAULTS = {
         "device_guid": None,

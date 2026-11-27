@@ -9,7 +9,7 @@ from ctypes import wintypes
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QPoint, QRectF, QTimer
+from PySide6.QtCore import Qt, QPoint, QRectF, QTimer, Signal
 from PySide6.QtGui import QCursor, QGuiApplication, QColor, QPainter, QPainterPath, QPen, QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -568,13 +568,8 @@ class _SystemTray:
         self._tray.show()
 
     def _on_show(self):
-        """Deploy the overlay (unstow if stowed, or just bring to front)."""
-        if self._win.is_app_stowed():
-            self._win.deploy_app()
-        else:
-            self._win.raise_()
-            self._win.activateWindow()
-            self._win._take_foreground_focus()
+        """Show the full overlay from any state: minimized, stowed, or behind other windows."""
+        self._win.bring_to_front()
 
     def _on_stow(self):
         """Stow the overlay to the pill."""
@@ -592,12 +587,14 @@ class _SystemTray:
                       QSystemTrayIcon.ActivationReason.Trigger):
             self._on_show()
 
-    def update_menu_state(self, is_stowed: bool):
-        """Update menu item enabled states based on current app state."""
+    def update_menu_state(self):
+        """Show is the way back from the taskbar too, so it stays enabled
+        while minimized, not just while stowed."""
         if self._tray is None:
             return
-        self._show_action.setEnabled(is_stowed)
-        self._stow_action.setEnabled(not is_stowed)
+        stowed = self._win.is_app_stowed()
+        self._show_action.setEnabled(stowed or self._win.isMinimized())
+        self._stow_action.setEnabled(not stowed)
 
     def shutdown(self):
         """Clean up the tray icon on app exit."""
@@ -742,6 +739,10 @@ class _TitleBar(QWidget):
 
 
 class MainWindow(QWidget):
+    # True while the cards can't be seen (stowed to the pill or minimized to
+    # the taskbar). host/main.py pauses card refresh timers on it.
+    content_hidden_changed = Signal(bool)
+
     def __init__(self, config: Config):
         super().__init__()
         self.config = config
@@ -797,6 +798,7 @@ class MainWindow(QWidget):
         # resizeEvent fire as soon as geometry changes, even pre-show.
         self._all_collapsed = False
         self._app_stowed = False
+        self._content_hidden = False
         self._geometry_tracking_ready = False
         self._geometry_save_timer = QTimer(self)
         self._geometry_save_timer.setSingleShot(True)
@@ -836,6 +838,7 @@ class MainWindow(QWidget):
         # System tray icon — recovery affordance for when users forget the
         # hotkey or lose the stowed pill.
         self._tray = _SystemTray(self)
+        self._tray.update_menu_state()
 
         self._pill_hover_timer = QTimer(self)
         self._pill_hover_timer.setInterval(PILL_HOVER_POLL_MS)
@@ -891,6 +894,36 @@ class MainWindow(QWidget):
         super().changeEvent(event)
         if event.type() == event.Type.WindowStateChange:
             self.title_bar.set_maximized_label(self.isMaximized())
+            # changeEvent can fire during __init__, before the tray exists.
+            if hasattr(self, "_tray"):
+                self._tray.update_menu_state()
+            self._sync_content_hidden()
+
+    def is_content_hidden(self) -> bool:
+        return self._app_stowed or self.isMinimized()
+
+    def _sync_content_hidden(self):
+        hidden = self.is_content_hidden()
+        if hidden != self._content_hidden:
+            self._content_hidden = hidden
+            self.content_hidden_changed.emit(hidden)
+
+    def _restore_if_minimized(self):
+        """Un-minimize, keeping a maximized window maximized."""
+        if self.isMinimized():
+            self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive)
+            self.show()
+
+    def bring_to_front(self):
+        """Show the full overlay from any state — minimized to the taskbar,
+        stowed to the pill, or just behind another window. The tray's Show
+        uses this; before it, Show on a minimized window only raised it in
+        z-order, which leaves a minimized window minimized."""
+        self._restore_if_minimized()
+        if self._app_stowed:
+            self.deploy_app()
+        else:
+            self._take_foreground_focus()
 
     def toggle_maximize(self):
         if self.isMaximized():
@@ -937,6 +970,8 @@ class MainWindow(QWidget):
     def stow_app(self):
         if self._app_stowed:
             return
+        # Stowing a minimized window would build the pill out of sight.
+        self._restore_if_minimized()
         # A maximized window ignores resize() — stowing it as-is left a
         # full-screen "pill", and saved the maximized size as the size to
         # restore to. Restore first; toggle_maximize() already saved the
@@ -980,12 +1015,15 @@ class MainWindow(QWidget):
 
         self._apply_native_click_through(self._pill_click_through)
         self._sync_pill_hover_watch()
-        self._tray.update_menu_state(is_stowed=True)
+        self._tray.update_menu_state()
+        self._sync_content_hidden()
         self.config.save()
 
     def deploy_app(self):
         if not self._app_stowed:
             return
+        # The pill itself can be minimized (taskbar click, Win+D).
+        self._restore_if_minimized()
         # Clear click-through before anything else — otherwise a redeploy
         # triggered by something other than the hotkey (e.g. a future
         # programmatic call) could leave the now-full-size window unable
@@ -1005,7 +1043,8 @@ class MainWindow(QWidget):
         if self._stowed_from_maximized:
             self._stowed_from_maximized = False
             self.showMaximized()
-        self._tray.update_menu_state(is_stowed=False)
+        self._tray.update_menu_state()
+        self._sync_content_hidden()
         self._take_foreground_focus()
 
     def _take_foreground_focus(self):
@@ -1050,7 +1089,14 @@ class MainWindow(QWidget):
             user32.SetForegroundWindow(hwnd)
 
     def toggle_app_stow(self):
-        self.deploy_app() if self._app_stowed else self.stow_app()
+        # While minimized the hotkey means "show me the overlay": toggling
+        # stow on a minimized window changed nothing the user could see.
+        if self.isMinimized():
+            self.bring_to_front()
+        elif self._app_stowed:
+            self.deploy_app()
+        else:
+            self.stow_app()
 
     def _apply_native_click_through(self, enabled: bool):
         """Sets the real WS_EX_TRANSPARENT extended window style directly
@@ -1180,13 +1226,13 @@ class MainWindow(QWidget):
         self._void_opacity = opacity
         self.update()
         self.config.data["ui"]["window_opacity"] = opacity
-        self.config.save()
+        self.config.save_soon()  # slider: fires on every tick of a drag
 
     def set_card_opacity_percent(self, value: int):
         opacity = value / 100
         self.card_container.set_all_card_opacity(opacity)
         self.config.data["ui"]["card_opacity"] = opacity
-        self.config.save()
+        self.config.save_soon()
 
     def set_font_scale(self, scale: float):
         self.config.data["ui"]["font_scale"] = scale
@@ -1221,6 +1267,8 @@ class MainWindow(QWidget):
         # hooked to aboutToQuit/atexit, which os._exit() below skips — run
         # them now, before the new process can race for the same lock.
         self._run_before_exit_callbacks()
+        # os._exit() below won't let a debounced save_soon() fire.
+        self.config.flush()
         subprocess.Popen(relaunch_command(), cwd=str(app_root()), env=relaunch_env())
         self._exiting = True
         self.close()

@@ -15,6 +15,10 @@ from host.services import Services
 class ModuleBase:
     module_id: str = ""
     display_name: str = ""
+    # The host stops this module's refresh timer while the cards are hidden
+    # (stowed or minimized). Set False if the module shows something outside
+    # its card that must keep updating (mobiThrottle's bar).
+    pause_when_hidden: bool = True
 
     # Set once by host/module_loader.discover_modules() so every module shares
     # the same Services instance without each `__init__` having to forward it.
@@ -42,6 +46,28 @@ class ModuleBase:
         manual refresh. Exceptions propagate to the host's error boundary,
         which puts the card into its error state rather than crashing."""
         raise NotImplementedError
+
+    def refresh_job(self):
+        """Optional: keep the network wait off the GUI thread.
+
+        Called on the GUI thread: read whatever widget state the fetch
+        needs, then return a zero-argument callable that does only the
+        network work. The host runs it on a worker thread and passes its
+        return value to `finish_refresh()` back on the GUI thread. The
+        callable must not touch widgets. Raising here, in the callable, or
+        in `finish_refresh()` puts the card in its error state, same as
+        `refresh()`. Return None (the default) to have the host call the
+        synchronous `refresh()` instead.
+
+        A module implementing this usually defines
+        `refresh()` as `self.finish_refresh(self.refresh_job()())`, so both
+        paths share one implementation."""
+        return None
+
+    def finish_refresh(self, data):
+        """Optional partner of `refresh_job()`: update the card with what
+        the job returned. Runs on the GUI thread."""
+        pass
 
     def shutdown(self):
         """Optional: release any process-wide resource a module opened for

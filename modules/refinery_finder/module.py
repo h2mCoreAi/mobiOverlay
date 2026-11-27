@@ -45,7 +45,7 @@ class RefineryFinderModule(ModuleBase):
         super().__init__(api_client, config, locations)
         self.settings.setdefault("system_filter", ALL_SYSTEMS)
         self._raw_commodities: list[dict] = []  # [{id, name}] where is_raw == 1
-        self._methods: list[dict] | None = None  # cached once per session, see _ensure_methods()
+        self._methods: list[dict] | None = None  # cached once per session, see refresh_job()
         self._last_yield_rows: list[dict] = []
         self._capacity_by_terminal: dict[int, int] = {}
         self.request_refresh = None  # injected by host after wrapping refresh()
@@ -145,40 +145,48 @@ class RefineryFinderModule(ModuleBase):
     # ------------------------------------------------------------------
     # ModuleBase refresh
     # ------------------------------------------------------------------
-    def _ensure_methods(self):
-        """Fetch refineries_methods once per session and cache it. Methods
-        are static reference data (refining method names, yield/cost/speed
-        ratings) that don't change during a session — no need to re-fetch
-        on every refresh."""
-        if self._methods:
-            return
-        try:
-            self._methods = self.api.get("refineries_methods")
-        except Exception:
-            # Left unset so the next refresh retries — an empty list cached
-            # here showed "not loaded yet" for the rest of the session.
-            pass
-
     def refresh(self):
+        self.finish_refresh(self.refresh_job()())
+
+    def refresh_job(self):
         if self.combo.count() == 0:
             # Commodity list couldn't be fetched at startup — retry it.
             self._populate_commodities()
         name = self.combo.currentText()
         if not name:
             raise ValueError("No raw commodity selected — the commodity list couldn't be loaded from UEX yet")
+        # refineries_methods is static reference data: fetched once per
+        # session, then cached in self._methods.
+        need_methods = not self._methods
 
-        # Confirmed live (2026-09-06): `id_commodity` does NOT filter this
-        # endpoint server-side despite looking like a real query param —
-        # same "verify, don't assume" lesson as Commodity Prices' substring-
-        # match surprise. Fetch everything, filter client-side below.
-        self._last_yield_rows = self.api.get("refineries_yields")
-        capacities = self.api.get("refineries_capacities")
+        def fetch():
+            # Confirmed live (2026-09-06): `id_commodity` does NOT filter this
+            # endpoint server-side despite looking like a real query param —
+            # same "verify, don't assume" lesson as Commodity Prices' substring-
+            # match surprise. Fetch everything, filter client-side.
+            yields = self.api.get("refineries_yields")
+            capacities = self.api.get("refineries_capacities")
+            methods = None
+            if need_methods:
+                try:
+                    methods = self.api.get("refineries_methods")
+                except Exception:
+                    # Left unset so the next refresh retries — an empty list
+                    # cached here showed "not loaded yet" all session.
+                    pass
+            return name, yields, capacities, methods
+        return fetch
+
+    def finish_refresh(self, data):
+        name, yields, capacities, methods = data
+        if methods:
+            self._methods = methods
+        self._last_yield_rows = yields
         self._capacity_by_terminal = {
             row["id_terminal"]: row["value"]
             for row in capacities
             if row.get("id_terminal") is not None and row.get("value") is not None
         }
-        self._ensure_methods()
         self._render_methods()
         self._repopulate_system_filter()
         self._render_results()

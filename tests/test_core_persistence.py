@@ -210,6 +210,41 @@ def test_relaunch_env_resets_pyinstaller_when_frozen() -> int:
     return 2
 
 
+def test_save_soon_debounces_and_flushes() -> int:
+    """A burst of save_soon() calls (a slider drag) writes once, after the
+    debounce — and flush()/save() write a pending change at once, which is
+    what the quit and Relaunch paths rely on."""
+    from PySide6.QtCore import QCoreApplication
+    app = QCoreApplication.instance() or QCoreApplication([])
+    path = Path(tempfile.mkdtemp()) / "config.json"
+    config = Config(path)
+    writes = []
+    real_save = Config.save
+
+    def counting_save(self):
+        writes.append(1)
+        real_save(self)
+    config.save = counting_save.__get__(config)  # before the timer binds to it
+    for value in range(20):
+        config.data["ui"]["window_opacity"] = value / 100
+        config.save_soon()
+    assert not path.exists(), "save_soon() wrote immediately"
+    end = time.monotonic() + 3
+    while not writes and time.monotonic() < end:
+        app.processEvents()
+        time.sleep(0.01)
+    assert len(writes) == 1, f"expected one debounced write, got {len(writes)}"
+    assert json.loads(path.read_text("utf-8"))["ui"]["window_opacity"] == 0.19
+
+    config.set_module_settings("m", {"k": 1})
+    config.flush()
+    assert json.loads(path.read_text("utf-8"))["modules"]["m"] == {"k": 1}, "flush() didn't write the pending change"
+    assert not config._save_timer.isActive(), "flush() left the timer pending"
+    config.flush()
+    assert len(writes) == 2, "flush() with nothing pending shouldn't write"
+    return 4
+
+
 def run() -> int:
     checks = 0
     for test in (
@@ -224,6 +259,7 @@ def run() -> int:
         test_rate_limit_detected_on_http_error,
         test_non_dict_payload_is_api_error,
         test_relaunch_env_resets_pyinstaller_when_frozen,
+        test_save_soon_debounces_and_flushes,
     ):
         checks += test()
         print(f"[PASS] {test.__name__}")

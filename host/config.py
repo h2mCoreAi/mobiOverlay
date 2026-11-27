@@ -6,12 +6,15 @@ import json
 import logging
 from pathlib import Path
 
+from PySide6.QtCore import QCoreApplication, QThread, QTimer
+
 from host.fileio import atomic_write_text, quarantine_corrupt
 from host.paths import app_root
 
 logger = logging.getLogger("mobioverlay.config")
 
 CONFIG_PATH = app_root() / "config.json"
+SAVE_DEBOUNCE_MS = 400
 
 DEFAULT_CONFIG = {
     "ui": {
@@ -64,6 +67,7 @@ class Config:
     def __init__(self, path: Path = CONFIG_PATH):
         self.path = path
         self.data = self._load()
+        self._save_timer: QTimer | None = None
 
     def _load(self) -> dict:
         data = {}
@@ -81,6 +85,9 @@ class Config:
         return _deep_merge_defaults(data, json.loads(json.dumps(DEFAULT_CONFIG)))
 
     def save(self) -> None:
+        """Write now. Also writes anything a pending save_soon() held back."""
+        if self._save_timer is not None:
+            self._save_timer.stop()
         # Never raises: save() is called from dozens of UI slots, and a
         # transient write failure (file locked by a sync client, disk full)
         # shouldn't break whatever the user just clicked.
@@ -89,13 +96,35 @@ class Config:
         except (OSError, TypeError, ValueError):
             logger.warning("Failed to save %s", self.path, exc_info=True)
 
+    def save_soon(self) -> None:
+        """Debounced save for settings that change in bursts — a slider
+        drag, typing in a field. Each save is a full JSON dump plus fsync,
+        so saving per tick made dragging an opacity slider do dozens of
+        disk syncs. Changes are in `self.data` immediately; only the write
+        waits. Without a running Qt app (tests, scripts) or off the GUI
+        thread, this saves at once. Exit paths call flush()."""
+        app = QCoreApplication.instance()
+        if app is None or QThread.currentThread() is not app.thread():
+            self.save()
+            return
+        if self._save_timer is None:
+            self._save_timer = QTimer()
+            self._save_timer.setSingleShot(True)
+            self._save_timer.timeout.connect(self.save)
+        self._save_timer.start(SAVE_DEBOUNCE_MS)
+
+    def flush(self) -> None:
+        """Write a save_soon() that hasn't happened yet. No-op otherwise."""
+        if self._save_timer is not None and self._save_timer.isActive():
+            self.save()
+
     # -- module-namespaced settings --
     def module_settings(self, module_id: str) -> dict:
         return self.data["modules"].setdefault(module_id, {})
 
     def set_module_settings(self, module_id: str, settings: dict) -> None:
         self.data["modules"][module_id] = settings
-        self.save()
+        self.save_soon()
 
     # -- shared cross-module current location (Phase 5) --
     def shared_location(self) -> dict | None:
@@ -107,7 +136,7 @@ class Config:
     def set_shared_location(self, terminal: dict | None, name: str) -> None:
         self.data["shared"]["current_location"] = terminal
         self.data["shared"]["current_location_name"] = name
-        self.save()
+        self.save_soon()
 
     # -- card layout --
     def card_state(self, card_id: str) -> dict:
@@ -118,4 +147,4 @@ class Config:
     def set_card_state(self, card_id: str, **kwargs) -> None:
         state = self.card_state(card_id)
         state.update(kwargs)
-        self.save()
+        self.save_soon()
