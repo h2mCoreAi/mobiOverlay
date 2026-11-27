@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "mercenary",
+    "title": "Mercenary: Foxwell Enforcement",
+    "order": 40,
+    "patch": "4.10.3",
+    "summary": "Security work from Yellow up to Red Level contracts."
+  },
+  "objectives": [
+    {
+      "id": "fox-intro",
+      "title": "Foxwell: intro contracts",
+      "kind": "task",
+      "tags": ["stanton", "solo", "lawful", "combat"],
+      "why": "Starts Foxwell standing. Each intro gives 100 reputation.",
+      "requires": ["fs-launch-own-ship"],
+      "steps": [
+        {"do": "Accept and finish \"Exciting New Opportunities with Foxwell Enforcement\".", "where": "Stanton", "done_when": "It completes."},
+        {"do": "Accept and finish \"Still Looking for Work?\" when it is offered.", "done_when": "It completes."}
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/exciting-new-opportunities-with-foxwell-enforcement",
+        "https://api.star-citizen.wiki/missions/still-looking-for-work",
+        "https://api.star-citizen.wiki/api/factions/21c61135-e8ee-459c-8f61-4550b8c02c58"
+      ]
+    },
+    {
+      "id": "fox-jr",
+      "title": "Reach Foxwell Jr. Contractor (800 rep)",
+      "kind": "grind",
+      "goal": {"target": 6, "unit": "Neutral-rank contracts"},
+      "tags": ["solo", "lawful", "combat"],
+      "why": "Neutral-rank Foxwell contracts (e.g. \"Yellow Level Contract: Clear Out PAF\") give 100 reputation each.",
+      "reputation": {"faction": "Foxwell Enforcement", "ladder": "Standing", "rank": "Jr. Contractor", "points": 800},
+      "requires": ["fox-intro"],
+      "steps": [
+        {"do": "Take Foxwell Yellow Level contracts. Count each one here.", "done_when": "\"Yellow Lvl. Contract: Defend Fuel Tanks\" is offered."}
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/yellow-level-contract-clear-out-paf",
+        "https://api.star-citizen.wiki/missions/yellow-lvl-contract-defend-objects-2"
+      ]
+    },
+    {
+      "id": "fox-contractor",
+      "title": "Reach Foxwell Contractor (2,200 rep)",
+      "kind": "grind",
+      "goal": {"target": 14, "unit": "contracts"},
+      "tags": ["solo", "lawful", "combat"],
+      "why": "Jr. Contractor contracts give 100-150 reputation each.",
+      "reputation": {"faction": "Foxwell Enforcement", "ladder": "Standing", "rank": "Contractor", "points": 2200},
+      "requires": ["fox-jr"],
+      "steps": [
+        {"do": "Take Foxwell contracts open to Jr. Contractors. Count each one here.", "done_when": "\"Orange Lvl. Contract: Defend Fuel Tanks\" is offered."}
+      ],
+      "sources": ["https://api.star-citizen.wiki/missions/orange-lvl-contract-defend-objects-2"]
+    },
+    {
+      "id": "fox-sr",
+      "title": "Reach Foxwell Sr. Contractor (5,800 rep)",
+      "kind": "grind",
+      "goal": {"target": 24, "unit": "contracts"},
+      "tags": ["solo", "lawful", "combat"],
+      "why": "Contractor-rank contracts give about 150 reputation. Sr. Contractor opens Red Level contracts.",
+      "reputation": {"faction": "Foxwell Enforcement", "ladder": "Standing", "rank": "Sr. Contractor", "points": 5800},
+      "requires": ["fox-contractor"],
+      "steps": [
+        {"do": "Take Orange Level contracts. Count each one here.", "done_when": "\"Red Lvl. Contract: Defend Fuel Tanks\" is offered."}
+      ],
+      "sources": ["https://api.star-citizen.wiki/missions/red-lvl-contract-defend-missionobjects"]
+    },
+    {
+      "id": "fox-veteran",
+      "title": "Reach Foxwell Veteran Contractor (15,000 rep)",
+      "kind": "grind",
+      "optional": true,
+      "goal": {"target": 46, "unit": "contracts"},
+      "tags": ["solo", "lawful", "combat"],
+      "why": "Sr. Contractor contracts give about 200 reputation each.",
+      "reputation": {"faction": "Foxwell Enforcement", "ladder": "Standing", "rank": "Veteran Contractor", "points": 15000},
+      "requires": ["fox-sr"],
+      "steps": [
+        {"do": "Take Red and Orange Level contracts. Count each one here.", "done_when": "\"Red Level Contract: High-Risk Security Patrol\" is offered."}
+      ],
+      "sources": ["https://api.star-citizen.wiki/missions/red-level-contract-high-risk-security-patrol"]
+    }
+  ]
+}

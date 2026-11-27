@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "outlaw",
+    "title": "Outlaw Path (optional)",
+    "order": 90,
+    "patch": "4.10.3",
+    "summary": "Illegal work for the Headhunters, Vaughn and the Dead Saints. Every contract here is marked illegal."
+  },
+  "objectives": [
+    {
+      "id": "outlaw-headhunters",
+      "title": "Headhunters: \"Wanna be a Headhunter?\"",
+      "kind": "task",
+      "optional": true,
+      "tags": ["pyro", "unlawful", "combat"],
+      "why": "The Headhunters' entry contract in Pyro (+50 standing). Their work is illegal.",
+      "requires": ["fs-launch-own-ship"],
+      "steps": [
+        {"do": "In Contracts, move the slider to UNVERIFIED.", "done_when": "The Unverified list shows."},
+        {"do": "Accept and complete \"Wanna be a Headhunter?\".", "where": "Pyro", "done_when": "It completes."}
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/wanna-be-a-headhunter-2",
+        "https://api.star-citizen.wiki/api/factions/9f89edc0-441b-4f40-a502-df12ebf3f1eb",
+        "https://support.robertsspaceindustries.com/hc/en-us/articles/360008918933-Missions-and-Contracts"
+      ]
+    },
+    {
+      "id": "outlaw-vaughn",
+      "title": "Vaughn: \"A Chance to Impress\"",
+      "kind": "task",
+      "optional": true,
+      "tags": ["stanton", "unlawful", "combat"],
+      "why": "Vaughn's first assassination contract (+100 standing, +500 Assassination reputation).",
+      "reward": "2,750 aUEC (Stanton version)",
+      "requires": ["fs-launch-own-ship"],
+      "steps": [
+        {"do": "Accept \"A Chance to Impress\" from the Unverified list and complete it.", "done_when": "It completes."}
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/a-chance-to-impress-4",
+        "https://api.star-citizen.wiki/api/factions/95761a82-18f9-4e25-ba33-d4c47c689324"
+      ]
+    },
+    {
+      "id": "outlaw-dead-saints",
+      "title": "Dead Saints: \"DEAD SAINTS - Trial Cargo Haul\"",
+      "kind": "task",
+      "optional": true,
+      "tags": ["unlawful", "hauling"],
+      "why": "The Dead Saints' trial smuggling haul (+50 Hauling reputation).",
+      "requires": ["haul-covalex-intro"],
+      "steps": [
+        {"do": "Accept \"DEAD SAINTS - Trial Cargo Haul\" from the Unverified list and deliver it.", "done_when": "It completes."}
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/dead-saints-trial-cargo-haul-2",
+        "https://api.star-citizen.wiki/api/factions/2da0657d-62dc-4f6c-8b25-fd88480d0834"
+      ]
+    }
+  ]
+}

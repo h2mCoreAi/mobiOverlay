@@ -56,6 +56,7 @@ mobiOverlay/
 │   ├── multi_commodity_finder/
 │   ├── crosshair/
 │   ├── mobi_notes/
+│   ├── leveling_guide/      # mobiGuide: JSON chapters in guides/
 │   └── mobi_throttle/
 ├── tests/                   # regression tests (plain asserts, no framework)
 │   └── run_all.py           # runs every test file, one summary
@@ -124,6 +125,7 @@ Test files:
 - `python tests/test_core_persistence.py` — config/cache recovery, atomic saves, rate-limit detection (no network)
 - `python tests/test_pill_hover_unlock.py` — click-through pill hover-to-unlock (offscreen, no hooks)
 - `python tests/test_mobi_notes_store.py` — mobiNotes data store
+- `python tests/test_leveling_guide.py` — mobiGuide content, progress store, offscreen card
 - `python tests/test_logistics_hub_routing.py` — route ordering (no Qt, no network)
 - `python tests/test_services.py` — shared Services wiring
 - `python tests/test_background_scans.py` — worker-thread scan loops (offscreen, fake API)
@@ -145,7 +147,7 @@ pyinstaller mobioverlay.spec --noconfirm
 ```
 
 Output: `dist/mobiOverlay/` (~333 MB with CPU-only torch) — `mobiOverlay.exe`
-plus `_internal/` (all 8 modules). Keep the folder together.
+plus `_internal/` (all 9 modules). Keep the folder together.
 `config.json` and cache files persist next to the exe.
 
 ---

@@ -346,7 +346,7 @@ unpacks to a new temp folder on every launch). The distinction:
 - **Bundled inside `_internal/`** (`sys._MEIPASS` at runtime — the onedir
   contents directory, persistent on disk):
   - `host/` — the core application
-  - `modules/` — all 8 modules (discovered via `host/paths.modules_root()`)
+  - `modules/` — all 9 modules (discovered via `host/paths.modules_root()`)
   - `host/assets/fonts/` — bundled fonts (Orbitron, Share Tech Mono)
   - `host/assets/icons/` — tray icon
   - All dependencies (torch, easyocr, pygame-ce, etc.)

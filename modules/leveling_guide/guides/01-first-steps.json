@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "first-steps",
+    "title": "First Steps in Stanton",
+    "order": 10,
+    "patch": "4.10.3",
+    "summary": "Wake up, finish the tutorial, fly your ship and take your first contract."
+  },
+  "objectives": [
+    {
+      "id": "fs-pick-city",
+      "title": "Wake up in a Stanton city",
+      "kind": "task",
+      "tags": ["stanton", "solo", "lawful"],
+      "why": "Stanton is the safest system to learn in. Pyro and Nyx have far fewer laws.",
+      "steps": [
+        {"do": "From the main menu, pick the Universe (Persistent Universe) mode.", "done_when": "The start-location list appears."},
+        {"do": "Choose New Babbage, Area18, Lorville or Orison.", "done_when": "You wake up in a hab in that city."}
+      ],
+      "sources": ["https://support.robertsspaceindustries.com/hc/en-us/articles/360025028633-Getting-Started-in-the-Verse"]
+    },
+    {
+      "id": "fs-tutorial-steps",
+      "title": "Complete \"Tutorial - Your First Steps\"",
+      "kind": "task",
+      "tags": ["stanton", "solo", "lawful"],
+      "why": "The New Player Experience teaches moving, interacting and the mobiGlas, and pays you for it.",
+      "reward": "15,000 aUEC",
+      "requires": ["fs-pick-city"],
+      "steps": [
+        {"do": "Accept the New Player Experience prompt after choosing your city.", "where": "Your hab", "done_when": "The tutorial contract is tracked."},
+        {"do": "Follow the tutorial's objectives.", "done_when": "The contract completes and 15,000 aUEC is paid."}
+      ],
+      "sources": [
+        "https://support.robertsspaceindustries.com/hc/en-us/articles/360025028633-Getting-Started-in-the-Verse",
+        "https://api.star-citizen.wiki/missions/tutorial-your-first-steps"
+      ]
+    },
+    {
+      "id": "fs-tutorial-outing",
+      "title": "Complete \"Tutorial - Your First Outing\"",
+      "kind": "task",
+      "tags": ["stanton", "solo", "lawful"],
+      "why": "Teaches shopping and getting around your city.",
+      "reward": "15,000 aUEC",
+      "requires": ["fs-tutorial-steps"],
+      "steps": [
+        {"do": "Follow the tutorial's next contract.", "where": "Your starting city", "done_when": "The contract completes and 15,000 aUEC is paid."}
+      ],
+      "sources": ["https://api.star-citizen.wiki/missions/tutorial-your-first-outing-4"]
+    },
+    {
+      "id": "fs-tutorial-flight",
+      "title": "Complete \"Tutorial - Your First Flight\"",
+      "kind": "task",
+      "tags": ["stanton", "solo", "lawful"],
+      "why": "Your first take-off, flight and landing.",
+      "reward": "15,000 aUEC",
+      "requires": ["fs-tutorial-outing"],
+      "steps": [
+        {"do": "Follow the tutorial to the spaceport and fly the ship it gives you.", "done_when": "You have landed where the tutorial asks."},
+        {"do": "Finish the remaining objectives.", "done_when": "The contract completes and 15,000 aUEC is paid."}
+      ],
+      "sources": ["https://api.star-citizen.wiki/missions/tutorial-your-first-flight-2"]
+    },
+    {
+      "id": "fs-launch-own-ship",
+      "title": "Retrieve and launch your own ship",
+      "kind": "task",
+      "tags": ["stanton", "solo", "lawful"],
+      "why": "Everything after this starts with getting your own ship into space.",
+      "requires": ["fs-pick-city"],
+      "steps": [
+        {"do": "Follow the signs to the spaceport (most cities need a tram ride).", "done_when": "You are at the ASOP terminals."},
+        {"do": "Press F at an ASOP terminal, then Deliver and Retrieve your ship.", "where": "ASOP terminal", "done_when": "The terminal shows which hangar or pad your ship is in."},
+        {"do": "Take a nearby elevator to that hangar and get in the pilot seat.", "done_when": "You are seated in your ship."},
+        {"do": "Press U (or hold F and pick Flight Ready).", "done_when": "The ship powers up."},
+        {"do": "Press F1 for the mobiGlas, open Comms, and call the spaceport at the top of the Friends tab to request take-off.", "done_when": "The hangar doors open."},
+        {"do": "Hold Space to lift off, then press N to raise the landing gear.", "done_when": "You are out of the hangar and flying."}
+      ],
+      "sources": ["https://support.robertsspaceindustries.com/hc/en-us/articles/360025028633-Getting-Started-in-the-Verse"]
+    },
+    {
+      "id": "fs-accept-contract",
+      "title": "Accept a contract on your own",
+      "kind": "task",
+      "tags": ["solo", "lawful"],
+      "why": "Every chapter after this uses the Contracts app.",
+      "requires": ["fs-pick-city"],
+      "steps": [
+        {"do": "Press F1 and open CONTRACTS (the fourth button from the left).", "done_when": "The Contracts Manager is open."},
+        {"do": "Keep the slider at the top on VERIFIED. UNVERIFIED lists contracts from shady or criminal sources.", "done_when": "The list shows Verified categories."},
+        {"do": "Open a category, pick a contract, read its reward and time limit, then press ACCEPT OFFER.", "done_when": "The contract appears in the ACCEPTED tab."}
+      ],
+      "tips": "In a party, select an accepted contract and press SHARE. Everyone who accepts gets an equal share of the reward.",
+      "sources": ["https://support.robertsspaceindustries.com/hc/en-us/articles/360008918933-Missions-and-Contracts"]
+    }
+  ]
+}

@@ -4205,3 +4205,40 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
     one-agent-at-a-time hot spots, append-only conventions for shared docs,
     `tests/run_all.py` before pushing, and `scripts/decisions_index.py` to
     search this file instead of reading all of it.
+
+- **2026-11-27 — mobiGuide (Leveling Guide) module: curated, verified
+  content as a new kind of data source.** Branch `claude/leveling-guide`
+  (stacked on `claude/taskbar-perf-multiagent`). See
+  `docs/modules/leveling-guide.md`.
+  - **Content is static, sourced data, not computed game logic.** UEX has no
+    mission or reputation data, so the guide's objectives are curated JSON.
+    Safety rule 6 is not affected: the module computes nothing about the
+    game. The one derived number, "about N contracts" for a grind, is
+    arithmetic on game-data reputation values, documented in
+    `docs/leveling-guide/verification.md` and pinned by a test.
+  - **Verification over AI research.** Five AIs (Gemini, Grok, ChatGPT, Muse,
+    DeepSeek) plus Claude on claude.ai produced the research in
+    `docs/leveling-guide/research/`. Nothing went into the guide on their
+    word alone: every claim was checked against the star-citizen.wiki
+    mission API (all 1,832 missions stamped `4.10.3-LIVE.13165946`), the RSI
+    Knowledge Base, or UEX. This caught real errors: a tutorial payout,
+    Foxwell's Red Level rank, CCU Ladder's bounty license mapping, Adagio's
+    intro name, a cross-faction gate, and a Pitbull shop list. Unconfirmed
+    claims were left out.
+  - **Manual completion only.** No Game.log reading (the 2026-09-03 pivot
+    still holds; Logistics Hub remains the only opt-in exception) and no
+    game input. Checking off is a button.
+  - **Extensible without code:** bundled chapter files, drop-in files in
+    `app_root()/leveling_guide/` (which can extend an existing chapter by
+    id), and an in-card "+ ADD OBJECTIVE" dialog writing
+    `leveling_guide_custom.json`. Progress is keyed by objective id so
+    content can change under it.
+  - **Live ship prices from UEX** for purchase objectives
+    (`vehicles_purchases_prices_all`, via `refresh_job()`, 30-minute cache)
+    instead of hard-coded prices. A UEX failure degrades only the price
+    line, not the card.
+  - **Rows are single rich-text QLabels.** Word-wrapped labels inside a
+    nested row layout were squeezed to a few pixels when the card sized
+    itself; single labels report their height correctly. The card calls
+    `apply_size()` after each render because its height changes with the
+    objective.

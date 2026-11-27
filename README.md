@@ -12,7 +12,7 @@ MobiGlas. Dark sci-fi HUD with cyan/amber accents. Data comes from the
    whole folder together (`mobiOverlay.exe` plus `_internal/`)
 3. **Run** `mobiOverlay.exe` inside that folder
 
-That's it — all 8 modules included. Extract once; later launches are fast
+That's it — all 9 modules included. Extract once; later launches are fast
 (nothing re-unpacks on each start). Do not move the `.exe` out of the folder
 without `_internal/` — it will not run alone.
 
