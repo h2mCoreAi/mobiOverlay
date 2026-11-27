@@ -9,7 +9,7 @@ Chapters, a level and XP bar, grind counters, and objectives you add yourself.
 
 ## What's in v1
 
-10 chapters and 57 objectives for live patch **4.10.3**:
+11 chapters and 63 objectives for live patch **4.10.3**:
 
 | # | Chapter | Covers |
 |---|---------|--------|
@@ -23,10 +23,30 @@ Chapters, a level and XP bar, grind counters, and objectives you add yourself.
 | 80 | Advanced Careers | Covalex to Master; BHG to Guild Steward and the Master license |
 | 90 | Outlaw Path | Headhunters, Vaughn and Dead Saints entry contracts (illegal, hidden by default) |
 | 100 | Wikelo's Emporium | intro trade and a reputation trade |
+| 110 | Ship Goals | Avenger Titan, Cutlass Black, Freelancer MAX, Prospector, MOLE, C2 Hercules with live UEX prices |
 
 Every fact was checked against the 4.10.3 game data before it went in. See
 `docs/leveling-guide/verification.md` for what was confirmed, what was wrong
 in the AI research, and how grind counts are computed.
+
+## First run: setup questionnaire
+
+A banner on the card offers **START SETUP** (or NOT NOW; it stays in the
+⚙ menu as *Run setup again…*). Four pages:
+
+1. **Experience:** new player, or knows the basics. "Knows the basics"
+   ticks off every objective tagged `basics` (the First Steps chapter).
+2. **Where are you already:** one rank picker per faction the guide covers,
+   built from the content's `reputation` fields, so new chapters appear
+   automatically. Picking a rank ticks every rank-up objective at or below
+   it, plus everything those require (`guide.ids_done_for`).
+3. **What you want to do:** career checkboxes (hauling, combat, salvage,
+   mining, collection) become a `focus` filter that hides other careers.
+   Objectives with no career tag (the basics, your own) always show. Also
+   outlaw content, optional objectives, and compact mode.
+4. **How to use it:** the same help as ⚙ → *How to use mobiGuide*.
+
+The guide then opens on the next unfinished objective.
 
 ## Card
 
@@ -41,16 +61,16 @@ in the AI research, and how grind counts are computed.
   the **live UEX price** at the cheapest shop. A "Usually done after" hint
   appears when its prerequisites aren't done; it's a hint, not a lock.
 - **Steps:** done steps dimmed, the current step outlined with its
-  **DONE WHEN** check. `✓ STEP DONE` advances; on the last step it reads
-  `✓ COMPLETE` and moves to the next objective. `◀ BACK`, `SKIP` (moves on
-  without XP), and `↺ UNDO DONE` on a finished one.
+  **DONE WHEN** check. `✓ I DID THIS STEP` advances; on the last step it reads
+  `✓ FINISH OBJECTIVE` and moves to the next objective. `◀ BACK`, `SKIP`
+  (moves on without XP), and `↺ NOT DONE YET` on a finished one.
 - **Grind counter:** `−` / `+1` with "4 / 10 Junior Rank hauls".
-- **Chapter checklist:** click to open an objective, right-click to mark it
-  done or not done.
+- **Chapter checklist:** click the ☐ box to mark an objective done or not
+  done, click the title to open it (right-click also toggles).
 - **⚙ menu:** show optional objectives (on by default), show outlaw content
-  (off by default), compact mode (current step only, for flying), reset this
-  objective, delete one of yours, reload guide files, open my guide folder,
-  reset all progress.
+  (off by default), compact mode (current step only, for flying), run setup
+  again, how to use, mark this chapter done, reset this objective, delete one
+  of yours, reload guide files, open my guide folder, reset all progress.
 - **SOURCES** opens the pages each objective's facts come from.
 - **+ ADD OBJECTIVE:** title, chapter, task or grind (with a target), why,
   and steps (one per line; `=>` adds the "done when" check).
@@ -113,7 +133,7 @@ game data or official sources, with the source listed.
 | `app_root()/leveling_guide_progress.json` | done, skipped, current step and counter per objective id |
 | `app_root()/leveling_guide_custom.json` | your objectives |
 | `app_root()/leveling_guide/*.json` | drop-in chapter files |
-| `config.json` → `modules.leveling_guide` | `show_optional`, `show_unlawful`, `compact`, `refresh_interval_seconds` (600) |
+| `config.json` → `modules.leveling_guide` | `show_optional`, `show_unlawful`, `compact`, `focus`, `setup_done`, `setup_dismissed`, `refresh_interval_seconds` (600) |
 
 Progress is keyed by objective id, so adding, removing or reordering content
 keeps it. Both files use `atomic_write_text` and corrupt-file quarantine,
@@ -129,7 +149,7 @@ retry"); the card never goes into its error state for it.
 
 ## Tests
 
-`tests/test_leveling_guide.py` (73 checks):
+`tests/test_leveling_guide.py` (96 checks):
 
 - **Bundled content:** loads with no errors, ids are unique, every objective
   has https sources and complete steps, and requirements resolve.
@@ -143,6 +163,9 @@ retry"); the card never goes into its error state for it.
 - **Maths:** level, prices and next-objective selection.
 - **Offscreen card walk-through:** steps, back, skip, counter, filters, compact
   mode, live price, a UEX failure, and a custom objective.
+- **Setup:** rank pickers, ticking from answers (including required
+  licenses), the focus filter, the wizard's answers, banner show and hide,
+  checklist box vs title clicks, and mark chapter done.
 
 ## Not done / next
 

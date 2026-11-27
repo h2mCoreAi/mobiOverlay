@@ -336,11 +336,87 @@ def test_card_prices_and_custom_objective() -> int:
     return 7
 
 
+def test_setup_logic() -> int:
+    guide = g.load_guide([BUNDLED])
+    ladders = dict(g.ladder_choices(guide))
+    assert [r for r, _ in ladders["Covalex"]] == ["Rookie", "Junior", "Member", "Experienced", "Senior", "Master"], ladders["Covalex"]
+    assert ladders["Bounty Hunters Guild"][0] == ("Probationary Guild Member", 1)
+    assert "Recco Battaglia" in ladders and "Foxwell Enforcement" in ladders
+
+    basics = g.ids_done_for(guide, True, {})
+    assert basics == {o.id for o in guide.chapter("first-steps").objectives}, basics
+    assert g.ids_done_for(guide, False, {}) == set()
+
+    # Guild Member: every BHG rank-up up to it, the licenses it required, and
+    # the basics they required, but nothing beyond it.
+    bhg = g.ids_done_for(guide, False, {"Bounty Hunters Guild": 10000})
+    for oid in ("bhg-training-permit", "bhg-junior", "bhg-beginner-permit", "bhg-guild-member", "fs-launch-own-ship"):
+        assert oid in bhg, oid
+    assert "bhg-tracker-license" not in bhg and "bhg-senior" not in bhg
+
+    covalex = g.ids_done_for(guide, False, {"Covalex": 5250})
+    assert {"haul-covalex-intro", "haul-covalex-junior", "haul-covalex-member"} <= covalex
+    assert "haul-covalex-experienced" not in covalex
+
+    # Focus hides other careers but never the basics.
+    salvage_only = frozenset({"salvage"})
+    nxt = g.next_objective(guide, set(), True, False, salvage_only)
+    assert nxt.id == "fs-pick-city", "basics stay visible under a focus filter"
+    assert g.is_visible(guide.get("salv-jr"), True, False, salvage_only)
+    assert not g.is_visible(guide.get("bhg-junior"), True, False, salvage_only)
+    after_basics = g.next_objective(guide, basics, True, False, salvage_only)
+    assert after_basics.id == "salv-adagio-intro", after_basics.id
+    return 12
+
+
+def test_card_setup_flow() -> int:
+    mod, module, card, d = _make_card()
+    assert module.setup_text.isVisibleTo(card) and module.setup_buttons.isVisibleTo(card), "banner shows on first run"
+
+    wizard = mod.SetupWizard(card, g.ladder_choices(module.guide), module.settings)
+    wizard.basics_radio.setChecked(True)
+    combo = wizard.rank_combos["Covalex"]
+    combo.setCurrentIndex(combo.findData(250))
+    wizard.career_checks["mining"].setChecked(False)
+    wizard.outlaw_check.setChecked(True)
+    for _ in range(3):
+        wizard._on_next()
+    assert wizard.next_btn.text() == "START GUIDE"
+    answers = wizard.values()
+    assert answers["knows_basics"] and answers["reached"] == {"Covalex": 250}
+    assert answers["focus"] == ["collection", "combat", "hauling", "salvage"] and answers["show_unlawful"]
+
+    marked = module.apply_setup(answers)
+    assert marked >= 8, marked
+    assert module.settings["setup_done"] and not module.setup_text.isVisibleTo(card), "banner hides after setup"
+    assert module.current_objective().id == "haul-covalex-member", module.current_objective().id
+    assert not g.is_visible(module.guide.get("recco-welcome"), *module._filters()), "mining hidden by focus"
+
+    # The checklist box toggles; the title opens.
+    module._on_row_clicked("haul-ling-intro", 5)
+    assert module.progress.is_done("haul-ling-intro")
+    module._on_row_clicked("haul-ling-intro", 120)
+    assert module.current_objective().id == "haul-ling-intro"
+    module._on_row_clicked("haul-ling-intro", 5)
+    assert not module.progress.is_done("haul-ling-intro")
+
+    module.mark_chapter_done("hauling")
+    hauling = module.guide.chapter("hauling").objectives
+    assert all(module.progress.is_done(o.id) for o in hauling if module._visible(o))
+
+    # "Not now" hides the banner without running setup.
+    mod2, fresh, card2, _ = _make_card()
+    fresh._dismiss_setup()
+    assert not fresh.setup_text.isVisibleTo(card2) and not fresh.settings["setup_done"]
+    return 11
+
+
 def run() -> int:
     total = 0
     for test in (test_bundled_content, test_grind_targets_match_verified_numbers, test_loader_survives_bad_content,
                  test_user_files_extend_chapters_and_custom_objectives, test_progress_store, test_maths_and_prices,
-                 test_card_walkthrough, test_card_prices_and_custom_objective):
+                 test_card_walkthrough, test_card_prices_and_custom_objective, test_setup_logic,
+                 test_card_setup_flow):
         total += test()
     return total
 

@@ -4242,3 +4242,16 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
     itself; single labels report their height correctly. The card calls
     `apply_size()` after each render because its height changes with the
     objective.
+
+- **2026-11-27 — mobiGuide first-run setup and ship goals.** Owner feedback:
+  the card started a veteran at "Wake up in a Stanton city" and its controls
+  weren't obvious. Added a four-page setup questionnaire (experience, ranks
+  already held, careers to focus on, how-to) offered by a dismissible card
+  banner rather than a popup at app start, which would interrupt the game.
+  Rank pickers and "already done" ticking are derived from the content's
+  `reputation` fields and `requires` graph, so new chapters need no wizard
+  changes. The career focus filter never hides untagged objectives (the
+  basics, your own). Clearer button labels and a visible ☐ box on checklist
+  rows. Added a Ship Goals chapter (six ships, roles and capacities from UEX
+  `vehicles`, live prices), placed last so it doesn't interrupt the linear
+  path.

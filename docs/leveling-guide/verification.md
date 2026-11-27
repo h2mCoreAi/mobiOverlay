@@ -77,6 +77,7 @@ All confirmed from each faction's `reputation_ladder` in the game data
 | 40 | Pitbull about 606,000 at Buy and Fly "Bloom or Terminus" (DeepSeek) | **Partly wrong** | 605,982 at Buy and Fly **Ruin Station, Checkmate, Orbituary** (UEX) |
 | 41 | Earnings per hour figures (all) | Not confirmed | community estimates; not in the guide |
 | 42 | 5.0 details (guild ranks, boards, multiplier) | Out of scope for v1 | PTU content; the guide covers live 4.10.3 |
+| 43 | Ship Goals chapter: Avenger Titan 8 SCU / 1 seat; Cutlass Black 46 SCU, up to 3 crew, tractor beam; Freelancer MAX 120 SCU; Prospector 1 seat mining; MOLE up to 5 crew; C2 Hercules 696 SCU, 1-2 crew (added by Claude) | **Confirmed** | UEX `vehicles`; all six have live UEX purchase listings |
 
 ## How grind counts are computed
 

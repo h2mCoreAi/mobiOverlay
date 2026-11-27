@@ -18,8 +18,9 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QMenu, QMessageBox, QProgressBar, QPushButton, QSpinBox,
+    QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
+    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
+    QProgressBar, QPushButton, QRadioButton, QSpinBox, QStackedWidget,
     QTextEdit, QVBoxLayout, QWidget,
 )
 
@@ -60,10 +61,10 @@ _CYAN_STYLE = theme.text_style(9, color=theme.ACCENT_CYAN, letter_spacing=1)
 _LEVEL_STYLE = theme.text_style(14, color=theme.ACCENT_AMBER, family=theme.FONT_DISPLAY, weight=900)
 # Scoped to the row's object name: an unscoped border rule on a container
 # would also draw a box around every label inside it.
-_STEP_STYLE = f"QLabel#lgRow {{ {theme.row_style('6px 8px')} {theme.text_style(10)} }}"
-_STEP_CURRENT_STYLE = f"QLabel#lgRow {{ {theme.row_style('6px 8px', theme.ACCENT_CYAN)} {theme.text_style(10)} }}"
-_ROW_STYLE = f"QLabel#lgRow {{ {theme.row_style('3px 6px')} {theme.text_style(9)} }}"
-_ROW_CURRENT_STYLE = f"QLabel#lgRow {{ {theme.row_style('3px 6px', theme.ACCENT_CYAN)} {theme.text_style(9)} }}"
+_STEP_STYLE = f"QLabel#lgRow {{ {theme.row_style('6px 8px')} {theme.text_style(10, color=theme.TEXT_PRIMARY)} }}"
+_STEP_CURRENT_STYLE = f"QLabel#lgRow {{ {theme.row_style('6px 8px', theme.ACCENT_CYAN)} {theme.text_style(10, color=theme.TEXT_PRIMARY)} }}"
+_ROW_STYLE = f"QLabel#lgRow {{ {theme.row_style('3px 6px')} {theme.text_style(9, color=theme.TEXT_PRIMARY)} }}"
+_ROW_CURRENT_STYLE = f"QLabel#lgRow {{ {theme.row_style('3px 6px', theme.ACCENT_CYAN)} {theme.text_style(9, color=theme.TEXT_PRIMARY)} }}"
 _ACTION_BTN = theme.action_btn_style()
 _PRIMARY_BTN = f"""
     QPushButton {{
@@ -207,6 +208,166 @@ class AddObjectiveDialog(QDialog):
         }
 
 
+HOW_TO_HTML = """
+<p><b>Follow the highlighted step.</b> Do it in the game, then press
+<b>I DID THIS STEP</b>. The <b>DONE WHEN</b> line tells you how to know it worked.</p>
+<p><b>Grinds</b> (repeat contracts): press <b>+1</b> after each one. The target is
+an estimate; finish the objective when its DONE WHEN check is true.</p>
+<p><b>Move around:</b> pick a chapter at the top or click any objective in the
+checklist. <b>NEXT &#9656;</b> goes back to the guide's next objective.</p>
+<p><b>Already done something?</b> Click its box in the checklist, or use
+&#9881; &rarr; <i>Mark this chapter done</i>.</p>
+<p><b>SKIP</b> moves on without XP; the objective stays unticked.</p>
+<p><b>Flying?</b> &#9881; &rarr; <i>Compact mode</i> shows only the current step.</p>
+<p><b>Your own goals:</b> + ADD OBJECTIVE.</p>
+<p>mobiGuide never reads the game. It only knows what you tick.</p>
+"""
+
+_CAREERS = (
+    ("hauling", "Hauling and cargo"),
+    ("combat", "Bounty hunting and combat"),
+    ("salvage", "Salvage"),
+    ("mining", "Mining"),
+    ("collection", "Collecting (Wikelo trades)"),
+)
+
+
+class SetupWizard(QDialog):
+    """First-run questionnaire: what you already know, what ranks you
+    already hold, and what you want the guide to show. Ends on the how-to
+    page. Everything it sets can be changed later from the card's menu."""
+
+    def __init__(self, parent, ladders, settings: dict):
+        super().__init__(parent)
+        self.setWindowTitle("mobiGuide setup")
+        self.setMinimumWidth(440)
+        outer = QVBoxLayout(self)
+        self.step_label = _label("", _CYAN_STYLE, wrap=False)
+        outer.addWidget(self.step_label)
+        self.pages = QStackedWidget()
+        outer.addWidget(self.pages, stretch=1)
+
+        # 1. experience
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.addWidget(_label("Welcome to mobiGuide", _TITLE_STYLE))
+        lay.addWidget(_label(
+            "A step-by-step guide through Star Citizen's careers, like a leveling guide. "
+            "Four quick pages set it up for where you are now.", _MUTED_STYLE))
+        lay.addWidget(_label("How much have you played?", _BODY_STYLE))
+        self.new_radio = QRadioButton("I'm new: start from waking up in a city")
+        self.basics_radio = QRadioButton("I know the basics: flying, landing and taking contracts")
+        group = QButtonGroup(self)
+        for r in (self.new_radio, self.basics_radio):
+            r.setStyleSheet(_BODY_STYLE)
+            group.addButton(r)
+            lay.addWidget(r)
+        self.new_radio.setChecked(True)
+        lay.addStretch()
+        self.pages.addWidget(page)
+
+        # 2. ranks already held
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.addWidget(_label("Where are you already?", _TITLE_STYLE))
+        lay.addWidget(_label(
+            "Pick the rank you already hold with each group. Everything up to it is "
+            "ticked off for you. Not sure? Leave it at Not started; you can tick things "
+            "off later.", _MUTED_STYLE))
+        grid = QGridLayout()
+        self.rank_combos: dict[str, QComboBox] = {}
+        for row, (faction, ranks) in enumerate(ladders):
+            grid.addWidget(_label(faction, _BODY_STYLE, wrap=False), row, 0)
+            combo = QComboBox()
+            combo.setStyleSheet(_COMBO_STYLE)
+            combo.addItem("Not started", None)
+            for rank, points in ranks:
+                combo.addItem(f"{rank} ({points:,})", points)
+            grid.addWidget(combo, row, 1)
+            self.rank_combos[faction] = combo
+        lay.addLayout(grid)
+        lay.addStretch()
+        self.pages.addWidget(page)
+
+        # 3. focus and display
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.addWidget(_label("What do you want to do?", _TITLE_STYLE))
+        lay.addWidget(_label("Untick careers you don't care about. They are hidden, not deleted.", _MUTED_STYLE))
+        focus = set(settings.get("focus") or [])
+        self.career_checks: dict[str, QCheckBox] = {}
+        for tag, text in _CAREERS:
+            box = QCheckBox(text)
+            box.setStyleSheet(_BODY_STYLE)
+            box.setChecked(not focus or tag in focus)
+            self.career_checks[tag] = box
+            lay.addWidget(box)
+        lay.addSpacing(6)
+        self.outlaw_check = QCheckBox("Include outlaw (illegal) work")
+        self.optional_check = QCheckBox("Show optional side objectives")
+        self.compact_check = QCheckBox("Compact mode: only the current step (good while flying)")
+        self.outlaw_check.setChecked(bool(settings.get("show_unlawful")))
+        self.optional_check.setChecked(bool(settings.get("show_optional", True)))
+        self.compact_check.setChecked(bool(settings.get("compact")))
+        for box in (self.outlaw_check, self.optional_check, self.compact_check):
+            box.setStyleSheet(_BODY_STYLE)
+            lay.addWidget(box)
+        lay.addStretch()
+        self.pages.addWidget(page)
+
+        # 4. how to use
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.addWidget(_label("How to use it", _TITLE_STYLE))
+        how = _label(HOW_TO_HTML, _BODY_STYLE)
+        how.setTextFormat(Qt.RichText)
+        lay.addWidget(how)
+        lay.addStretch()
+        self.pages.addWidget(page)
+
+        buttons = QHBoxLayout()
+        self.cancel_btn = _button("CANCEL")
+        self.back_btn = _button("◀ BACK", tooltip="Go back one step")
+        self.next_btn = _button("NEXT ▸", _PRIMARY_BTN)
+        buttons.addWidget(self.cancel_btn)
+        buttons.addStretch()
+        buttons.addWidget(self.back_btn)
+        buttons.addWidget(self.next_btn)
+        for b in (self.cancel_btn, self.back_btn, self.next_btn):
+            b.setMinimumWidth(100)
+        outer.addLayout(buttons)
+        self.cancel_btn.clicked.connect(self.reject)
+        self.back_btn.clicked.connect(lambda: self.go(self.pages.currentIndex() - 1))
+        self.next_btn.clicked.connect(self._on_next)
+        self.go(0)
+
+    def go(self, index: int):
+        index = max(0, min(index, self.pages.count() - 1))
+        self.pages.setCurrentIndex(index)
+        last = index == self.pages.count() - 1
+        self.back_btn.setEnabled(index > 0)
+        self.next_btn.setText("START GUIDE" if last else "NEXT ▸")
+        self.step_label.setText(f"SETUP  {index + 1} / {self.pages.count()}")
+
+    def _on_next(self):
+        if self.pages.currentIndex() == self.pages.count() - 1:
+            self.accept()
+        else:
+            self.go(self.pages.currentIndex() + 1)
+
+    def values(self) -> dict:
+        chosen = {tag for tag, box in self.career_checks.items() if box.isChecked()}
+        return {
+            "knows_basics": self.basics_radio.isChecked(),
+            "reached": {f: c.currentData() for f, c in self.rank_combos.items() if c.currentData() is not None},
+            # Everything ticked means no filter, so careers added later show up too.
+            "focus": [] if len(chosen) == len(self.career_checks) else sorted(chosen),
+            "show_unlawful": self.outlaw_check.isChecked(),
+            "show_optional": self.optional_check.isChecked(),
+            "compact": self.compact_check.isChecked(),
+        }
+
+
 class LevelingGuideModule(ModuleBase):
     module_id = "leveling_guide"
     display_name = (
@@ -219,6 +380,8 @@ class LevelingGuideModule(ModuleBase):
         self.settings.setdefault("show_optional", True)
         self.settings.setdefault("show_unlawful", False)
         self.settings.setdefault("compact", False)
+        self.settings.setdefault("focus", [])
+        self.settings.setdefault("setup_done", False)
         self.settings.setdefault("refresh_interval_seconds", 600)
         self.progress = progress or progress_mod.ProgressStore()
         self.custom = custom or progress_mod.CustomObjectives()
@@ -237,8 +400,9 @@ class LevelingGuideModule(ModuleBase):
     def reload_guide(self):
         self.guide = guide_mod.load_guide(self._guide_dirs, self.custom.path)
 
-    def _filters(self) -> tuple[bool, bool]:
-        return bool(self.settings.get("show_optional")), bool(self.settings.get("show_unlawful"))
+    def _filters(self) -> tuple[bool, bool, frozenset]:
+        return (bool(self.settings.get("show_optional")), bool(self.settings.get("show_unlawful")),
+                frozenset(self.settings.get("focus") or []))
 
     def _visible(self, obj) -> bool:
         return guide_mod.is_visible(obj, *self._filters())
@@ -287,6 +451,27 @@ class LevelingGuideModule(ModuleBase):
         self.menu_btn.clicked.connect(self._show_menu)
         top.addWidget(self.menu_btn)
         layout.addLayout(top)
+
+        # -- first-run banner: one plain label plus a button row, so it
+        # sizes reliably (see _step_widget).
+        self.setup_text = QLabel(
+            "<b>New to mobiGuide?</b> A one-minute setup ticks off what you've already "
+            "done and picks what to show.")
+        self.setup_text.setObjectName("lgRow")
+        self.setup_text.setTextFormat(Qt.RichText)
+        self.setup_text.setWordWrap(True)
+        self.setup_text.setStyleSheet(_STEP_CURRENT_STYLE)
+        layout.addWidget(self.setup_text)
+        self.setup_buttons = QWidget()
+        sb = QHBoxLayout(self.setup_buttons)
+        sb.setContentsMargins(0, 0, 0, 0)
+        self.setup_btn = _button("START SETUP", _PRIMARY_BTN)
+        self.setup_btn.clicked.connect(self.run_setup)
+        sb.addWidget(self.setup_btn, stretch=2)
+        self.setup_later_btn = _button("NOT NOW", tooltip="Setup stays in the ⚙ menu")
+        self.setup_later_btn.clicked.connect(self._dismiss_setup)
+        sb.addWidget(self.setup_later_btn, stretch=1)
+        layout.addWidget(self.setup_buttons)
 
         # -- chapter picker -------------------------------------------------
         chap_row = QHBoxLayout()
@@ -346,10 +531,10 @@ class LevelingGuideModule(ModuleBase):
         self.back_btn = _button("◀ BACK")
         self.back_btn.clicked.connect(self._on_back)
         actions.addWidget(self.back_btn)
-        self.step_btn = _button("✓ STEP DONE", _PRIMARY_BTN)
+        self.step_btn = _button("✓ I DID THIS STEP", _PRIMARY_BTN, "Mark the highlighted step done")
         self.step_btn.clicked.connect(self._on_step_done)
         actions.addWidget(self.step_btn, stretch=2)
-        self.skip_btn = _button("SKIP", tooltip="Move on without marking this done")
+        self.skip_btn = _button("SKIP", tooltip="Skip this objective for now (no XP). It stays unticked.")
         self.skip_btn.clicked.connect(self._on_skip)
         actions.addWidget(self.skip_btn)
         layout.addLayout(actions)
@@ -398,10 +583,13 @@ class LevelingGuideModule(ModuleBase):
     def render(self):
         if not hasattr(self, "title_label"):
             return
-        show_opt, show_unl = self._filters()
+        show_opt, show_unl, focus = self._filters()
         done = self.progress.done_ids()
         passed = self.progress.passed_ids()
         compact = bool(self.settings.get("compact"))
+        show_banner = not self.settings.get("setup_done") and not self.settings.get("setup_dismissed")
+        self.setup_text.setVisible(show_banner)
+        self.setup_buttons.setVisible(show_banner)
 
         level, into, need = guide_mod.level_for_xp(guide_mod.total_xp(self.guide, done))
         self.level_label.setText(f"LVL {level}")
@@ -417,7 +605,7 @@ class LevelingGuideModule(ModuleBase):
         self.chapter_combo.blockSignals(True)
         self.chapter_combo.clear()
         for c in self.guide.chapters:
-            d, t = guide_mod.chapter_progress(c, done, show_opt, show_unl)
+            d, t = guide_mod.chapter_progress(c, done, show_opt, show_unl, focus)
             if t == 0:
                 continue
             mark = "✓ " if d == t else ""
@@ -502,11 +690,11 @@ class LevelingGuideModule(ModuleBase):
         self.back_btn.setEnabled(step_index > 0 and not is_done)
         self.step_btn.setEnabled(True)
         if is_done:
-            self.step_btn.setText("↺ UNDO DONE")
+            self.step_btn.setText("↺ NOT DONE YET")
         elif last:
-            self.step_btn.setText("✓ COMPLETE")
+            self.step_btn.setText("✓ FINISH OBJECTIVE")
         else:
-            self.step_btn.setText("✓ STEP DONE")
+            self.step_btn.setText("✓ I DID THIS STEP")
         self.skip_btn.setEnabled(not is_done)
         self.sources_btn.setEnabled(bool(obj.sources))
         self._render_list(chapter if not compact else None)
@@ -552,22 +740,20 @@ class LevelingGuideModule(ModuleBase):
             if not self._visible(obj):
                 continue
             is_current = current is not None and obj.id == current.id
-            if obj.id in done:
-                mark, color = "✓", theme.TEXT_DIM
-            elif obj.id in passed:
-                mark, color = "–", theme.TEXT_DIM
-            else:
-                mark, color = ("▸" if is_current else "○"), theme.TEXT_PRIMARY
-            row = QLabel(f'<span style="color:{color};">{mark} {escape(obj.title)}</span>')
+            mark = "☑" if obj.id in done else "☐"
+            color = theme.TEXT_DIM if obj.id in passed else theme.TEXT_PRIMARY
+            box_color = theme.ACCENT_CYAN if obj.id in done else theme.TEXT_MUTED
+            row = QLabel(f'<span style="color:{box_color};">{mark}</span> '
+                         f'<span style="color:{color};">{escape(obj.title)}</span>')
             row.setObjectName("lgRow")
             row.setTextFormat(Qt.RichText)
             row.setWordWrap(True)
             row.setTextInteractionFlags(Qt.NoTextInteraction)
             row.setCursor(Qt.PointingHandCursor)
-            row.setToolTip("Click to open. Right-click to mark done or not done.")
+            row.setToolTip("Click the box to mark done or not done. Click the title to open it.")
             row.setStyleSheet(_ROW_CURRENT_STYLE if is_current else _ROW_STYLE)
-            row.mousePressEvent = lambda event, oid=obj.id: (
-                self._toggle_done(oid) if event.button() == Qt.RightButton else self._view(oid))
+            row.mousePressEvent = lambda event, oid=obj.id: self._on_row_clicked(
+                oid, event.position().x(), event.button() == Qt.RightButton)
             self.list_layout.addWidget(row)
 
     def _render_problems(self):
@@ -676,8 +862,12 @@ class LevelingGuideModule(ModuleBase):
             act.setChecked(bool(self.settings.get(key)))
             act.toggled.connect(lambda on, k=key: self._set_option(k, on))
         menu.addSeparator()
+        menu.addAction("Run setup again…").triggered.connect(self.run_setup)
+        menu.addAction("How to use mobiGuide").triggered.connect(self.show_how_to)
+        menu.addSeparator()
         obj = self.current_objective()
         if obj is not None:
+            menu.addAction("Mark this chapter done").triggered.connect(lambda: self.mark_chapter_done(obj.chapter_id))
             menu.addAction("Reset this objective").triggered.connect(lambda: self._reset_objective(obj.id))
             if obj.custom:
                 menu.addAction("Delete this objective (yours)").triggered.connect(lambda: self._delete_custom(obj.id))
@@ -692,6 +882,58 @@ class LevelingGuideModule(ModuleBase):
         self._save_settings()
         self._viewing = None
         self.render()
+
+    # -- setup and help -------------------------------------------------
+    ROW_BOX_WIDTH = 26  # px from a checklist row's left edge that count as its box
+
+    def _on_row_clicked(self, oid: str, x: float, right_button: bool = False):
+        if right_button or x <= self.ROW_BOX_WIDTH:
+            self._toggle_done(oid)
+        else:
+            self._view(oid)
+
+    def run_setup(self):
+        wizard = SetupWizard(self.card, guide_mod.ladder_choices(self.guide), self.settings)
+        if wizard.exec() == QDialog.Accepted:
+            self.apply_setup(wizard.values())
+
+    def apply_setup(self, answers: dict) -> int:
+        """Apply questionnaire answers; returns how many objectives it ticked."""
+        to_mark = guide_mod.ids_done_for(self.guide, bool(answers.get("knows_basics")),
+                                         answers.get("reached") or {})
+        marked = 0
+        for oid in sorted(to_mark):
+            if not self.progress.is_done(oid):
+                self.progress.set_done(oid, True)
+                marked += 1
+        for key in ("focus", "show_unlawful", "show_optional", "compact"):
+            if key in answers:
+                self.settings[key] = answers[key]
+        self.settings["setup_done"] = True
+        self._save_settings()
+        self._advance()
+        return marked
+
+    def _dismiss_setup(self):
+        self.settings["setup_dismissed"] = True
+        self._save_settings()
+        self.render()
+
+    def show_how_to(self):
+        box = QMessageBox(self.card)
+        box.setWindowTitle("How to use mobiGuide")
+        box.setTextFormat(Qt.RichText)
+        box.setText(HOW_TO_HTML)
+        box.exec()
+
+    def mark_chapter_done(self, chapter_id: str):
+        chapter = self.guide.chapter(chapter_id)
+        if chapter is None:
+            return
+        for obj in chapter.objectives:
+            if self._visible(obj) and not self.progress.is_done(obj.id):
+                self.progress.set_done(obj.id, True)
+        self._advance()
 
     def _reset_objective(self, oid: str):
         self.progress.reset(oid)

@@ -21,6 +21,11 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 KINDS = ("task", "rank", "grind", "purchase")
+# Career tags the setup questionnaire's "focus" filter works on. An objective
+# with none of these (the basics, your own objectives) is never hidden by it.
+CAREER_TAGS = ("hauling", "combat", "salvage", "mining", "collection")
+# Tag on the objectives a player who already knows how to play can skip.
+BASICS_TAG = "basics"
 CUSTOM_CHAPTER_ID = "my-objectives"
 CUSTOM_CHAPTER_TITLE = "My Objectives"
 
@@ -277,11 +282,19 @@ def _check_requires(guide: Guide) -> None:
 # ---------------------------------------------------------------------------
 # Filtering, progress maths and live prices
 # ---------------------------------------------------------------------------
-def is_visible(obj: Objective, show_optional: bool, show_unlawful: bool) -> bool:
+def is_visible(obj: Objective, show_optional: bool, show_unlawful: bool,
+               focus: frozenset[str] | set[str] = frozenset()) -> bool:
+    """`focus` is a set of career tags (see CAREER_TAGS) the player chose in
+    setup. Empty means everything. Objectives with no career tag (the basics,
+    your own) always show."""
     if obj.optional and not show_optional:
         return False
     if obj.unlawful and not show_unlawful:
         return False
+    if focus:
+        careers = {t for t in obj.tags if t in CAREER_TAGS}
+        if careers and not careers & set(focus):
+            return False
     return True
 
 
@@ -289,12 +302,13 @@ def is_unlocked(obj: Objective, done_ids: set[str]) -> bool:
     return all(r in done_ids for r in obj.requires)
 
 
-def next_objective(guide: Guide, done_ids: set[str], show_optional: bool, show_unlawful: bool) -> Objective | None:
+def next_objective(guide: Guide, done_ids: set[str], show_optional: bool, show_unlawful: bool,
+                   focus: frozenset[str] | set[str] = frozenset()) -> Objective | None:
     """The first visible, unfinished objective in guide order whose
     requirements are done; if every remaining one is locked, the first
     visible unfinished one."""
     remaining = [o for o in guide.objectives
-                 if o.id not in done_ids and is_visible(o, show_optional, show_unlawful)]
+                 if o.id not in done_ids and is_visible(o, show_optional, show_unlawful, focus)]
     for obj in remaining:
         if is_unlocked(obj, done_ids):
             return obj
@@ -316,8 +330,9 @@ def total_xp(guide: Guide, done_ids: set[str]) -> int:
     return sum(o.xp for o in guide.objectives if o.id in done_ids)
 
 
-def chapter_progress(chapter: Chapter, done_ids: set[str], show_optional: bool, show_unlawful: bool) -> tuple[int, int]:
-    visible = [o for o in chapter.objectives if is_visible(o, show_optional, show_unlawful)]
+def chapter_progress(chapter: Chapter, done_ids: set[str], show_optional: bool, show_unlawful: bool,
+                     focus: frozenset[str] | set[str] = frozenset()) -> tuple[int, int]:
+    visible = [o for o in chapter.objectives if is_visible(o, show_optional, show_unlawful, focus)]
     return sum(1 for o in visible if o.id in done_ids), len(visible)
 
 
@@ -338,3 +353,59 @@ def contracts_needed(points_needed: int, rep_per_contract: int) -> int:
     if rep_per_contract <= 0:
         raise ValueError("rep_per_contract must be positive")
     return max(1, math.ceil(points_needed / rep_per_contract))
+
+
+# ---------------------------------------------------------------------------
+# Setup questionnaire: turn "where are you already?" answers into progress
+# ---------------------------------------------------------------------------
+def ladder_choices(guide: Guide) -> list[tuple[str, list[tuple[str, int]]]]:
+    """Each faction the guide has rank-up objectives for, with the ranks it
+    covers in ascending order: [(faction, [(rank, points), ...]), ...], in
+    the order the factions first appear in the guide. Built from content, so
+    new chapters show up in the questionnaire automatically."""
+    order: list[str] = []
+    ranks: dict[str, dict[str, int]] = {}
+    for obj in guide.objectives:
+        rep = obj.reputation
+        if not rep or not isinstance(rep.get("points"), int):
+            continue
+        faction = rep["faction"]
+        if faction not in ranks:
+            order.append(faction)
+            ranks[faction] = {}
+        ranks[faction][rep["rank"]] = rep["points"]
+    return [(f, sorted(ranks[f].items(), key=lambda kv: kv[1])) for f in order]
+
+
+def ancestors(guide: Guide, objective_ids: set[str]) -> set[str]:
+    """Every objective the given ones require, directly or indirectly."""
+    by_id = {o.id: o for o in guide.objectives}
+    out: set[str] = set()
+    stack = list(objective_ids)
+    while stack:
+        obj = by_id.get(stack.pop())
+        if obj is None:
+            continue
+        for req in obj.requires:
+            if req not in out:
+                out.add(req)
+                stack.append(req)
+    return out
+
+
+def ids_done_for(guide: Guide, knows_basics: bool, reached: dict[str, int]) -> set[str]:
+    """Objectives to mark done from setup answers. `reached` maps a faction
+    to the reputation points of the rank the player already holds. A rank-up
+    objective at or below that is done, and so is everything it requires
+    (you can't be a Guild Member without the earlier licenses)."""
+    done = set()
+    if knows_basics:
+        done |= {o.id for o in guide.objectives if BASICS_TAG in o.tags}
+    for obj in guide.objectives:
+        rep = obj.reputation
+        if not rep or not isinstance(rep.get("points"), int):
+            continue
+        have = reached.get(rep["faction"])
+        if have is not None and rep["points"] <= have:
+            done.add(obj.id)
+    return done | ancestors(guide, done)
