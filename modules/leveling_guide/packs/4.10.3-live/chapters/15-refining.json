@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "refining",
+    "title": "Refining",
+    "order": 68,
+    "patch": "4.10.3",
+    "categories": ["refining", "mining"],
+    "summary": "Mined ore goes to a refinery, not a regular commodity terminal."
+  },
+  "objectives": [
+    {
+      "id": "refine-first-load",
+      "title": "Take your first load of ore to a refinery",
+      "kind": "task",
+      "tags": ["solo", "lawful"],
+      "why": "Unrefined commodities such as mined ore can't be sold at regular commodity terminals; they go to a refinery for processing. Refineries are found at major spaceports and stations.",
+      "requires": ["mine-first-rock"],
+      "steps": [
+        {"do": "Choose a refinery. mobiOverlay's Refinery Finder card compares refineries and methods from live UEX data.", "done_when": "You've picked where to refine."},
+        {"do": "Fly there and land legally (request landing).", "where": "A station or major spaceport with a refinery", "done_when": "You're landed at the refinery's location."},
+        {"do": "Hand your ore to the refinery for processing.", "where": "The refinery", "done_when": "The refinery has taken your ore."}
+      ],
+      "sources": [
+        "https://support.robertsspaceindustries.com/hc/en-us/articles/360034785754-Commodities",
+        "https://support.robertsspaceindustries.com/hc/en-us/articles/360007611573-Mining-Basics"
+      ]
+    }
+  ]
+}

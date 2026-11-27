@@ -1,0 +1,306 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "advanced-careers",
+    "title": "Advanced Careers: Master Hauler and Guild Steward",
+    "order": 80,
+    "patch": "4.10.3",
+    "summary": "The long climbs: Covalex to Master, the Bounty Hunters Guild to Guild Steward.",
+    "categories": [
+      "hauling",
+      "bounty-hunting"
+    ]
+  },
+  "objectives": [
+    {
+      "id": "haul-covalex-experienced",
+      "title": "Reach Covalex Experienced (27,750 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 23,
+        "unit": "Member Rank hauls"
+      },
+      "tags": [
+        "solo",
+        "lawful",
+        "hauling"
+      ],
+      "why": "Member Rank hauls give 1,000 reputation each. Experienced opens Large hauls.",
+      "reward": "About 84,000-101,000 aUEC per haul",
+      "reputation": {
+        "faction": "Covalex",
+        "ladder": "Hauling",
+        "rank": "Experienced",
+        "points": 27750
+      },
+      "requires": [
+        "haul-covalex-member"
+      ],
+      "steps": [
+        {
+          "do": "Take Covalex \"Member Rank\" hauls. Count each one here.",
+          "done_when": "\"Experienced Rank\" hauls, including Large Cargo Hauls, are offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/ato-b-processed-stims-interstellar-supply-grade",
+        "https://api.star-citizen.wiki/missions/multi2to-single-waste-waste-stanton-bulk-grade"
+      ]
+    },
+    {
+      "id": "haul-covalex-senior",
+      "title": "Reach Covalex Senior (77,750 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 25,
+        "unit": "Experienced Rank hauls"
+      },
+      "tags": [
+        "lawful",
+        "hauling"
+      ],
+      "why": "Experienced Rank hauls give 2,000 reputation each and pay about 116,000-248,000 aUEC.",
+      "reward": "About 116,000-248,000 aUEC per haul",
+      "reputation": {
+        "faction": "Covalex",
+        "ladder": "Hauling",
+        "rank": "Senior",
+        "points": 77750
+      },
+      "requires": [
+        "haul-covalex-experienced"
+      ],
+      "steps": [
+        {
+          "do": "Take Covalex \"Experienced Rank\" hauls. Count each one here.",
+          "done_when": "\"Senior Rank\" hauls are offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/multi3to-single-waste-waste-stanton-bulk-grade"
+      ]
+    },
+    {
+      "id": "haul-covalex-master",
+      "title": "Reach Covalex Master (237,750 rep)",
+      "kind": "grind",
+      "optional": true,
+      "goal": {
+        "target": 40,
+        "unit": "Senior Rank hauls"
+      },
+      "tags": [
+        "lawful",
+        "hauling"
+      ],
+      "why": "Senior Rank hauls give 4,000 reputation each and pay about 209,000-712,000 aUEC.",
+      "reward": "About 209,000-712,000 aUEC per haul",
+      "reputation": {
+        "faction": "Covalex",
+        "ladder": "Hauling",
+        "rank": "Master",
+        "points": 237750
+      },
+      "requires": [
+        "haul-covalex-senior"
+      ],
+      "steps": [
+        {
+          "do": "Take Covalex \"Senior Rank\" hauls. Count each one here.",
+          "done_when": "\"Master Rank\" hauls are offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/single-to-multi3-gas-hydrogen-stanton-bulk-grade"
+      ]
+    },
+    {
+      "id": "bhg-senior",
+      "title": "Reach Senior Guild Member (40,000 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 15,
+        "unit": "MRT bounties"
+      },
+      "tags": [
+        "lawful",
+        "combat"
+      ],
+      "why": "MRT bounties give 2,000 Guild reputation each.",
+      "reputation": {
+        "faction": "Bounty Hunters Guild",
+        "ladder": "BountyHunter_BountyHuntersGuild",
+        "rank": "Senior Guild Member",
+        "points": 40000
+      },
+      "requires": [
+        "bhg-tracker-license"
+      ],
+      "steps": [
+        {
+          "do": "Take MRT bounties. Count each kill here.",
+          "done_when": "\"Journeyman Tracker License Certification\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/journeyman-tracker-license-certification"
+      ],
+      "contracts": [
+        "Journeyman Tracker License Certification"
+      ]
+    },
+    {
+      "id": "bhg-journeyman",
+      "title": "\"Journeyman Tracker License Certification\"",
+      "kind": "task",
+      "tags": [
+        "lawful",
+        "combat"
+      ],
+      "why": "Unlocks High Risk Target (HRT) bounties.",
+      "cost": "5,000 aUEC",
+      "requires": [
+        "bhg-senior"
+      ],
+      "steps": [
+        {
+          "do": "Accept the certification, pay the fee and complete its target.",
+          "done_when": "HRT bounties start to appear."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/journeyman-tracker-license-certification"
+      ],
+      "contracts": [
+        "Journeyman Tracker License Certification"
+      ]
+    },
+    {
+      "id": "bhg-veteran",
+      "title": "Reach Veteran Guild Member (200,000 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 40,
+        "unit": "HRT bounties"
+      },
+      "tags": [
+        "lawful",
+        "combat"
+      ],
+      "why": "HRT bounties give 4,000 Guild reputation each.",
+      "reputation": {
+        "faction": "Bounty Hunters Guild",
+        "ladder": "BountyHunter_BountyHuntersGuild",
+        "rank": "Veteran Guild Member",
+        "points": 200000
+      },
+      "requires": [
+        "bhg-journeyman"
+      ],
+      "steps": [
+        {
+          "do": "Take HRT bounties. Count each kill here.",
+          "done_when": "\"Advanced Tracker License Certification\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/wanted-target-name-hrt"
+      ],
+      "contracts": [
+        "Advanced Tracker License Certification"
+      ]
+    },
+    {
+      "id": "bhg-advanced",
+      "title": "\"Advanced Tracker License Certification\"",
+      "kind": "task",
+      "tags": [
+        "lawful",
+        "combat"
+      ],
+      "why": "Unlocks Very High Risk Target (VHRT) bounties.",
+      "cost": "10,000 aUEC",
+      "reward": "175,000 aUEC (Stanton version)",
+      "requires": [
+        "bhg-veteran"
+      ],
+      "steps": [
+        {
+          "do": "Accept the certification, pay the fee and complete its target.",
+          "done_when": "VHRT bounties start to appear."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/advanced-tracker-license-certification-2"
+      ],
+      "contracts": [
+        "Advanced Tracker License Certification"
+      ]
+    },
+    {
+      "id": "bhg-steward",
+      "title": "Reach Guild Steward (480,000 rep)",
+      "kind": "grind",
+      "optional": true,
+      "goal": {
+        "target": 35,
+        "unit": "VHRT bounties"
+      },
+      "tags": [
+        "lawful",
+        "combat"
+      ],
+      "why": "VHRT bounties give 8,000 Guild reputation each.",
+      "reputation": {
+        "faction": "Bounty Hunters Guild",
+        "ladder": "BountyHunter_BountyHuntersGuild",
+        "rank": "Guild Steward",
+        "points": 480000
+      },
+      "requires": [
+        "bhg-advanced"
+      ],
+      "steps": [
+        {
+          "do": "Take VHRT bounties. Count each kill here.",
+          "done_when": "\"Master Tracker License Certification\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/master-tracker-license-certification-2"
+      ],
+      "contracts": [
+        "Master Tracker License Certification"
+      ]
+    },
+    {
+      "id": "bhg-master",
+      "title": "\"Master Tracker License Certification\"",
+      "kind": "task",
+      "optional": true,
+      "tags": [
+        "lawful",
+        "combat"
+      ],
+      "why": "The top license: Extreme Risk Target (ERT) bounties, 16,000 Guild reputation each.",
+      "cost": "25,000 aUEC",
+      "reward": "25,000 aUEC (Stanton version)",
+      "requires": [
+        "bhg-steward"
+      ],
+      "steps": [
+        {
+          "do": "Accept the certification, pay the fee and complete its target.",
+          "done_when": "ERT bounties start to appear."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/master-tracker-license-certification-2",
+        "https://api.star-citizen.wiki/missions/active-bounty-target-name-ert"
+      ],
+      "contracts": [
+        "Master Tracker License Certification"
+      ]
+    }
+  ]
+}

@@ -1,10 +1,13 @@
 """mobiGuide: a WoW-style leveling guide for Star Citizen. One objective at a
-time, step by step, checked off by hand; chapters, a level/XP bar, grind
-counters, and objectives you can add yourself.
+time, step by step, checked off by hand; per-patch guide packs, categories
+for every part of the game, a level/XP bar, reputation tracking with the
+best repeatable contracts for each rank, goals (rank, aUEC or a ship), and
+objectives you can add yourself.
 
-Content is data (guide.py loads JSON chapter files), progress is a local
-file (progress.py). The only network call is UEX's ship purchase prices for
-"buy a ship" objectives, run off the GUI thread through refresh_job().
+Content is data (guide.py loads patch packs; contracts.py reads each pack's
+contract catalog), progress is a local file (progress.py). The only network
+call is UEX's ship purchase prices, run off the GUI thread through
+refresh_job().
 No Game.log reading and no game input: completion is always manual.
 See docs/modules/leveling-guide.md.
 """
@@ -18,8 +21,8 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
+    QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+    QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox,
     QProgressBar, QPushButton, QRadioButton, QSpinBox, QStackedWidget,
     QTextEdit, QVBoxLayout, QWidget,
 )
@@ -42,8 +45,10 @@ def _load_sibling(name: str):
 
 guide_mod = _load_sibling("guide")
 progress_mod = _load_sibling("progress")
+contracts_mod = _load_sibling("contracts")
+packio_mod = _load_sibling("packio")
 
-BUNDLED_GUIDES = os.path.join(os.path.dirname(__file__), "guides")
+BUNDLED_PACKS = os.path.join(os.path.dirname(__file__), "packs")
 PRICE_MAX_AGE_S = 30 * 60
 KIND_LABELS = {"task": "TASK", "rank": "RANK UP", "grind": "GRIND", "purchase": "BUY"}
 
@@ -209,51 +214,56 @@ class AddObjectiveDialog(QDialog):
 
 
 HOW_TO_HTML = """
-<p><b>Follow the highlighted step.</b> Do it in the game, then press
+<p><b>Pick your game version and a category</b> at the top. Packs exist per
+patch; categories cover hauling, mining, salvage, combat and more.</p>
+<p><b>GUIDE:</b> follow the highlighted step, do it in game, press
 <b>I DID THIS STEP</b>. The <b>DONE WHEN</b> line tells you how to know it worked.</p>
-<p><b>Grinds</b> (repeat contracts): press <b>+1</b> after each one. The target is
-an estimate; finish the objective when its DONE WHEN check is true.</p>
-<p><b>Move around:</b> pick a chapter at the top or click any objective in the
-checklist. <b>NEXT &#9656;</b> goes back to the guide's next objective.</p>
-<p><b>Already done something?</b> Click its box in the checklist, or use
-&#9881; &rarr; <i>Mark this chapter done</i>.</p>
-<p><b>SKIP</b> moves on without XP; the objective stays unticked.</p>
+<p><b>Rank-ups:</b> the card shows your reputation and the best repeatable
+contracts for it. Click a contract when you finish one; your reputation and
+earnings update. <b>SET</b> corrects the number to what the game shows.</p>
+<p><b>CONTRACTS:</b> set a goal (a rank, an amount of aUEC, or a ship) and the
+card lists the contracts that get you there fastest, with how many runs are left.</p>
+<p><b>Already done something?</b> Click its box in the checklist, or
+&#9881; &rarr; <i>Mark this chapter done</i>. <b>SKIP</b> moves on without XP.</p>
 <p><b>Flying?</b> &#9881; &rarr; <i>Compact mode</i> shows only the current step.</p>
-<p><b>Your own goals:</b> + ADD OBJECTIVE.</p>
-<p>mobiGuide never reads the game. It only knows what you tick.</p>
+<p>Objectives marked <b>CHECKED ON &lt;patch&gt;</b> were verified on an older
+patch and not yet re-confirmed for the one you picked.</p>
+<p>mobiGuide never reads the game. It only knows what you tick and log.</p>
 """
-
-_CAREERS = (
-    ("hauling", "Hauling and cargo"),
-    ("combat", "Bounty hunting and combat"),
-    ("salvage", "Salvage"),
-    ("mining", "Mining"),
-    ("collection", "Collecting (Wikelo trades)"),
-)
 
 
 class SetupWizard(QDialog):
-    """First-run questionnaire: what you already know, what ranks you
-    already hold, and what you want the guide to show. Ends on the how-to
-    page. Everything it sets can be changed later from the card's menu."""
+    """First-run questionnaire: game version, experience, ranks already
+    held, categories to focus on, display options, then how to use it.
+    Everything is built from the active pack, so new patches, categories and
+    factions appear here without code changes."""
 
-    def __init__(self, parent, ladders, settings: dict):
+    def __init__(self, parent, packs: list, current_pack: str | None, ladders, categories, settings: dict):
         super().__init__(parent)
         self.setWindowTitle("mobiGuide setup")
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(460)
         outer = QVBoxLayout(self)
         self.step_label = _label("", _CYAN_STYLE, wrap=False)
         outer.addWidget(self.step_label)
         self.pages = QStackedWidget()
         outer.addWidget(self.pages, stretch=1)
 
-        # 1. experience
+        # 1. version and experience
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.addWidget(_label("Welcome to mobiGuide", _TITLE_STYLE))
         lay.addWidget(_label(
-            "A step-by-step guide through Star Citizen's careers, like a leveling guide. "
-            "Four quick pages set it up for where you are now.", _MUTED_STYLE))
+            "A step-by-step guide through every part of Star Citizen, like a leveling guide, "
+            "with goals and repeatable contracts. A few quick pages set it up for you.", _MUTED_STYLE))
+        lay.addWidget(_label("Which game version do you play?", _BODY_STYLE))
+        self.pack_combo = QComboBox()
+        self.pack_combo.setStyleSheet(_COMBO_STYLE)
+        for pack in packs:
+            self.pack_combo.addItem(pack.label, pack.id)
+        idx = self.pack_combo.findData(current_pack)
+        self.pack_combo.setCurrentIndex(max(0, idx))
+        lay.addWidget(self.pack_combo)
+        lay.addSpacing(6)
         lay.addWidget(_label("How much have you played?", _BODY_STYLE))
         self.new_radio = QRadioButton("I'm new: start from waking up in a city")
         self.basics_radio = QRadioButton("I know the basics: flying, landing and taking contracts")
@@ -271,20 +281,21 @@ class SetupWizard(QDialog):
         lay = QVBoxLayout(page)
         lay.addWidget(_label("Where are you already?", _TITLE_STYLE))
         lay.addWidget(_label(
-            "Pick the rank you already hold with each group. Everything up to it is "
-            "ticked off for you. Not sure? Leave it at Not started; you can tick things "
-            "off later.", _MUTED_STYLE))
+            "Pick the rank you already hold. Everything up to it is ticked off and the "
+            "card starts counting your reputation from there. Not sure? Leave it at Not started.",
+            _MUTED_STYLE))
         grid = QGridLayout()
         self.rank_combos: dict[str, QComboBox] = {}
-        for row, (faction, ranks) in enumerate(ladders):
-            grid.addWidget(_label(faction, _BODY_STYLE, wrap=False), row, 0)
+        for row, (faction, ladder, ranks) in enumerate(ladders):
+            name = faction if ladder in ("FactionReputation", "") else f"{faction} ({guide_mod.ladder_name(ladder)})"
+            grid.addWidget(_label(name, _BODY_STYLE, wrap=False), row, 0)
             combo = QComboBox()
             combo.setStyleSheet(_COMBO_STYLE)
             combo.addItem("Not started", None)
             for rank, points in ranks:
                 combo.addItem(f"{rank} ({points:,})", points)
             grid.addWidget(combo, row, 1)
-            self.rank_combos[faction] = combo
+            self.rank_combos[guide_mod.rep_key(faction, ladder)] = combo
         lay.addLayout(grid)
         lay.addStretch()
         self.pages.addWidget(page)
@@ -293,15 +304,20 @@ class SetupWizard(QDialog):
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.addWidget(_label("What do you want to do?", _TITLE_STYLE))
-        lay.addWidget(_label("Untick careers you don't care about. They are hidden, not deleted.", _MUTED_STYLE))
+        lay.addWidget(_label("Untick categories you don't care about. They are hidden, not deleted.",
+                             _MUTED_STYLE))
         focus = set(settings.get("focus") or [])
-        self.career_checks: dict[str, QCheckBox] = {}
-        for tag, text in _CAREERS:
-            box = QCheckBox(text)
+        self.category_checks: dict[str, QCheckBox] = {}
+        grid = QGridLayout()
+        shown = [c for c in categories if c.id not in guide_mod.ALWAYS_SHOWN_CATEGORIES and c.id != "outlaw"]
+        for i, cat in enumerate(shown):
+            box = QCheckBox(cat.title)
             box.setStyleSheet(_BODY_STYLE)
-            box.setChecked(not focus or tag in focus)
-            self.career_checks[tag] = box
-            lay.addWidget(box)
+            box.setToolTip(cat.summary)
+            box.setChecked(not focus or cat.id in focus)
+            self.category_checks[cat.id] = box
+            grid.addWidget(box, i // 2, i % 2)
+        lay.addLayout(grid)
         lay.addSpacing(6)
         self.outlaw_check = QCheckBox("Include outlaw (illegal) work")
         self.optional_check = QCheckBox("Show optional side objectives")
@@ -327,7 +343,7 @@ class SetupWizard(QDialog):
 
         buttons = QHBoxLayout()
         self.cancel_btn = _button("CANCEL")
-        self.back_btn = _button("◀ BACK", tooltip="Go back one step")
+        self.back_btn = _button("◀ BACK")
         self.next_btn = _button("NEXT ▸", _PRIMARY_BTN)
         buttons.addWidget(self.cancel_btn)
         buttons.addStretch()
@@ -356,16 +372,143 @@ class SetupWizard(QDialog):
             self.go(self.pages.currentIndex() + 1)
 
     def values(self) -> dict:
-        chosen = {tag for tag, box in self.career_checks.items() if box.isChecked()}
+        chosen = {cid for cid, box in self.category_checks.items() if box.isChecked()}
         return {
+            "pack": self.pack_combo.currentData(),
             "knows_basics": self.basics_radio.isChecked(),
-            "reached": {f: c.currentData() for f, c in self.rank_combos.items() if c.currentData() is not None},
-            # Everything ticked means no filter, so careers added later show up too.
-            "focus": [] if len(chosen) == len(self.career_checks) else sorted(chosen),
+            "reached": {k: c.currentData() for k, c in self.rank_combos.items() if c.currentData() is not None},
+            # Everything ticked means no filter, so categories added later show up too.
+            "focus": [] if len(chosen) == len(self.category_checks) else sorted(chosen),
             "show_unlawful": self.outlaw_check.isChecked(),
             "show_optional": self.optional_check.isChecked(),
             "compact": self.compact_check.isChecked(),
         }
+
+
+class GoalDialog(QDialog):
+    """New goal: reach a rank, save up aUEC, or buy a ship."""
+
+    def __init__(self, parent, catalog, known_rep: dict, ships: list[str]):
+        super().__init__(parent)
+        self.setWindowTitle("New goal")
+        self.setMinimumWidth(400)
+        self.catalog = catalog
+        self.known_rep = known_rep
+        form = QFormLayout(self)
+        self.kind_combo = QComboBox()
+        self.kind_combo.setStyleSheet(_COMBO_STYLE)
+        self.kind_combo.addItem("Reach a rank", "rank")
+        self.kind_combo.addItem("Save up aUEC", "money")
+        self.kind_combo.addItem("Buy a ship", "ship")
+        form.addRow("Goal", self.kind_combo)
+
+        self.faction_combo = QComboBox()
+        self.ladder_combo = QComboBox()
+        self.rank_combo = QComboBox()
+        for c in (self.faction_combo, self.ladder_combo, self.rank_combo):
+            c.setStyleSheet(_COMBO_STYLE)
+        for f in (catalog.all_factions() if catalog else []):
+            self.faction_combo.addItem(f, f)
+        self.current_rep = QSpinBox()
+        self.current_rep.setRange(-1_000_000, 10_000_000)
+        self.current_rep.setStyleSheet(_SPIN_STYLE)
+        form.addRow("Faction", self.faction_combo)
+        form.addRow("Ladder", self.ladder_combo)
+        form.addRow("Target rank", self.rank_combo)
+        form.addRow("Your rep now", self.current_rep)
+
+        self.amount_edit = QLineEdit()
+        self.amount_edit.setStyleSheet(_LINE_STYLE)
+        self.amount_edit.setPlaceholderText("e.g. 2500000")
+        form.addRow("Target aUEC", self.amount_edit)
+        self.ship_combo = QComboBox()
+        self.ship_combo.setEditable(True)
+        self.ship_combo.setStyleSheet(_COMBO_STYLE)
+        self.ship_combo.addItems(ships)
+        self.ship_combo.setToolTip("The ship's name as UEX lists it, e.g. Cutlass Black")
+        form.addRow("Ship", self.ship_combo)
+        self.wallet_edit = QLineEdit()
+        self.wallet_edit.setStyleSheet(_LINE_STYLE)
+        self.wallet_edit.setPlaceholderText("Your aUEC now (optional)")
+        form.addRow("Wallet now", self.wallet_edit)
+        self._rows = {"rank": (self.faction_combo, self.ladder_combo, self.rank_combo, self.current_rep),
+                      "money": (self.amount_edit, self.wallet_edit), "ship": (self.ship_combo, self.wallet_edit)}
+        self.form = form
+
+        self.error_label = _label("", _AMBER_STYLE)
+        form.addRow(self.error_label)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+        self.kind_combo.currentIndexChanged.connect(self._sync)
+        self.faction_combo.currentIndexChanged.connect(self._fill_ladders)
+        self.ladder_combo.currentIndexChanged.connect(self._fill_ranks)
+        self._fill_ladders()
+        self._sync()
+
+    def _sync(self):
+        kind = self.kind_combo.currentData()
+        for k, widgets in self._rows.items():
+            for w in widgets:
+                visible = k == kind or (w is self.wallet_edit and kind in ("money", "ship"))
+                w.setVisible(visible)
+                label = self.form.labelForField(w)
+                if label is not None:
+                    label.setVisible(visible)
+
+    def _fill_ladders(self):
+        self.ladder_combo.blockSignals(True)
+        self.ladder_combo.clear()
+        faction = self.faction_combo.currentData()
+        for ladder in (self.catalog.ladders_for(faction) if self.catalog and faction else []):
+            self.ladder_combo.addItem(guide_mod.ladder_name(ladder), ladder)
+        self.ladder_combo.blockSignals(False)
+        self._fill_ranks()
+
+    def _fill_ranks(self):
+        self.rank_combo.clear()
+        ladder = self.ladder_combo.currentData()
+        for rank, points in (self.catalog.rank_names(ladder) if self.catalog and ladder else []):
+            if points > 0:
+                self.rank_combo.addItem(f"{rank} ({points:,})", (rank, points))
+        faction = self.faction_combo.currentData()
+        known = self.known_rep.get(guide_mod.rep_key(faction or "", ladder or ""))
+        self.current_rep.setValue(int(known or 0))
+
+    @staticmethod
+    def _int(text: str) -> int | None:
+        digits = "".join(ch for ch in text if ch.isdigit())
+        return int(digits) if digits else None
+
+    def _on_accept(self):
+        kind = self.kind_combo.currentData()
+        if kind == "rank" and self.rank_combo.currentData() is None:
+            self.error_label.setText("Pick a faction, ladder and rank.")
+            return
+        if kind == "money" and not self._int(self.amount_edit.text()):
+            self.error_label.setText("Enter how much aUEC you want.")
+            return
+        if kind == "ship" and not self.ship_combo.currentText().strip():
+            self.error_label.setText("Pick or type a ship.")
+            return
+        self.accept()
+
+    def values(self) -> dict:
+        kind = self.kind_combo.currentData()
+        wallet = self._int(self.wallet_edit.text()) or 0
+        if kind == "rank":
+            rank, points = self.rank_combo.currentData()
+            faction, ladder = self.faction_combo.currentData(), self.ladder_combo.currentData()
+            return {"kind": "rank", "faction": faction, "ladder": ladder, "rank": rank, "target": points,
+                    "current_rep": self.current_rep.value(),
+                    "label": f"{faction}: {rank}"}
+        if kind == "money":
+            amount = self._int(self.amount_edit.text())
+            return {"kind": "money", "target": amount, "start_uec": wallet, "label": f"Save {amount:,} aUEC"}
+        ship = self.ship_combo.currentText().strip()
+        return {"kind": "ship", "ship": ship, "start_uec": wallet, "label": f"Buy a {ship}"}
 
 
 class LevelingGuideModule(ModuleBase):
@@ -374,19 +517,23 @@ class LevelingGuideModule(ModuleBase):
         f'<span style="color:{theme.TEXT_PRIMARY};">mobi</span>'
         f'<span style="color:{theme.ACCENT_CYAN};">Guide</span>'
     )
+    ROW_BOX_WIDTH = 26     # px from a checklist row's left edge that count as its box
+    CONTRACT_ROWS = 5      # repeatable contracts shown under a rank-up
+    GOAL_ROWS = 8          # contracts shown in the Contracts view
 
-    def __init__(self, api_client, config, locations, progress=None, custom=None, guide_dirs=None):
+    def __init__(self, api_client, config, locations, progress=None, custom=None, pack_roots=None, extra_dirs=None):
         super().__init__(api_client, config, locations)
-        self.settings.setdefault("show_optional", True)
-        self.settings.setdefault("show_unlawful", False)
-        self.settings.setdefault("compact", False)
-        self.settings.setdefault("focus", [])
-        self.settings.setdefault("setup_done", False)
-        self.settings.setdefault("refresh_interval_seconds", 600)
+        for key, value in (("show_optional", True), ("show_unlawful", False), ("compact", False),
+                           ("focus", []), ("setup_done", False), ("refresh_interval_seconds", 600),
+                           ("view", "guide"), ("category", ""), ("pack", None), ("goal", None)):
+            self.settings.setdefault(key, value)
         self.progress = progress or progress_mod.ProgressStore()
         self.custom = custom or progress_mod.CustomObjectives()
-        self._guide_dirs = guide_dirs or [Path(BUNDLED_GUIDES), progress_mod.user_guides_dir()]
+        self._pack_roots = pack_roots or [Path(BUNDLED_PACKS), progress_mod.user_guides_dir() / "packs"]
+        self._extra_dirs = [progress_mod.user_guides_dir()] if extra_dirs is None else extra_dirs
         self.guide = None
+        self.packs: dict = {}
+        self.categories: list = []
         self._viewing: str | None = None
         self._price_rows: list[dict] | None = None
         self._price_at = 0.0
@@ -398,14 +545,26 @@ class LevelingGuideModule(ModuleBase):
     # Content and state
     # ------------------------------------------------------------------
     def reload_guide(self):
-        self.guide = guide_mod.load_guide(self._guide_dirs, self.custom.path)
+        self.packs, _ = guide_mod.discover_packs(self._pack_roots)
+        self.guide = guide_mod.load_pack(self.settings.get("pack"), self._pack_roots, self._extra_dirs,
+                                         self.custom.path, catalog_loader=contracts_mod.load_catalog)
+        if self.guide.pack is not None:
+            self.settings["pack"] = self.guide.pack.id
+        self.categories = contracts_mod.parse_categories(self.guide.categories)
 
     def _filters(self) -> tuple[bool, bool, frozenset]:
         return (bool(self.settings.get("show_optional")), bool(self.settings.get("show_unlawful")),
                 frozenset(self.settings.get("focus") or []))
 
     def _visible(self, obj) -> bool:
-        return guide_mod.is_visible(obj, *self._filters())
+        if not guide_mod.is_visible(obj, *self._filters()):
+            return False
+        cat = self.settings.get("category")
+        return not cat or cat in obj.categories or not obj.categories
+
+    def _category(self):
+        cid = self.settings.get("category")
+        return next((c for c in self.categories if c.id == cid), None)
 
     def current_objective(self):
         """What the card shows: the objective you picked, else the guide's
@@ -419,10 +578,30 @@ class LevelingGuideModule(ModuleBase):
             obj = self.guide.get(saved)
             if obj is not None and self._visible(obj) and saved not in self.progress.passed_ids():
                 return obj
-        return guide_mod.next_objective(self.guide, self.progress.passed_ids(), *self._filters())
+        return self._next_visible()
+
+    def _next_visible(self):
+        passed = self.progress.passed_ids()
+        remaining = [o for o in self.guide.objectives if o.id not in passed and self._visible(o)]
+        for obj in remaining:
+            if guide_mod.is_unlocked(obj, passed):
+                return obj
+        return remaining[0] if remaining else None
 
     def _save_settings(self):
         self.config.set_module_settings(self.module_id, self.settings)
+
+    def known_rep(self) -> dict[str, int]:
+        """Reputation the player has told us or logged, plus what finished
+        rank-up objectives imply (you're at least that far)."""
+        known = self.progress.known_rep()
+        done = self.progress.done_ids()
+        for obj in self.guide.objectives:
+            rep = obj.reputation
+            if obj.id in done and rep and isinstance(rep.get("points"), int):
+                key = guide_mod.rep_key(rep["faction"], rep.get("ladder", ""))
+                known[key] = max(known.get(key, rep["points"]), rep["points"])
+        return known
 
     # ------------------------------------------------------------------
     # Card
@@ -431,7 +610,7 @@ class LevelingGuideModule(ModuleBase):
         card = container.add_card(self.module_id, self.display_name)
         layout = card.body_layout
 
-        # -- level / XP ---------------------------------------------------
+        # -- level / XP -----------------------------------------------------
         top = QHBoxLayout()
         top.setSpacing(8)
         self.level_label = _label("LVL 1", _LEVEL_STYLE, wrap=False)
@@ -452,11 +631,10 @@ class LevelingGuideModule(ModuleBase):
         top.addWidget(self.menu_btn)
         layout.addLayout(top)
 
-        # -- first-run banner: one plain label plus a button row, so it
-        # sizes reliably (see _step_widget).
+        # -- first-run banner: a label plus a button row, so it sizes reliably
         self.setup_text = QLabel(
-            "<b>New to mobiGuide?</b> A one-minute setup ticks off what you've already "
-            "done and picks what to show.")
+            "<b>New to mobiGuide?</b> A one-minute setup picks your game version, ticks off "
+            "what you've already done and chooses what to show.")
         self.setup_text.setObjectName("lgRow")
         self.setup_text.setTextFormat(Qt.RichText)
         self.setup_text.setWordWrap(True)
@@ -473,13 +651,40 @@ class LevelingGuideModule(ModuleBase):
         sb.addWidget(self.setup_later_btn, stretch=1)
         layout.addWidget(self.setup_buttons)
 
-        # -- chapter picker -------------------------------------------------
+        # -- view switch, version and category ------------------------------
+        nav = QHBoxLayout()
+        nav.setSpacing(4)
+        self.guide_tab = _button("GUIDE", tooltip="Step-by-step objectives")
+        self.contracts_tab = _button("CONTRACTS", tooltip="Goals and repeatable contracts")
+        self.guide_tab.clicked.connect(lambda: self.set_view("guide"))
+        self.contracts_tab.clicked.connect(lambda: self.set_view("contracts"))
+        nav.addWidget(self.guide_tab, stretch=1)
+        nav.addWidget(self.contracts_tab, stretch=1)
+        layout.addLayout(nav)
+        cat_row = QHBoxLayout()
+        cat_row.setSpacing(6)
+        self.category_combo = QComboBox()
+        self.category_combo.setStyleSheet(_COMBO_STYLE)
+        self.category_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.category_combo.setMinimumContentsLength(14)
+        self.category_combo.activated.connect(self._on_category_picked)
+        cat_row.addWidget(self.category_combo, stretch=1)
+        self.pack_label = _label("", _DIM_STYLE, wrap=False)
+        self.pack_label.setToolTip("Game version this guide is for. Change it in ⚙.")
+        cat_row.addWidget(self.pack_label)
+        layout.addLayout(cat_row)
+
+        # ================= GUIDE view =================
+        self.guide_view = QWidget()
+        gl = QVBoxLayout(self.guide_view)
+        gl.setContentsMargins(0, 0, 0, 0)
+        gl.setSpacing(6)
         chap_row = QHBoxLayout()
         chap_row.setSpacing(6)
         self.chapter_combo = QComboBox()
         self.chapter_combo.setStyleSheet(_COMBO_STYLE)
         self.chapter_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        self.chapter_combo.setMinimumContentsLength(18)
+        self.chapter_combo.setMinimumContentsLength(16)
         self.chapter_combo.activated.connect(self._on_chapter_picked)
         chap_row.addWidget(self.chapter_combo, stretch=1)
         self.next_btn = _button("NEXT ▸", _ICON_BTN, "Jump to the guide's next objective")
@@ -487,28 +692,50 @@ class LevelingGuideModule(ModuleBase):
         self.next_btn.setMinimumWidth(56)
         self.next_btn.clicked.connect(self._on_jump_next)
         chap_row.addWidget(self.next_btn)
-        layout.addLayout(chap_row)
+        gl.addLayout(chap_row)
 
-        # -- current objective ----------------------------------------------
         self.badges_label = _label("", _CYAN_STYLE)
-        layout.addWidget(self.badges_label)
+        gl.addWidget(self.badges_label)
         self.title_label = _label("", _TITLE_STYLE)
-        layout.addWidget(self.title_label)
+        gl.addWidget(self.title_label)
         self.why_label = _label("", _MUTED_STYLE)
-        layout.addWidget(self.why_label)
+        gl.addWidget(self.why_label)
         self.info_label = _label("", _AMBER_STYLE)
         self.info_label.setTextFormat(Qt.RichText)
-        layout.addWidget(self.info_label)
+        gl.addWidget(self.info_label)
         self.lock_label = _label("", _AMBER_STYLE)
-        layout.addWidget(self.lock_label)
+        gl.addWidget(self.lock_label)
 
-        steps_caption = _label("STEPS", _LABEL_SMALL, wrap=False)
-        layout.addWidget(steps_caption)
+        gl.addWidget(_label("STEPS", _LABEL_SMALL, wrap=False))
         self.steps_layout = QVBoxLayout()
         self.steps_layout.setSpacing(4)
-        layout.addLayout(self.steps_layout)
+        gl.addLayout(self.steps_layout)
 
-        # -- grind counter --------------------------------------------------
+        # reputation tracker for rank-ups
+        self.rep_box = QWidget()
+        rl = QVBoxLayout(self.rep_box)
+        rl.setContentsMargins(0, 2, 0, 0)
+        rl.setSpacing(4)
+        rep_head = QHBoxLayout()
+        self.rep_label = _label("", _CYAN_STYLE)
+        rep_head.addWidget(self.rep_label, stretch=1)
+        self.rep_set_btn = _button("SET", _ICON_BTN, "Type in the reputation the game shows")
+        self.rep_set_btn.setFixedSize(44, 24)
+        self.rep_set_btn.clicked.connect(self._on_set_rep)
+        rep_head.addWidget(self.rep_set_btn)
+        rl.addLayout(rep_head)
+        self.rep_bar = QProgressBar()
+        self.rep_bar.setStyleSheet(_XP_BAR.replace(theme.ACCENT_AMBER, theme.ACCENT_CYAN))
+        self.rep_bar.setTextVisible(False)
+        self.rep_bar.setFixedHeight(6)
+        rl.addWidget(self.rep_bar)
+        rl.addWidget(_label("REPEAT FOR REPUTATION · click one when you finish it", _LABEL_SMALL))
+        self.rep_rows = QVBoxLayout()
+        self.rep_rows.setSpacing(3)
+        rl.addLayout(self.rep_rows)
+        gl.addWidget(self.rep_box)
+
+        # plain counter for grinds without reputation data
         self.counter_row = QWidget()
         counter = QHBoxLayout(self.counter_row)
         counter.setContentsMargins(0, 0, 0, 0)
@@ -523,12 +750,11 @@ class LevelingGuideModule(ModuleBase):
         self.plus_btn.setFixedSize(44, 26)
         self.plus_btn.clicked.connect(lambda: self._on_count(1))
         counter.addWidget(self.plus_btn)
-        layout.addWidget(self.counter_row)
+        gl.addWidget(self.counter_row)
 
-        # -- actions ----------------------------------------------------------
         actions = QHBoxLayout()
         actions.setSpacing(4)
-        self.back_btn = _button("◀ BACK")
+        self.back_btn = _button("◀ BACK", tooltip="Go back one step")
         self.back_btn.clicked.connect(self._on_back)
         actions.addWidget(self.back_btn)
         self.step_btn = _button("✓ I DID THIS STEP", _PRIMARY_BTN, "Mark the highlighted step done")
@@ -537,9 +763,8 @@ class LevelingGuideModule(ModuleBase):
         self.skip_btn = _button("SKIP", tooltip="Skip this objective for now (no XP). It stays unticked.")
         self.skip_btn.clicked.connect(self._on_skip)
         actions.addWidget(self.skip_btn)
-        layout.addLayout(actions)
+        gl.addLayout(actions)
 
-        # -- objective list ---------------------------------------------------
         self.list_container = QWidget()
         list_layout = QVBoxLayout(self.list_container)
         list_layout.setContentsMargins(0, 4, 0, 0)
@@ -548,7 +773,7 @@ class LevelingGuideModule(ModuleBase):
         self.list_layout = QVBoxLayout()
         self.list_layout.setSpacing(3)
         list_layout.addLayout(self.list_layout)
-        layout.addWidget(self.list_container)
+        gl.addWidget(self.list_container)
 
         footer = QHBoxLayout()
         self.sources_btn = _button("SOURCES", tooltip="Where this objective's facts come from")
@@ -557,8 +782,64 @@ class LevelingGuideModule(ModuleBase):
         self.add_btn = _button("+ ADD OBJECTIVE")
         self.add_btn.clicked.connect(self._on_add_objective)
         footer.addWidget(self.add_btn)
-        layout.addLayout(footer)
+        gl.addLayout(footer)
+        layout.addWidget(self.guide_view)
 
+        # ================= CONTRACTS view =================
+        self.contracts_view = QWidget()
+        cl = QVBoxLayout(self.contracts_view)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(6)
+        goal_row = QHBoxLayout()
+        goal_row.setSpacing(4)
+        self.goal_combo = QComboBox()
+        self.goal_combo.setStyleSheet(_COMBO_STYLE)
+        self.goal_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.goal_combo.setMinimumContentsLength(14)
+        self.goal_combo.activated.connect(self._on_goal_picked)
+        goal_row.addWidget(self.goal_combo, stretch=1)
+        self.new_goal_btn = _button("+ GOAL", _ICON_BTN, "Set a new goal")
+        self.new_goal_btn.setFixedHeight(26)
+        self.new_goal_btn.setMinimumWidth(56)
+        self.new_goal_btn.clicked.connect(self._on_new_goal)
+        goal_row.addWidget(self.new_goal_btn)
+        self.del_goal_btn = _button("✕", _ICON_BTN, "Delete this goal")
+        self.del_goal_btn.setFixedSize(26, 26)
+        self.del_goal_btn.clicked.connect(self._on_delete_goal)
+        goal_row.addWidget(self.del_goal_btn)
+        cl.addLayout(goal_row)
+        self.goal_title = _label("", _TITLE_STYLE)
+        cl.addWidget(self.goal_title)
+        goal_head = QHBoxLayout()
+        self.goal_label = _label("", _CYAN_STYLE)
+        goal_head.addWidget(self.goal_label, stretch=1)
+        self.goal_set_btn = _button("SET", _ICON_BTN, "Type in the number the game shows")
+        self.goal_set_btn.setFixedSize(44, 24)
+        self.goal_set_btn.clicked.connect(self._on_set_goal_value)
+        goal_head.addWidget(self.goal_set_btn)
+        cl.addLayout(goal_head)
+        self.goal_bar = QProgressBar()
+        self.goal_bar.setStyleSheet(_XP_BAR.replace(theme.ACCENT_AMBER, theme.ACCENT_CYAN))
+        self.goal_bar.setTextVisible(False)
+        self.goal_bar.setFixedHeight(6)
+        cl.addWidget(self.goal_bar)
+        self.contracts_caption = _label("", _LABEL_SMALL)
+        cl.addWidget(self.contracts_caption)
+        self.goal_rows = QVBoxLayout()
+        self.goal_rows.setSpacing(3)
+        cl.addLayout(self.goal_rows)
+        self.contracts_note = _label("", _DIM_STYLE)
+        cl.addWidget(self.contracts_note)
+        layout.addWidget(self.contracts_view)
+
+        # -- shared footer ----------------------------------------------------
+        bottom = QHBoxLayout()
+        self.undo_btn = _button("↶ UNDO LAST RUN", tooltip="Take back the last contract you logged")
+        self.undo_btn.clicked.connect(self._on_undo_run)
+        bottom.addWidget(self.undo_btn)
+        layout.addLayout(bottom)
+        self.earned_label = _label("", _DIM_STYLE)
+        layout.addWidget(self.earned_label)
         self.problems_label = _label("", _DIM_STYLE)
         layout.addWidget(self.problems_label)
 
@@ -580,31 +861,81 @@ class LevelingGuideModule(ModuleBase):
                 w.hide()
                 w.deleteLater()
 
+    def _fit_card(self):
+        # Content height changes with every render; re-fit so nothing is
+        # clipped (a manual size still wins).
+        card = getattr(self, "card", None)
+        if card is not None:
+            card.apply_size()
+
     def render(self):
         if not hasattr(self, "title_label"):
             return
-        show_opt, show_unl, focus = self._filters()
-        done = self.progress.done_ids()
-        passed = self.progress.passed_ids()
-        compact = bool(self.settings.get("compact"))
+        view = self.settings.get("view") or "guide"
         show_banner = not self.settings.get("setup_done") and not self.settings.get("setup_dismissed")
         self.setup_text.setVisible(show_banner)
         self.setup_buttons.setVisible(show_banner)
+        self.guide_tab.setStyleSheet(_PRIMARY_BTN if view == "guide" else _ACTION_BTN)
+        self.contracts_tab.setStyleSheet(_PRIMARY_BTN if view == "contracts" else _ACTION_BTN)
+        pack = self.guide.pack
+        self.pack_label.setText(pack.label if pack else "no pack")
+        self._render_header()
+        self._render_categories()
+        self.guide_view.setVisible(view == "guide")
+        self.contracts_view.setVisible(view == "contracts")
+        if view == "guide":
+            self._render_guide()
+        else:
+            self._render_contracts()
+        self.undo_btn.setEnabled(self.progress.last_run() is not None)
+        last = self.progress.last_run()
+        self.undo_btn.setToolTip(f"Take back: {last['title']}" if last else "Nothing logged yet")
+        self.earned_label.setText(f"Logged earnings: {self.progress.earned_uec:,} aUEC"
+                                  if self.progress.earned_uec else "")
+        self.earned_label.setVisible(bool(self.progress.earned_uec))
+        errors = self.guide.errors
+        self.problems_label.setVisible(bool(errors))
+        if errors:
+            self.problems_label.setText(f"⚠ {len(errors)} guide content problem(s), hover for details")
+            self.problems_label.setToolTip("\n".join(errors[:30]))
+        self._fit_card()
 
+    def _render_header(self):
+        done = self.progress.done_ids()
         level, into, need = guide_mod.level_for_xp(guide_mod.total_xp(self.guide, done))
         self.level_label.setText(f"LVL {level}")
         self.xp_bar.setMaximum(need)
         self.xp_bar.setValue(into)
-        visible_all = [o for o in self.guide.objectives if self._visible(o)]
-        done_visible = sum(1 for o in visible_all if o.id in done)
-        self.xp_label.setText(f"{into}/{need} XP · {done_visible}/{len(visible_all)} objectives")
+        visible = [o for o in self.guide.objectives if guide_mod.is_visible(o, *self._filters())]
+        done_visible = sum(1 for o in visible if o.id in done)
+        self.xp_label.setText(f"{into}/{need} XP · {done_visible}/{len(visible)} objectives")
 
+    def _render_categories(self):
+        self.category_combo.blockSignals(True)
+        self.category_combo.clear()
+        self.category_combo.addItem("All categories", "")
+        catalog = self.guide.catalog
+        for cat in self.categories:
+            has_guide = bool(self.guide.chapters_in(cat.id))
+            has_contracts = bool(catalog and any(cat.matches(c) for c in catalog.contracts))
+            if has_guide or has_contracts:
+                self.category_combo.addItem(cat.title, cat.id)
+        idx = self.category_combo.findData(self.settings.get("category") or "")
+        self.category_combo.setCurrentIndex(max(0, idx))
+        self.category_combo.blockSignals(False)
+
+    # -- guide view ------------------------------------------------------------
+    def _render_guide(self):
+        show_opt, show_unl, focus = self._filters()
+        done = self.progress.done_ids()
+        passed = self.progress.passed_ids()
+        compact = bool(self.settings.get("compact"))
         obj = self.current_objective()
         chapter = self.guide.chapter(obj.chapter_id) if obj else None
 
         self.chapter_combo.blockSignals(True)
         self.chapter_combo.clear()
-        for c in self.guide.chapters:
+        for c in self.guide.chapters_in(self.settings.get("category")):
             d, t = guide_mod.chapter_progress(c, done, show_opt, show_unl, focus)
             if t == 0:
                 continue
@@ -617,17 +948,20 @@ class LevelingGuideModule(ModuleBase):
         self.chapter_combo.blockSignals(False)
 
         self._clear(self.steps_layout)
+        self._clear(self.rep_rows)
         if obj is None:
-            self.badges_label.setText("GUIDE COMPLETE")
-            self.title_label.setText("Every visible objective is done.")
-            self.why_label.setText("Turn on optional or outlaw content in ⚙, or add your own objective.")
-            for w in (self.info_label, self.lock_label, self.counter_row):
+            cat = self._category()
+            self.badges_label.setText("NOTHING LEFT HERE")
+            self.title_label.setText("Every visible objective in this view is done." if not cat else
+                                     f"No guide objectives left in {cat.title}.")
+            self.why_label.setText("Try the CONTRACTS tab for repeatable work, pick another category, "
+                                   "turn on optional or outlaw content in ⚙, or add your own objective.")
+            self.why_label.setVisible(True)
+            for w in (self.info_label, self.lock_label, self.counter_row, self.rep_box):
                 w.setVisible(False)
             for b in (self.back_btn, self.step_btn, self.skip_btn, self.sources_btn):
                 b.setEnabled(False)
             self._render_list(None)
-            self._render_problems()
-            self._fit_card()
             return
 
         is_done = obj.id in done
@@ -650,16 +984,19 @@ class LevelingGuideModule(ModuleBase):
         self.why_label.setVisible(bool(obj.why) and not compact)
 
         info = []
+        if not self.guide.is_verified(obj):
+            info.append(f"CHECKED ON {obj.verified_patch}: not yet re-confirmed for "
+                        f"{self.guide.pack.label if self.guide.pack else 'this version'}")
         if obj.reputation:
             rep = obj.reputation
             pts = f" ({rep['points']:,} rep)" if isinstance(rep.get("points"), int) else ""
             info.append(f"TARGET: {rep['faction']} · {rep['rank']}{pts}")
         if obj.reward:
-            info.append(f"REWARD: {obj.reward}")
+            info.append(f"REWARD: {escape(obj.reward)}")
         if obj.cost:
-            info.append(f"COST: {obj.cost}")
+            info.append(f"COST: {escape(obj.cost)}")
         if obj.ship:
-            info.append(self._price_text(obj))
+            info.append(self._price_text(obj.ship.get("display") or obj.ship.get("uex_name"), obj.ship["uex_name"]))
         self.info_label.setText("<br>".join(info))
         self.info_label.setVisible(bool(info) and not compact)
 
@@ -677,7 +1014,8 @@ class LevelingGuideModule(ModuleBase):
                 continue
             self.steps_layout.addWidget(self._step_widget(i, step, step_index, is_done))
 
-        is_grind = obj.kind == "grind"
+        tracked = self._render_rep_tracker(obj, compact)
+        is_grind = obj.kind == "grind" and not tracked
         self.counter_row.setVisible(is_grind)
         if is_grind:
             count = self.progress.count(obj.id)
@@ -699,15 +1037,74 @@ class LevelingGuideModule(ModuleBase):
         self.sources_btn.setEnabled(bool(obj.sources))
         self._render_list(chapter if not compact else None)
         self.list_container.setVisible(not compact)
-        self._render_problems()
-        self._fit_card()
 
-    def _fit_card(self):
-        # The step list and objective list change height with every render;
-        # re-fit the card so nothing gets clipped (a manual size still wins).
-        card = getattr(self, "card", None)
-        if card is not None:
-            card.apply_size()
+    def _render_rep_tracker(self, obj, compact: bool) -> bool:
+        """Reputation progress plus the best repeatable contracts for a
+        rank-up. Returns False when there's nothing to track."""
+        rep = obj.reputation
+        catalog = self.guide.catalog
+        if not rep or not isinstance(rep.get("points"), int) or catalog is None:
+            self.rep_box.setVisible(False)
+            return False
+        faction, ladder, target = rep["faction"], rep.get("ladder", ""), rep["points"]
+        key = guide_mod.rep_key(faction, ladder)
+        known = self.known_rep()
+        current = known.get(key)
+        rows = contracts_mod.for_reputation(catalog, faction, ladder, known,
+                                            bool(self.settings.get("show_unlawful")), None, self.CONTRACT_ROWS)
+        if not rows and current is None:
+            self.rep_box.setVisible(False)
+            return False
+        self.rep_box.setVisible(True)
+        shown = current if current is not None else 0
+        remaining = max(0, target - shown)
+        status = "TARGET REACHED" if remaining == 0 else f"{remaining:,} to go"
+        guess = "" if current is not None else " (not set: press SET)"
+        self.rep_label.setText(f"{guide_mod.ladder_name(ladder).upper()}: {shown:,} / {target:,} · {status}{guess}")
+        self.rep_bar.setMaximum(max(1, target))
+        self.rep_bar.setValue(min(target, max(0, shown)))
+        for r in rows:
+            self.rep_rows.addWidget(self._contract_row(r, remaining, rep_amount=True))
+        if not rows:
+            self.rep_rows.addWidget(_label("No repeatable contracts for this in the "
+                                           f"{catalog.label} data.", _DIM_STYLE))
+        return True
+
+    def _contract_row(self, row: dict, remaining: int, rep_amount: bool) -> QLabel:
+        c = row["contract"]
+        gain = row["gain"]
+        bits = [escape(c.get("giver") or "")]
+        bits.append(f"+{gain:,} rep" if rep_amount else f"{gain:,} aUEC")
+        if rep_amount and contracts_mod.fmt_uec(c):
+            bits.append(contracts_mod.fmt_uec(c))
+        if remaining > 0 and gain > 0:
+            bits.append(f"≈{contracts_mod.runs_needed(remaining, gain)} to go")
+        runs = self.progress.runs_logged(c["key"])
+        if runs:
+            bits.append(f"done ×{runs}")
+        if c.get("illegal"):
+            bits.append("ILLEGAL")
+        unlocked = row["unlocked"]
+        req = c.get("requires")
+        if unlocked is False and req:
+            bits.append(f"needs {req['rank']}")
+        elif unlocked is None and req:
+            bits.append(f"needs {req['rank']}?")
+        title_color = theme.TEXT_DIM if unlocked is False else theme.TEXT_PRIMARY
+        label = QLabel(f'<span style="color:{theme.ACCENT_CYAN};">+1</span> '
+                       f'<span style="color:{title_color};">{escape(c["title"])}</span><br>'
+                       f'<span style="color:{theme.TEXT_MUTED};">{" · ".join(bits)}</span>')
+        label.setObjectName("lgRow")
+        label.setTextFormat(Qt.RichText)
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.NoTextInteraction)
+        label.setCursor(Qt.PointingHandCursor)
+        label.setStyleSheet(_ROW_STYLE)
+        types = ", ".join(c.get("systems") or []) or "unknown systems"
+        label.setToolTip(f"Click when you finish one: adds its reputation and pay.\n"
+                         f"{c.get('type') or 'Contract'} · {types}")
+        label.mousePressEvent = lambda event, cc=c: self.log_run(cc)
+        return label
 
     def _step_widget(self, i: int, step, current: int, objective_done: bool) -> QLabel:
         # One rich-text label per row: word-wrapped labels inside a nested
@@ -756,25 +1153,110 @@ class LevelingGuideModule(ModuleBase):
                 oid, event.position().x(), event.button() == Qt.RightButton)
             self.list_layout.addWidget(row)
 
-    def _render_problems(self):
-        errors = self.guide.errors
-        self.problems_label.setVisible(bool(errors))
-        if errors:
-            self.problems_label.setText(f"⚠ {len(errors)} guide content problem(s), hover for details")
-            self.problems_label.setToolTip("\n".join(errors[:30]))
+    # -- contracts view -----------------------------------------------------
+    def active_goal(self) -> dict | None:
+        gid = self.settings.get("goal")
+        return self.progress.goal(gid) if gid else None
 
-    def _price_text(self, obj) -> str:
-        name = obj.ship.get("display") or obj.ship.get("uex_name")
+    def goal_status(self, goal: dict) -> tuple[int, int | None, str]:
+        """(current, target or None if unknown yet, unit)"""
+        if goal["kind"] == "rank":
+            key = guide_mod.rep_key(goal["faction"], goal["ladder"])
+            return int(self.known_rep().get(key) or 0), int(goal["target"]), "rep"
+        current = self.progress.goal_money(goal)
+        if goal["kind"] == "money":
+            return current, int(goal["target"]), "aUEC"
+        best = guide_mod.cheapest_listing(self._price_rows or [], goal.get("ship", ""))
+        return current, (best["price_buy"] if best else None), "aUEC"
+
+    def _render_contracts(self):
+        self._clear(self.goal_rows)
+        catalog = self.guide.catalog
+        goals = self.progress.goals()
+        self.goal_combo.blockSignals(True)
+        self.goal_combo.clear()
+        self.goal_combo.addItem("No goal: browse contracts", None)
+        for g in goals:
+            self.goal_combo.addItem(g.get("label") or g["id"], g["id"])
+        goal = self.active_goal()
+        idx = self.goal_combo.findData(goal["id"] if goal else None)
+        self.goal_combo.setCurrentIndex(max(0, idx))
+        self.goal_combo.blockSignals(False)
+        self.del_goal_btn.setEnabled(goal is not None)
+        if catalog is None:
+            self.goal_title.setText("No contract data for this version")
+            for w in (self.goal_label, self.goal_set_btn, self.goal_bar, self.contracts_caption):
+                w.setVisible(False)
+            self.contracts_note.setText("This pack has no contracts.json. See scripts/build_contract_catalog.py.")
+            return
+        known = self.known_rep()
+        unlawful = bool(self.settings.get("show_unlawful"))
+        cat = self._category()
+        for w in (self.goal_label, self.goal_set_btn, self.goal_bar):
+            w.setVisible(goal is not None)
+        if goal is None:
+            self.goal_title.setText(cat.title if cat else "All repeatable contracts")
+            self.goal_title.setVisible(True)
+            rows = contracts_mod.for_money(catalog, known, unlawful, cat, self.GOAL_ROWS * 2)
+            self.contracts_caption.setText("BEST PAYING · click one when you finish it")
+            remaining = 0
+            rep_mode = False
+        else:
+            current, target, unit = self.goal_status(goal)
+            self.goal_title.setText(goal.get("label") or "Goal")
+            if target is None:
+                self.goal_label.setText(f"{current:,} aUEC · ship price: {self._price_error or 'loading from UEX…'}")
+                remaining = 0
+            else:
+                remaining = max(0, target - current)
+                done_text = "GOAL REACHED" if remaining == 0 else f"{remaining:,} {unit} to go"
+                self.goal_label.setText(f"{current:,} / {target:,} {unit} · {done_text}")
+                self.goal_bar.setMaximum(max(1, target))
+                self.goal_bar.setValue(min(target, max(0, current)))
+            if goal["kind"] == "rank":
+                rows = contracts_mod.for_reputation(catalog, goal["faction"], goal["ladder"], known, unlawful,
+                                                    None, self.GOAL_ROWS)
+                self.contracts_caption.setText("BEST FOR THIS RANK · click one when you finish it")
+                rep_mode = True
+            else:
+                rows = contracts_mod.for_money(catalog, known, unlawful, cat, self.GOAL_ROWS)
+                where = f" IN {cat.title.upper()}" if cat else ""
+                self.contracts_caption.setText(f"BEST PAYING{where} · click one when you finish it")
+                rep_mode = False
+        self.contracts_caption.setVisible(True)
+        for r in rows:
+            self.goal_rows.addWidget(self._contract_row(r, remaining, rep_amount=rep_mode))
+        if not rows:
+            self.goal_rows.addWidget(_label("No repeatable contracts match. Try another category, "
+                                            "or allow outlaw work in ⚙.", _DIM_STYLE))
+        self.contracts_note.setText(
+            f"Contract data: {catalog.label} ({catalog.version}). Pay and reputation are the game's "
+            "base values; \"needs\" is the rank the contract asks for. Unknown ranks show \"?\": set them "
+            "in setup or on a rank-up.")
+
+    def _price_text(self, name: str, uex_name: str) -> str:
         if self._price_rows is None:
-            return f"PRICE: {name}: {self._price_error or 'loading from UEX…'}"
-        best = guide_mod.cheapest_listing(self._price_rows, obj.ship["uex_name"])
+            return f"PRICE: {escape(name)}: {self._price_error or 'loading from UEX…'}"
+        best = guide_mod.cheapest_listing(self._price_rows, uex_name)
         if best is None:
-            return f"PRICE: {name}: not listed on UEX right now"
-        return f"PRICE (UEX, live): {best['price_buy']:,} aUEC at {best.get('terminal_name') or 'unknown shop'}"
+            return f"PRICE: {escape(name)}: not listed on UEX right now"
+        return f"PRICE (UEX, live): {best['price_buy']:,} aUEC at {escape(best.get('terminal_name') or 'unknown shop')}"
 
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
+    def set_view(self, view: str):
+        self.settings["view"] = view
+        self._save_settings()
+        self.render()
+        self._maybe_fetch_prices()
+
+    def _on_category_picked(self, index: int):
+        self.settings["category"] = self.category_combo.itemData(index) or ""
+        self._save_settings()
+        self._viewing = None
+        self.render()
+
     def _view(self, oid: str):
         self._viewing = oid
         self.progress.set_current(oid)
@@ -784,10 +1266,17 @@ class LevelingGuideModule(ModuleBase):
     def _advance(self):
         """After finishing or skipping: go to the guide's next objective."""
         self._viewing = None
-        nxt = guide_mod.next_objective(self.guide, self.progress.passed_ids(), *self._filters())
+        nxt = self._next_visible()
         self.progress.set_current(nxt.id if nxt else None)
         self.render()
         self._maybe_fetch_prices()
+
+    def _mark_done(self, oid: str, done: bool = True):
+        self.progress.set_done(oid, done)
+        obj = self.guide.get(oid)
+        rep = obj.reputation if obj else None
+        if done and rep and isinstance(rep.get("points"), int):
+            self.progress.raise_rep_to(guide_mod.rep_key(rep["faction"], rep.get("ladder", "")), rep["points"])
 
     def _on_step_done(self):
         obj = self.current_objective()
@@ -804,7 +1293,7 @@ class LevelingGuideModule(ModuleBase):
             self.progress.set_step(obj.id, step + 1)
             self.render()
             return
-        self.progress.set_done(obj.id, True)
+        self._mark_done(obj.id)
         self._advance()
 
     def _on_back(self):
@@ -826,8 +1315,14 @@ class LevelingGuideModule(ModuleBase):
             self.render()
 
     def _toggle_done(self, oid: str):
-        self.progress.set_done(oid, not self.progress.is_done(oid))
+        self._mark_done(oid, not self.progress.is_done(oid))
         self.render()
+
+    def _on_row_clicked(self, oid: str, x: float, right_button: bool = False):
+        if right_button or x <= self.ROW_BOX_WIDTH:
+            self._toggle_done(oid)
+        else:
+            self._view(oid)
 
     def _on_jump_next(self):
         self._advance()
@@ -842,6 +1337,82 @@ class LevelingGuideModule(ModuleBase):
         if target is not None:
             self._view(target.id)
 
+    def log_run(self, contract: dict):
+        self.progress.log_run(contract)
+        self.render()
+
+    def _on_undo_run(self):
+        if self.progress.undo_last_run() is not None:
+            self.render()
+
+    def _on_set_rep(self):
+        obj = self.current_objective()
+        if obj is None or not obj.reputation:
+            return
+        rep = obj.reputation
+        key = guide_mod.rep_key(rep["faction"], rep.get("ladder", ""))
+        current = self.known_rep().get(key) or 0
+        value, ok = QInputDialog.getInt(self.card, "Set reputation",
+                                        f"{rep['faction']} · {guide_mod.ladder_name(rep.get('ladder', ''))}\n"
+                                        "Reputation the game shows now:", int(current), -1_000_000, 10_000_000)
+        if ok:
+            self.progress.set_rep(key, value)
+            self.render()
+
+    def _on_new_goal(self):
+        ships = sorted({o.ship["uex_name"] for o in self.guide.objectives if o.ship})
+        dialog = GoalDialog(self.card, self.guide.catalog, self.known_rep(), ships)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        self.add_goal(dialog.values())
+
+    def add_goal(self, values: dict) -> dict:
+        values = dict(values)
+        current_rep = values.pop("current_rep", None)
+        goal = self.progress.add_goal(values)
+        if goal["kind"] == "rank" and current_rep is not None:
+            self.progress.set_rep(guide_mod.rep_key(goal["faction"], goal["ladder"]), int(current_rep))
+        self.settings["goal"] = goal["id"]
+        self.settings["view"] = "contracts"
+        self._save_settings()
+        self.render()
+        self._maybe_fetch_prices()
+        return goal
+
+    def _on_goal_picked(self, index: int):
+        self.settings["goal"] = self.goal_combo.itemData(index)
+        self._save_settings()
+        self.render()
+        self._maybe_fetch_prices()
+
+    def _on_delete_goal(self):
+        goal = self.active_goal()
+        if goal is None:
+            return
+        if QMessageBox.question(self.card, "Delete goal", f"Delete \"{goal.get('label')}\"?") == QMessageBox.Yes:
+            self.progress.remove_goal(goal["id"])
+            self.settings["goal"] = None
+            self._save_settings()
+            self.render()
+
+    def _on_set_goal_value(self):
+        goal = self.active_goal()
+        if goal is None:
+            return
+        if goal["kind"] == "rank":
+            key = guide_mod.rep_key(goal["faction"], goal["ladder"])
+            current = self.known_rep().get(key) or 0
+            value, ok = QInputDialog.getInt(self.card, "Set reputation", "Reputation the game shows now:",
+                                            int(current), -1_000_000, 10_000_000)
+            if ok:
+                self.progress.set_rep(key, value)
+        else:
+            value, ok = QInputDialog.getInt(self.card, "Set wallet", "aUEC in your wallet now:",
+                                            int(self.progress.goal_money(goal)), 0, 2_000_000_000)
+            if ok:
+                self.progress.update_goal(goal["id"], start_uec=value, earned_at_start=self.progress.earned_uec)
+        self.render()
+
     def _show_sources(self):
         obj = self.current_objective()
         if obj is None or not obj.sources:
@@ -854,6 +1425,13 @@ class LevelingGuideModule(ModuleBase):
 
     def _show_menu(self):
         menu = QMenu(self.card)
+        versions = menu.addMenu("Game version")
+        for pack in sorted(self.packs.values(), key=lambda p: (guide_mod._version_key(p.patch), p.id), reverse=True):
+            act = versions.addAction(pack.label)
+            act.setCheckable(True)
+            act.setChecked(self.guide.pack is not None and pack.id == self.guide.pack.id)
+            act.triggered.connect(lambda _=False, pid=pack.id: self.set_pack(pid))
+        menu.addSeparator()
         for key, text in (("show_optional", "Show optional objectives"),
                           ("show_unlawful", "Show outlaw (illegal) content"),
                           ("compact", "Compact mode (current step only)")):
@@ -871,11 +1449,23 @@ class LevelingGuideModule(ModuleBase):
             menu.addAction("Reset this objective").triggered.connect(lambda: self._reset_objective(obj.id))
             if obj.custom:
                 menu.addAction("Delete this objective (yours)").triggered.connect(lambda: self._delete_custom(obj.id))
+        menu.addSeparator()
+        menu.addAction("Import guide (pack .zip or chapter .json)…").triggered.connect(self._on_import)
+        menu.addAction("Export my objectives as a chapter…").triggered.connect(self._on_export_custom)
+        if self.guide.pack is not None and self.guide.pack.path is not None:
+            menu.addAction(f"Export pack \"{self.guide.pack.label}\" as .zip…").triggered.connect(self._on_export_pack)
         menu.addAction("Reload guide files").triggered.connect(self._reload)
         menu.addAction("Open my guide folder").triggered.connect(self._open_user_folder)
         menu.addSeparator()
         menu.addAction("Reset ALL progress…").triggered.connect(self._reset_all)
         menu.exec(self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft()))
+
+    def set_pack(self, pack_id: str):
+        self.settings["pack"] = pack_id
+        self._save_settings()
+        self.reload_guide()
+        self._viewing = None
+        self.render()
 
     def _set_option(self, key: str, on: bool):
         self.settings[key] = bool(on)
@@ -883,29 +1473,28 @@ class LevelingGuideModule(ModuleBase):
         self._viewing = None
         self.render()
 
-    # -- setup and help -------------------------------------------------
-    ROW_BOX_WIDTH = 26  # px from a checklist row's left edge that count as its box
-
-    def _on_row_clicked(self, oid: str, x: float, right_button: bool = False):
-        if right_button or x <= self.ROW_BOX_WIDTH:
-            self._toggle_done(oid)
-        else:
-            self._view(oid)
-
+    # -- setup and help --------------------------------------------------
     def run_setup(self):
-        wizard = SetupWizard(self.card, guide_mod.ladder_choices(self.guide), self.settings)
+        packs = sorted(self.packs.values(), key=lambda p: (p.channel != "live", [-n for n in guide_mod._version_key(p.patch)]))
+        wizard = SetupWizard(self.card, packs, self.settings.get("pack"), guide_mod.ladder_choices(self.guide),
+                             self.categories, self.settings)
         if wizard.exec() == QDialog.Accepted:
             self.apply_setup(wizard.values())
 
     def apply_setup(self, answers: dict) -> int:
         """Apply questionnaire answers; returns how many objectives it ticked."""
-        to_mark = guide_mod.ids_done_for(self.guide, bool(answers.get("knows_basics")),
-                                         answers.get("reached") or {})
+        if answers.get("pack") and answers["pack"] != self.settings.get("pack"):
+            self.settings["pack"] = answers["pack"]
+            self.reload_guide()
+        reached = answers.get("reached") or {}
+        to_mark = guide_mod.ids_done_for(self.guide, bool(answers.get("knows_basics")), reached)
         marked = 0
         for oid in sorted(to_mark):
             if not self.progress.is_done(oid):
-                self.progress.set_done(oid, True)
+                self._mark_done(oid, True)
                 marked += 1
+        for key, points in reached.items():
+            self.progress.raise_rep_to(key, int(points))
         for key in ("focus", "show_unlawful", "show_optional", "compact"):
             if key in answers:
                 self.settings[key] = answers[key]
@@ -932,7 +1521,7 @@ class LevelingGuideModule(ModuleBase):
             return
         for obj in chapter.objectives:
             if self._visible(obj) and not self.progress.is_done(obj.id):
-                self.progress.set_done(obj.id, True)
+                self._mark_done(obj.id, True)
         self._advance()
 
     def _reset_objective(self, oid: str):
@@ -942,9 +1531,11 @@ class LevelingGuideModule(ModuleBase):
 
     def _reset_all(self):
         answer = QMessageBox.question(self.card, "Reset progress",
-                                      "Clear every checkmark, step and counter? This can't be undone.")
+                                      "Clear every checkmark, step, counter, logged run, reputation "
+                                      "value and goal? This can't be undone.")
         if answer == QMessageBox.Yes:
             self.progress.reset_all()
+            self.settings["goal"] = None
             self._viewing = None
             self.render()
 
@@ -952,9 +1543,64 @@ class LevelingGuideModule(ModuleBase):
         self.reload_guide()
         self.render()
 
+    # -- import / export ---------------------------------------------------
+    def import_file(self, path: Path) -> tuple[str, list[str]]:
+        """Install a pack .zip or chapter .json. Returns (what happened,
+        warnings); raises packio_mod.ImportError_ with a readable reason."""
+        path = Path(path)
+        user_dir = progress_mod.user_guides_dir()
+        if path.suffix.lower() == ".zip":
+            dest, warnings = packio_mod.import_pack(path, user_dir / "packs", self._pack_roots)
+            self.reload_guide()
+            pack = self.packs.get(dest.name)
+            msg = f"Installed guide pack \"{pack.label if pack else dest.name}\". Pick it in ⚙ → Game version."
+        else:
+            dest, warnings = packio_mod.import_chapter(path, user_dir)
+            self.reload_guide()
+            msg = f"Installed chapter {dest.name}. It loads on top of every game version."
+        self.render()
+        return msg, warnings
+
+    def _on_import(self):
+        path, _ = QFileDialog.getOpenFileName(self.card, "Import a mobiGuide guide", "",
+                                              "mobiGuide guides (*.zip *.json)")
+        if not path:
+            return
+        try:
+            msg, warnings = self.import_file(Path(path))
+        except packio_mod.ImportError_ as exc:
+            QMessageBox.warning(self.card, "Import failed", f"Nothing was installed.\n\n{exc}")
+            return
+        if warnings:
+            msg += "\n\nNotes:\n" + "\n".join(warnings[:10])
+        QMessageBox.information(self.card, "Guide imported", msg)
+
+    def _on_export_custom(self):
+        objectives = self.custom.all()
+        if not objectives:
+            QMessageBox.information(self.card, "Nothing to export",
+                                    "Add objectives with + ADD OBJECTIVE first; those are what gets exported.")
+            return
+        path, _ = QFileDialog.getSaveFileName(self.card, "Export my objectives", "my-mobiguide-objectives.json",
+                                              "Chapter file (*.json)")
+        if path:
+            patch = self.guide.pack.patch if self.guide.pack else ""
+            packio_mod.export_custom_chapter(objectives, Path(path), patch=patch)
+            QMessageBox.information(self.card, "Exported", f"Saved {len(objectives)} objectives to {path}.")
+
+    def _on_export_pack(self):
+        pack = self.guide.pack
+        if pack is None or pack.path is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(self.card, "Export guide pack", f"mobiguide-{pack.id}.zip",
+                                              "Guide pack (*.zip)")
+        if path:
+            packio_mod.export_pack(pack.path, Path(path))
+            QMessageBox.information(self.card, "Exported", f"Saved pack {pack.label} to {path}.")
+
     def _open_user_folder(self):
         folder = progress_mod.user_guides_dir()
-        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "packs").mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
     def _on_add_objective(self):
@@ -982,8 +1628,14 @@ class LevelingGuideModule(ModuleBase):
     # ModuleBase refresh: UEX ship prices only
     # ------------------------------------------------------------------
     def _needs_prices(self) -> bool:
-        obj = self.current_objective()
-        if obj is None or not obj.ship:
+        wanted = False
+        if (self.settings.get("view") or "guide") == "guide":
+            obj = self.current_objective()
+            wanted = obj is not None and bool(obj.ship)
+        else:
+            goal = self.active_goal()
+            wanted = goal is not None and goal.get("kind") == "ship"
+        if not wanted:
             return False
         return self._price_rows is None or time.time() - self._price_at > PRICE_MAX_AGE_S
 

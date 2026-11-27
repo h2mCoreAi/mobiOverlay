@@ -56,7 +56,7 @@ mobiOverlay/
 │   ├── multi_commodity_finder/
 │   ├── crosshair/
 │   ├── mobi_notes/
-│   ├── leveling_guide/      # mobiGuide: JSON chapters in guides/
+│   ├── leveling_guide/      # mobiGuide: per-patch packs in packs/<id>/ (see docs/modules/leveling-guide.md)
 │   └── mobi_throttle/
 ├── tests/                   # regression tests (plain asserts, no framework)
 │   └── run_all.py           # runs every test file, one summary

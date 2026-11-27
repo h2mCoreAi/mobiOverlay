@@ -1,0 +1,359 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "nyx-mining",
+    "title": "Nyx: Recco Battaglia (Mining)",
+    "order": 70,
+    "patch": "4.10.3",
+    "summary": "Work for Recco Battaglia at Levski and earn three mining ships.",
+    "categories": [
+      "mining"
+    ]
+  },
+  "objectives": [
+    {
+      "id": "recco-welcome",
+      "title": "Recco Battaglia: \"Welcome to the System\"",
+      "kind": "task",
+      "tags": [
+        "nyx",
+        "solo",
+        "lawful",
+        "mining"
+      ],
+      "why": "Recco's first story contract (+800 reputation).",
+      "requires": [
+        "fs-launch-own-ship"
+      ],
+      "steps": [
+        {
+          "do": "Travel to Levski in Nyx and accept \"Welcome to the System\".",
+          "where": "Levski, Nyx",
+          "done_when": "It is accepted."
+        },
+        {
+          "do": "Complete it.",
+          "done_when": "It completes."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/battaglia-story1",
+        "https://api.star-citizen.wiki/api/factions/f4cc3bfe-ee9d-41d1-818b-fdb55c979d09"
+      ],
+      "contracts": [
+        "Welcome to the System"
+      ]
+    },
+    {
+      "id": "recco-associate",
+      "title": "Reach Recco Associate (2,400 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 8,
+        "unit": "jobs"
+      },
+      "tags": [
+        "nyx",
+        "solo",
+        "lawful",
+        "mining"
+      ],
+      "why": "Jobs like \"Need Some Ore Mined\" and \"Ship In Distress\" give 200-300 reputation.",
+      "reputation": {
+        "faction": "Recco Battaglia",
+        "ladder": "MissionProviderReputation_Battaglia",
+        "rank": "Associate",
+        "points": 2400
+      },
+      "requires": [
+        "recco-welcome"
+      ],
+      "steps": [
+        {
+          "do": "Take Recco's Prospective Associate jobs. Count each one here.",
+          "where": "Nyx",
+          "done_when": "\"Missing Mining Team\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/need-some-ore-mined",
+        "https://api.star-citizen.wiki/missions/ship-in-distress",
+        "https://api.star-citizen.wiki/missions/missing-mining-team"
+      ],
+      "contracts": [
+        "Missing Mining Team",
+        "Need Some Ore Mined",
+        "Ship In Distress"
+      ]
+    },
+    {
+      "id": "recco-trusted",
+      "title": "Reach Recco Trusted Associate (6,000 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 18,
+        "unit": "jobs"
+      },
+      "tags": [
+        "nyx",
+        "solo",
+        "lawful",
+        "mining"
+      ],
+      "why": "Associate jobs give 100-300 reputation.",
+      "reputation": {
+        "faction": "Recco Battaglia",
+        "ladder": "MissionProviderReputation_Battaglia",
+        "rank": "Trusted Associate",
+        "points": 6000
+      },
+      "requires": [
+        "recco-associate"
+      ],
+      "steps": [
+        {
+          "do": "Take Recco's Associate jobs. Count each one here.",
+          "where": "Nyx",
+          "done_when": "\"Efficient Miners Wanted\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/efficient-miners-wanted"
+      ],
+      "contracts": [
+        "Efficient Miners Wanted"
+      ]
+    },
+    {
+      "id": "recco-prestige1",
+      "title": "Reach Recco Prestige 1 (10,800 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 14,
+        "unit": "jobs"
+      },
+      "tags": [
+        "nyx",
+        "lawful",
+        "mining"
+      ],
+      "why": "Trusted Associate jobs give 200-600 reputation.",
+      "reputation": {
+        "faction": "Recco Battaglia",
+        "ladder": "MissionProviderReputation_Battaglia",
+        "rank": "Prestige 1",
+        "points": 10800
+      },
+      "requires": [
+        "recco-trusted"
+      ],
+      "steps": [
+        {
+          "do": "Take Recco's Trusted Associate jobs. Count each one here.",
+          "where": "Nyx",
+          "done_when": "\"Extra Special Job\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/extra-special-job"
+      ],
+      "contracts": [
+        "Extra Special Job"
+      ]
+    },
+    {
+      "id": "recco-golem",
+      "title": "\"Extra Special Job\": earn a Drake Golem",
+      "kind": "task",
+      "tags": [
+        "nyx",
+        "lawful",
+        "mining"
+      ],
+      "why": "A one-time job whose reward is a Drake Golem Alliance mining ship.",
+      "reward": "Drake Golem Alliance",
+      "requires": [
+        "recco-prestige1"
+      ],
+      "steps": [
+        {
+          "do": "Accept \"Extra Special Job\" and scan the Savrillium and Lindinium deposits it asks for.",
+          "where": "Nyx",
+          "done_when": "It completes and the Golem Alliance is yours."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/extra-special-job"
+      ],
+      "contracts": [
+        "Extra Special Job"
+      ]
+    },
+    {
+      "id": "recco-prestige2",
+      "title": "Reach Recco Prestige 2 (30,000 rep)",
+      "kind": "grind",
+      "optional": true,
+      "goal": {
+        "target": 55,
+        "unit": "jobs"
+      },
+      "tags": [
+        "nyx",
+        "lawful",
+        "mining"
+      ],
+      "why": "Trusted Associate jobs average about 350 reputation.",
+      "reputation": {
+        "faction": "Recco Battaglia",
+        "ladder": "MissionProviderReputation_Battaglia",
+        "rank": "Prestige 2",
+        "points": 30000
+      },
+      "requires": [
+        "recco-golem"
+      ],
+      "steps": [
+        {
+          "do": "Keep taking Recco's jobs. Count each one here.",
+          "where": "Nyx",
+          "done_when": "\"Scan with a Prospector Payout\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/scan-with-a-prospector-payout"
+      ],
+      "contracts": [
+        "Scan with a Prospector Payout"
+      ]
+    },
+    {
+      "id": "recco-prospector",
+      "title": "\"Scan with a Prospector Payout\": earn a MISC Prospector",
+      "kind": "task",
+      "optional": true,
+      "tags": [
+        "nyx",
+        "lawful",
+        "mining"
+      ],
+      "why": "A one-time job whose reward is a MISC Prospector Alliance.",
+      "reward": "MISC Prospector Alliance",
+      "requires": [
+        "recco-prestige2"
+      ],
+      "steps": [
+        {
+          "do": "Accept and complete \"Scan with a Prospector Payout\".",
+          "where": "Nyx",
+          "done_when": "It completes and the Prospector Alliance is yours."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/scan-with-a-prospector-payout"
+      ],
+      "contracts": [
+        "Scan with a Prospector Payout"
+      ]
+    },
+    {
+      "id": "recco-prestige3",
+      "title": "Reach Recco Prestige 3 (69,600 rep)",
+      "kind": "grind",
+      "optional": true,
+      "goal": {
+        "target": 114,
+        "unit": "jobs"
+      },
+      "tags": [
+        "nyx",
+        "lawful",
+        "mining"
+      ],
+      "why": "The long one: about 350 reputation per job.",
+      "reputation": {
+        "faction": "Recco Battaglia",
+        "ladder": "MissionProviderReputation_Battaglia",
+        "rank": "Prestige 3",
+        "points": 69600
+      },
+      "requires": [
+        "recco-prospector"
+      ],
+      "steps": [
+        {
+          "do": "Keep taking Recco's jobs. Count each one here.",
+          "where": "Nyx",
+          "done_when": "\"Mining and MOLE\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/mining-and-mole"
+      ],
+      "contracts": [
+        "Mining and MOLE"
+      ]
+    },
+    {
+      "id": "recco-mole",
+      "title": "\"Mining and MOLE\": earn an ARGO MOLE",
+      "kind": "task",
+      "optional": true,
+      "tags": [
+        "nyx",
+        "lawful",
+        "mining"
+      ],
+      "why": "A one-time job whose reward is an ARGO MOLE Alliance.",
+      "reward": "ARGO MOLE Alliance",
+      "requires": [
+        "recco-prestige3"
+      ],
+      "steps": [
+        {
+          "do": "Accept and complete \"Mining and MOLE\".",
+          "where": "Nyx",
+          "done_when": "It completes and the MOLE Alliance is yours."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/mining-and-mole"
+      ],
+      "contracts": [
+        "Mining and MOLE"
+      ]
+    },
+    {
+      "id": "mining-buy-golem",
+      "title": "Or buy a Drake Golem now",
+      "kind": "purchase",
+      "optional": true,
+      "ship": {
+        "uex_name": "Golem",
+        "display": "Drake Golem"
+      },
+      "tags": [
+        "solo",
+        "lawful",
+        "mining"
+      ],
+      "why": "Skip the reputation wait and mine right away. The price shown is live from UEX.",
+      "requires": [
+        "fs-launch-own-ship"
+      ],
+      "steps": [
+        {
+          "do": "Save up the price shown above.",
+          "done_when": "Your wallet covers it."
+        },
+        {
+          "do": "Buy the Golem at the cheapest listed shop.",
+          "done_when": "It is listed as yours at an ASOP terminal."
+        }
+      ],
+      "sources": [
+        "https://api.uexcorp.uk/2.0/vehicles_purchases_prices_all"
+      ]
+    }
+  ]
+}

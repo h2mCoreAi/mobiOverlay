@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "trading",
+    "title": "Trading Commodities",
+    "order": 25,
+    "patch": "4.10.3",
+    "categories": ["trading"],
+    "summary": "Buy commodities where they're cheap and sell where demand is higher."
+  },
+  "objectives": [
+    {
+      "id": "trade-first-run",
+      "title": "Make your first trade run",
+      "kind": "task",
+      "tags": ["solo", "lawful"],
+      "why": "Commodities bought at mining outposts, farms and stations sell for more where demand is higher. Your profit depends on the route.",
+      "requires": ["fs-launch-own-ship"],
+      "steps": [
+        {"do": "Pick a commodity and route that fits your ship's cargo grid (SCU). mobiOverlay's Commodity Prices and Trade Route Optimizer cards show live UEX prices.", "done_when": "You know where to buy, where to sell and how much fits."},
+        {"do": "Land legally at the buying location (request landing). If you don't, your ship won't appear at the trade terminal.", "where": "The buying location", "done_when": "Your ship is listed at the commodity terminal."},
+        {"do": "Buy the commodity into your ship's cargo grid.", "where": "Commodity terminal", "done_when": "The cargo shows in your ship."},
+        {"do": "Fly to the selling location, land legally, and sell.", "where": "The selling location", "done_when": "The sale completes and your wallet goes up."}
+      ],
+      "tips": "Buy only what you can afford to lose: the cargo is yours until it's sold.",
+      "sources": ["https://support.robertsspaceindustries.com/hc/en-us/articles/360034785754-Commodities"]
+    },
+    {
+      "id": "trade-sell-gems",
+      "title": "Sell hand-collected gems",
+      "kind": "task",
+      "optional": true,
+      "tags": ["solo", "lawful"],
+      "categories": ["trading", "mining"],
+      "why": "Gems you collect by hand are ready to trade as they are; they don't need refining. Many on-foot commodities are found in and around caves.",
+      "requires": ["fs-launch-own-ship"],
+      "steps": [
+        {"do": "Collect gems by hand (caves are a good place to look).", "done_when": "The gems are in your inventory."},
+        {"do": "Land legally at a station or port with a commodity terminal and sell them.", "done_when": "The sale completes."}
+      ],
+      "sources": ["https://support.robertsspaceindustries.com/hc/en-us/articles/360034785754-Commodities"]
+    }
+  ]
+}

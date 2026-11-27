@@ -5,7 +5,10 @@
     "title": "First Steps in Stanton",
     "order": 10,
     "patch": "4.10.3",
-    "summary": "Wake up, finish the tutorial, fly your ship and take your first contract."
+    "summary": "Wake up, finish the tutorial, fly your ship and take your first contract.",
+    "categories": [
+      "getting-started"
+    ]
   },
   "objectives": [
     {
@@ -62,6 +65,9 @@
       "sources": [
         "https://support.robertsspaceindustries.com/hc/en-us/articles/360025028633-Getting-Started-in-the-Verse",
         "https://api.star-citizen.wiki/missions/tutorial-your-first-steps"
+      ],
+      "contracts": [
+        "Tutorial - Your First Steps"
       ]
     },
     {
@@ -88,6 +94,9 @@
       ],
       "sources": [
         "https://api.star-citizen.wiki/missions/tutorial-your-first-outing-4"
+      ],
+      "contracts": [
+        "Tutorial - Your First Outing"
       ]
     },
     {
@@ -117,6 +126,9 @@
       ],
       "sources": [
         "https://api.star-citizen.wiki/missions/tutorial-your-first-flight-2"
+      ],
+      "contracts": [
+        "Tutorial - Your First Flight"
       ]
     },
     {

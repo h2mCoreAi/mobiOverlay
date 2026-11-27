@@ -1,0 +1,248 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "hauling",
+    "title": "First Paychecks: Hauling",
+    "order": 20,
+    "patch": "4.10.3",
+    "summary": "Move cargo for Covalex and climb its Hauling ladder to Member.",
+    "categories": [
+      "hauling",
+      "delivery"
+    ]
+  },
+  "objectives": [
+    {
+      "id": "haul-covalex-intro",
+      "title": "Covalex: \"Opportunity for Independent Cargo Hauler\"",
+      "kind": "rank",
+      "tags": [
+        "stanton",
+        "solo",
+        "lawful",
+        "hauling"
+      ],
+      "why": "Covalex's intro contract. Its 50 reputation alone takes you from Trainee to Rookie.",
+      "reward": "50,250 aUEC (Stanton version)",
+      "reputation": {
+        "faction": "Covalex",
+        "ladder": "Hauling",
+        "rank": "Rookie",
+        "points": 50
+      },
+      "requires": [
+        "fs-accept-contract"
+      ],
+      "steps": [
+        {
+          "do": "Accept \"Opportunity for Independent Cargo Hauler\" in Contracts.",
+          "done_when": "It is in your ACCEPTED tab."
+        },
+        {
+          "do": "Collect the cargo from the pickup freight elevator and load it on your ship (tractor beam or by hand).",
+          "where": "The contract's pickup",
+          "done_when": "The cargo is on your ship's grid."
+        },
+        {
+          "do": "Fly to the drop-off and send the cargo down its freight elevator.",
+          "where": "The contract's drop-off",
+          "done_when": "The contract completes and pays."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/ato-b-stanton4-intro",
+        "https://starcitizen.tools/Freight_elevator",
+        "https://api.star-citizen.wiki/api/factions/2640e0b2-54f3-4c29-9d5d-6f8f4fc49dbe"
+      ],
+      "contracts": [
+        "Opportunity for Independent Cargo Hauler"
+      ]
+    },
+    {
+      "id": "haul-covalex-junior",
+      "title": "Reach Covalex Junior (250 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 1,
+        "unit": "Trainee Rank hauls"
+      },
+      "tags": [
+        "stanton",
+        "solo",
+        "lawful",
+        "hauling"
+      ],
+      "why": "A \"Trainee Rank\" haul gives 500 reputation, enough for Junior in one run. \"Rookie Rank\" hauls give only 50 (about 4 runs).",
+      "reward": "10,000-25,000 aUEC per Trainee Rank haul",
+      "reputation": {
+        "faction": "Covalex",
+        "ladder": "Hauling",
+        "rank": "Junior",
+        "points": 250
+      },
+      "requires": [
+        "haul-covalex-intro"
+      ],
+      "steps": [
+        {
+          "do": "Accept a Covalex \"Trainee Rank - Small Cargo Haul\" or \"Trainee Rank - Direct Small Cargo Haul\".",
+          "where": "Stanton",
+          "done_when": "It is accepted."
+        },
+        {
+          "do": "Deliver it the same way as the intro.",
+          "done_when": "Contracts now offers \"Junior Rank\" Covalex hauls."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/004ebea5-5fb4-4f08-9ace-378df8734fd7",
+        "https://api.star-citizen.wiki/missions/single-to-multi2-processed-stims-stanton3-small-grade1"
+      ],
+      "contracts": [
+        "Trainee Rank - Direct Small Cargo Haul",
+        "Trainee Rank - Small Cargo Haul"
+      ]
+    },
+    {
+      "id": "haul-covalex-member",
+      "title": "Reach Covalex Member (5,250 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 10,
+        "unit": "Junior Rank hauls"
+      },
+      "tags": [
+        "stanton",
+        "solo",
+        "lawful",
+        "hauling"
+      ],
+      "why": "Junior Rank hauls give 500 reputation each and pay about 60,000-77,000 aUEC.",
+      "reward": "About 60,000-77,000 aUEC per haul",
+      "reputation": {
+        "faction": "Covalex",
+        "ladder": "Hauling",
+        "rank": "Member",
+        "points": 5250
+      },
+      "requires": [
+        "haul-covalex-junior"
+      ],
+      "steps": [
+        {
+          "do": "Take Covalex \"Junior Rank\" hauls that fit your ship's cargo grid. Count each one here.",
+          "done_when": "Contracts offers \"Member Rank\" Covalex hauls."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/single-to-multi2-processed-mixed-press-ice-proc-food-stanton4-small-grade1",
+        "https://api.star-citizen.wiki/missions/ato-b-gas-hydrogen-stanton4-small-grade1"
+      ]
+    },
+    {
+      "id": "haul-redwind-intro",
+      "title": "Red Wind: \"Red Wind Seeking New Haulers\"",
+      "kind": "rank",
+      "optional": true,
+      "tags": [
+        "solo",
+        "lawful",
+        "hauling"
+      ],
+      "why": "Opens a second hauling company. Its 100 reputation takes Red Wind's Hauling ladder from Trainee to Rookie.",
+      "reputation": {
+        "faction": "Red Wind Linehaul",
+        "ladder": "Hauling",
+        "rank": "Rookie",
+        "points": 50
+      },
+      "requires": [
+        "haul-covalex-intro"
+      ],
+      "steps": [
+        {
+          "do": "Accept \"Red Wind Seeking New Haulers\" and deliver it.",
+          "done_when": "The contract completes."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/red-wind-seeking-new-haulers-3",
+        "https://api.star-citizen.wiki/api/factions/aa5f0bf8-f36f-423a-b9dd-73084139db23"
+      ],
+      "contracts": [
+        "Red Wind Seeking New Haulers"
+      ]
+    },
+    {
+      "id": "haul-ling-intro",
+      "title": "Ling: \"Cargo Hauling Opportunity with Ling Hauling\"",
+      "kind": "rank",
+      "optional": true,
+      "tags": [
+        "solo",
+        "lawful",
+        "hauling"
+      ],
+      "why": "Ling Family Hauling's intro. Only offered while you are a Ling Trainee, and gives 100 Hauling reputation.",
+      "reputation": {
+        "faction": "Ling Family Hauling",
+        "ladder": "Hauling",
+        "rank": "Rookie",
+        "points": 50
+      },
+      "requires": [
+        "haul-covalex-intro"
+      ],
+      "steps": [
+        {
+          "do": "Accept \"Cargo Hauling Opportunity with Ling Hauling\" and deliver it.",
+          "done_when": "The contract completes."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/cargo-hauling-opportunity-with-ling-hauling",
+        "https://api.star-citizen.wiki/api/factions/5a27ef3a-55c4-4822-b3f1-6506097d21de"
+      ],
+      "contracts": [
+        "Cargo Hauling Opportunity with Ling Hauling"
+      ]
+    },
+    {
+      "id": "haul-courier-intros",
+      "title": "Courier intros for Red Wind and Ling",
+      "kind": "task",
+      "optional": true,
+      "tags": [
+        "stanton",
+        "solo",
+        "lawful",
+        "hauling"
+      ],
+      "why": "Package-delivery intros that start each company's Courier career (+100 Courier reputation each).",
+      "reward": "5,750 aUEC (Red Wind) and 5,000 aUEC (Ling)",
+      "requires": [
+        "fs-accept-contract"
+      ],
+      "steps": [
+        {
+          "do": "Accept and finish \"Red Wind Seeking New Pilots\".",
+          "where": "Stanton",
+          "done_when": "It completes and pays 5,750 aUEC."
+        },
+        {
+          "do": "Accept and finish \"Ling Family Seeking New Contractors\".",
+          "where": "Stanton",
+          "done_when": "It completes and pays 5,000 aUEC."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/red-wind-seeking-new-pilots",
+        "https://api.star-citizen.wiki/missions/ling-family-seeking-new-contractors"
+      ],
+      "contracts": [
+        "Ling Family Seeking New Contractors",
+        "Red Wind Seeking New Pilots"
+      ]
+    }
+  ]
+}

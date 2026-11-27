@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "wikelo",
+    "title": "Wikelo's Emporium (optional)",
+    "order": 100,
+    "patch": "4.10.3",
+    "summary": "Trade collected items with Wikelo for rare rewards.",
+    "categories": [
+      "collecting"
+    ]
+  },
+  "objectives": [
+    {
+      "id": "wikelo-intro",
+      "title": "Wikelo: \"Wikelo Arrive to System\"",
+      "kind": "task",
+      "optional": true,
+      "tags": [
+        "lawful",
+        "collection"
+      ],
+      "why": "Wikelo's intro trade (+10 Wikelo reputation).",
+      "requires": [
+        "fs-accept-contract"
+      ],
+      "steps": [
+        {
+          "do": "Accept \"Wikelo Arrive to System\".",
+          "done_when": "It is accepted."
+        },
+        {
+          "do": "Bring Wikelo the Vestal Water and Tundra Kopion Horns it asks for.",
+          "done_when": "It completes."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/wikelo-arrive-to-system",
+        "https://api.star-citizen.wiki/api/factions/5f442fdd-15cc-4f62-bd10-fce2023f4d0c"
+      ],
+      "contracts": [
+        "Wikelo Arrive to System"
+      ]
+    },
+    {
+      "id": "wikelo-wolf",
+      "title": "Wikelo: \"Where Wolf? Here Wolf\"",
+      "kind": "task",
+      "optional": true,
+      "tags": [
+        "lawful",
+        "collection"
+      ],
+      "why": "One of the trades that raises Wikelo reputation (+30). Very Good Customer needs 340.",
+      "cost": "10 Wikelo Favors, 10 Vanduul Plating, 10 Vanduul Metal",
+      "requires": [
+        "wikelo-intro"
+      ],
+      "steps": [
+        {
+          "do": "Collect 10 Wikelo Favors, 10 Vanduul Plating and 10 Vanduul Metal.",
+          "done_when": "All three are in your inventory."
+        },
+        {
+          "do": "Accept and hand in \"Where Wolf? Here Wolf\".",
+          "done_when": "It completes."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/where-wolf-here-wolf"
+      ],
+      "contracts": [
+        "Where Wolf? Here Wolf"
+      ]
+    }
+  ]
+}

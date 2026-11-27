@@ -33,7 +33,7 @@ One row per active branch. Add yours in your first commit and remove it when the
 | Agent | Branch | Area / files |
 |-------|--------|--------------|
 | Claude | `claude/taskbar-perf-multiagent` | `host/main_window.py`, `host/main.py`, `host/refresh.py`, `host/config.py`, `host/module_base.py`, `modules/logistics_hub/results_view.py`, agent docs |
-| Claude | `claude/leveling-guide` (stacked on the branch above) | new module `modules/leveling_guide/`, `docs/modules/leveling-guide.md`, `docs/leveling-guide/`, `tests/test_leveling_guide.py` |
+| Claude | `claude/leveling-guide` (stacked on the branch above) | new module `modules/leveling_guide/` (packs, contracts, goals), `scripts/build_contract_catalog.py`, `scripts/check_pack.py`, `docs/modules/leveling-guide.md`, `docs/leveling-guide/`, `tests/test_leveling_guide.py` |
 
 ## Working rules that are easy to miss
 

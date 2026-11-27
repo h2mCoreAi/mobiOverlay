@@ -54,22 +54,124 @@ class ProgressStore:
         self.path = path or progress_path()
         self._objectives: dict[str, dict] = {}
         self._current: str | None = None
+        self._rep: dict[str, int] = {}        # "faction|ladder" -> reputation points
+        self._log: list[dict] = []            # logged contract runs, newest last (for undo)
+        self._goals: list[dict] = []
+        self._earned = 0                      # aUEC from logged runs, all time
         self.load()
 
     def load(self):
         self._objectives = _load_dict(self.path, "objectives", {})
         self._current = None
+        self._rep, self._log, self._goals, self._earned = {}, [], [], 0
         if self.path.exists():
             try:
                 raw = json.loads(self.path.read_text(encoding="utf-8"))
-                cur = raw.get("current") if isinstance(raw, dict) else None
-                self._current = cur if isinstance(cur, str) else None
             except ValueError:
-                pass
+                raw = None
+            if isinstance(raw, dict):
+                cur = raw.get("current")
+                self._current = cur if isinstance(cur, str) else None
+                rep = raw.get("reputation")
+                if isinstance(rep, dict):
+                    self._rep = {k: int(v) for k, v in rep.items() if isinstance(v, (int, float))}
+                if isinstance(raw.get("log"), list):
+                    self._log = [e for e in raw["log"] if isinstance(e, dict)][-500:]
+                if isinstance(raw.get("goals"), list):
+                    self._goals = [g for g in raw["goals"] if isinstance(g, dict) and g.get("id")]
+                if isinstance(raw.get("earned_uec"), (int, float)):
+                    self._earned = int(raw["earned_uec"])
 
     def save(self):
-        payload = {"schema": SCHEMA_VERSION, "current": self._current, "objectives": self._objectives}
+        payload = {"schema": SCHEMA_VERSION, "current": self._current, "objectives": self._objectives,
+                   "reputation": self._rep, "earned_uec": self._earned, "goals": self._goals,
+                   "log": self._log[-500:]}
         atomic_write_text(self.path, json.dumps(payload, indent=2))
+
+    # -- reputation, logged contracts and goals ---------------------------
+    def rep(self, key: str) -> int | None:
+        return self._rep.get(key)
+
+    def known_rep(self) -> dict[str, int]:
+        return dict(self._rep)
+
+    def set_rep(self, key: str, points: int):
+        self._rep[key] = max(-1_000_000, int(points))
+        self.save()
+
+    def raise_rep_to(self, key: str, points: int):
+        """Never lowers a known value (used when setup or a ticked rank-up
+        tells us you're at least this far)."""
+        if self._rep.get(key) is None or self._rep[key] < points:
+            self._rep[key] = int(points)
+            self.save()
+
+    @property
+    def earned_uec(self) -> int:
+        return self._earned
+
+    def log_run(self, contract: dict) -> dict:
+        """Count one finished run of a catalog contract: its reputation goes
+        onto every faction ladder it rewards, its pay onto earned aUEC."""
+        gains = [[r["faction"], r["ladder"], int(r["amount"])] for r in contract.get("rep", [])]
+        pay = int((contract.get("uec") or [0, 0])[1] or (contract.get("uec") or [0, 0])[0] or 0)
+        for faction, ladder, amount in gains:
+            key = f"{faction}|{ladder}"
+            self._rep[key] = self._rep.get(key, 0) + amount
+        self._earned += pay
+        entry = {"key": contract.get("key") or contract.get("title"), "title": contract.get("title"),
+                 "rep": gains, "uec": pay, "at": time.time()}
+        self._log.append(entry)
+        self.save()
+        return entry
+
+    def undo_last_run(self) -> dict | None:
+        if not self._log:
+            return None
+        entry = self._log.pop()
+        for faction, ladder, amount in entry.get("rep", []):
+            key = f"{faction}|{ladder}"
+            if key in self._rep:
+                self._rep[key] -= int(amount)
+        self._earned = max(0, self._earned - int(entry.get("uec") or 0))
+        self.save()
+        return entry
+
+    def runs_logged(self, key: str) -> int:
+        return sum(1 for e in self._log if e.get("key") == key)
+
+    def last_run(self) -> dict | None:
+        return self._log[-1] if self._log else None
+
+    def goals(self) -> list[dict]:
+        return list(self._goals)
+
+    def goal(self, gid: str) -> dict | None:
+        return next((g for g in self._goals if g.get("id") == gid), None)
+
+    def add_goal(self, goal: dict) -> dict:
+        goal = dict(goal)
+        goal.setdefault("id", f"goal-{int(time.time() * 1000)}")
+        goal.setdefault("created", time.time())
+        goal.setdefault("earned_at_start", self._earned)
+        self._goals.append(goal)
+        self.save()
+        return goal
+
+    def update_goal(self, gid: str, **fields):
+        goal = self.goal(gid)
+        if goal is not None:
+            goal.update(fields)
+            self.save()
+
+    def remove_goal(self, gid: str):
+        self._goals = [g for g in self._goals if g.get("id") != gid]
+        self.save()
+
+    def goal_money(self, goal: dict) -> int:
+        """Wallet estimate for a money or ship goal: what you said you had
+        when you set it, plus everything logged since."""
+        return int(goal.get("start_uec") or 0) + self._earned - int(goal.get("earned_at_start") or 0)
 
     # -- queries ---------------------------------------------------------
     def _state(self, oid: str) -> dict:
@@ -155,6 +257,7 @@ class ProgressStore:
     def reset_all(self):
         self._objectives = {}
         self._current = None
+        self._rep, self._log, self._goals, self._earned = {}, [], [], 0
         self.save()
 
 

@@ -1,0 +1,212 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "ship-goals",
+    "title": "Ship Goals",
+    "order": 110,
+    "patch": "4.10.3",
+    "summary": "Ships worth saving for, with live UEX prices. Pick the ones that fit your career.",
+    "categories": [
+      "ships"
+    ]
+  },
+  "objectives": [
+    {
+      "id": "ship-avenger-titan",
+      "title": "Buy an Aegis Avenger Titan",
+      "kind": "purchase",
+      "optional": true,
+      "ship": {
+        "uex_name": "Avenger Titan",
+        "display": "Aegis Avenger Titan"
+      },
+      "tags": [
+        "solo",
+        "lawful",
+        "combat",
+        "hauling"
+      ],
+      "why": "A one-seat ship with an 8 SCU cargo grid: small hauls and early bounties in one ship.",
+      "requires": [
+        "fs-launch-own-ship"
+      ],
+      "steps": [
+        {
+          "do": "Save up the price shown above.",
+          "done_when": "Your wallet covers it."
+        },
+        {
+          "do": "Buy it at the cheapest listed shop.",
+          "done_when": "It is listed as yours at an ASOP terminal."
+        }
+      ],
+      "sources": [
+        "https://api.uexcorp.uk/2.0/vehicles",
+        "https://api.uexcorp.uk/2.0/vehicles_purchases_prices_all"
+      ]
+    },
+    {
+      "id": "ship-cutlass-black",
+      "title": "Buy a Drake Cutlass Black",
+      "kind": "purchase",
+      "optional": true,
+      "ship": {
+        "uex_name": "Cutlass Black",
+        "display": "Drake Cutlass Black"
+      },
+      "tags": [
+        "lawful",
+        "combat",
+        "hauling"
+      ],
+      "why": "46 SCU of cargo, room for up to 3 crew and a built-in tractor beam.",
+      "requires": [
+        "fs-launch-own-ship"
+      ],
+      "steps": [
+        {
+          "do": "Save up the price shown above.",
+          "done_when": "Your wallet covers it."
+        },
+        {
+          "do": "Buy it at the cheapest listed shop.",
+          "done_when": "It is listed as yours at an ASOP terminal."
+        }
+      ],
+      "sources": [
+        "https://api.uexcorp.uk/2.0/vehicles",
+        "https://api.uexcorp.uk/2.0/vehicles_purchases_prices_all"
+      ]
+    },
+    {
+      "id": "ship-freelancer-max",
+      "title": "Buy a MISC Freelancer MAX",
+      "kind": "purchase",
+      "optional": true,
+      "ship": {
+        "uex_name": "Freelancer MAX",
+        "display": "MISC Freelancer MAX"
+      },
+      "tags": [
+        "solo",
+        "lawful",
+        "hauling"
+      ],
+      "why": "120 SCU of cargo, flyable solo: a big step up for Covalex Member and Experienced hauls.",
+      "requires": [
+        "haul-covalex-member"
+      ],
+      "steps": [
+        {
+          "do": "Save up the price shown above.",
+          "done_when": "Your wallet covers it."
+        },
+        {
+          "do": "Buy it at the cheapest listed shop.",
+          "done_when": "It is listed as yours at an ASOP terminal."
+        }
+      ],
+      "sources": [
+        "https://api.uexcorp.uk/2.0/vehicles",
+        "https://api.uexcorp.uk/2.0/vehicles_purchases_prices_all"
+      ]
+    },
+    {
+      "id": "ship-prospector",
+      "title": "Buy a MISC Prospector",
+      "kind": "purchase",
+      "optional": true,
+      "ship": {
+        "uex_name": "Prospector",
+        "display": "MISC Prospector"
+      },
+      "tags": [
+        "solo",
+        "lawful",
+        "mining"
+      ],
+      "why": "A one-seat mining ship. Recco Battaglia also gives one at Prestige 2.",
+      "requires": [
+        "fs-launch-own-ship"
+      ],
+      "steps": [
+        {
+          "do": "Save up the price shown above.",
+          "done_when": "Your wallet covers it."
+        },
+        {
+          "do": "Buy it at the cheapest listed shop.",
+          "done_when": "It is listed as yours at an ASOP terminal."
+        }
+      ],
+      "sources": [
+        "https://api.uexcorp.uk/2.0/vehicles",
+        "https://api.uexcorp.uk/2.0/vehicles_purchases_prices_all"
+      ]
+    },
+    {
+      "id": "ship-mole",
+      "title": "Buy an ARGO MOLE",
+      "kind": "purchase",
+      "optional": true,
+      "ship": {
+        "uex_name": "MOLE",
+        "display": "ARGO MOLE"
+      },
+      "tags": [
+        "lawful",
+        "mining"
+      ],
+      "why": "A crewed mining ship (up to 5 crew). Recco Battaglia also gives one at Prestige 3.",
+      "requires": [
+        "fs-launch-own-ship"
+      ],
+      "steps": [
+        {
+          "do": "Save up the price shown above.",
+          "done_when": "Your wallet covers it."
+        },
+        {
+          "do": "Buy it at the cheapest listed shop.",
+          "done_when": "It is listed as yours at an ASOP terminal."
+        }
+      ],
+      "sources": [
+        "https://api.uexcorp.uk/2.0/vehicles",
+        "https://api.uexcorp.uk/2.0/vehicles_purchases_prices_all"
+      ]
+    },
+    {
+      "id": "ship-c2-hercules",
+      "title": "Buy a Crusader C2 Hercules Starlifter",
+      "kind": "purchase",
+      "optional": true,
+      "ship": {
+        "uex_name": "C2 Hercules Starlifter",
+        "display": "Crusader C2 Hercules Starlifter"
+      },
+      "tags": [
+        "lawful",
+        "hauling"
+      ],
+      "why": "696 SCU of cargo for the biggest hauls; flyable by 1-2 crew.",
+      "requires": [
+        "haul-covalex-experienced"
+      ],
+      "steps": [
+        {
+          "do": "Save up the price shown above.",
+          "done_when": "Your wallet covers it."
+        },
+        {
+          "do": "Buy it at the cheapest listed shop.",
+          "done_when": "It is listed as yours at an ASOP terminal."
+        }
+      ],
+      "sources": [
+        "https://api.uexcorp.uk/2.0/vehicles",
+        "https://api.uexcorp.uk/2.0/vehicles_purchases_prices_all"
+      ]
+    }
+  ]
+}

@@ -1,179 +1,189 @@
 # Module: mobiGuide (Leveling Guide)
 
-Status: built 2026-11-27 on `claude/leveling-guide`. Offscreen tests pass;
-not yet run in the live overlay or in game.
+Status: built 2026-11-27 on `claude/leveling-guide`. Offscreen tests pass
+(`tests/test_leveling_guide.py`, 135 checks); not yet run in the live
+overlay or in game.
 
-A World of Warcraft–style leveling guide for Star Citizen. The card shows one
-objective at a time, step by step, and you check each step off by hand.
-Chapters, a level and XP bar, grind counters, and objectives you add yourself.
+A World of Warcraft–style leveling guide for Star Citizen that works for any
+player, at any level, on any patch:
 
-## What's in v1
+- **Patch packs:** one folder per game version, layered on each other.
+- **Categories** for every part of the game.
+- **Step-by-step objectives** you check off by hand.
+- **Reputation tracking** with the best repeatable contracts for each rank.
+- **Goals:** reach a rank, save up aUEC, or buy a ship.
+- **Import and export** of guides as data-only files.
 
-11 chapters and 63 objectives for live patch **4.10.3**:
+## Content structure
 
-| # | Chapter | Covers |
-|---|---------|--------|
-| 10 | First Steps in Stanton | pick a city, the three tutorial contracts, launch your ship, accept a contract |
-| 20 | First Paychecks: Hauling | Covalex intro → Rookie → Junior → Member; Red Wind, Ling and courier intros |
-| 30 | Bounty Hunters Guild | Training Permit → Junior → Beginner's Permit → Guild Member → Tracker License |
-| 40 | Mercenary: Foxwell | intros → Jr. Contractor → Contractor → Sr. Contractor (Red Level) → Veteran |
-| 50 | Salvage: Adagio | intro → Jr. Contractor → Contractor; buy a Vulture |
-| 60 | Nyx: InterSec | intro → Vanduul-Tech Smugglers → Retake Boarded Vessel → Sr. → Veteran |
-| 70 | Nyx: Recco Battaglia | Welcome to the System → Prestige 1/2/3 (Golem, Prospector and MOLE rewards); or buy a Golem |
-| 80 | Advanced Careers | Covalex to Master; BHG to Guild Steward and the Master license |
-| 90 | Outlaw Path | Headhunters, Vaughn and Dead Saints entry contracts (illegal, hidden by default) |
-| 100 | Wikelo's Emporium | intro trade and a reputation trade |
-| 110 | Ship Goals | Avenger Titan, Cutlass Black, Freelancer MAX, Prospector, MOLE, C2 Hercules with live UEX prices |
+```
+modules/leveling_guide/packs/<pack-id>/
+    pack.json          manifest
+    chapters/*.json    one chapter per file
+    contracts.json     contract catalog for that build (generated)
+```
 
-Every fact was checked against the 4.10.3 game data before it went in. See
-`docs/leveling-guide/verification.md` for what was confirmed, what was wrong
-in the AI research, and how grind counts are computed.
+Bundled packs:
 
-## First run: setup questionnaire
+| Pack | Label | Builds on | Contents |
+|------|-------|-----------|----------|
+| `4.10.3-live` | 4.10.3 (live) | – | 14 chapters, 67 objectives, 853 contracts, 16 categories |
+| `5.0-ptu` | 5.0 (PTU) | `4.10.3-live` | adds the Guilds chapter (7 objectives), the Guilds category, and 5.0's 899 contracts |
 
-A banner on the card offers **START SETUP** (or NOT NOW; it stays in the
-⚙ menu as *Run setup again…*). Four pages:
-
-1. **Experience:** new player, or knows the basics. "Knows the basics"
-   ticks off every objective tagged `basics` (the First Steps chapter).
-2. **Where are you already:** one rank picker per faction the guide covers,
-   built from the content's `reputation` fields, so new chapters appear
-   automatically. Picking a rank ticks every rank-up objective at or below
-   it, plus everything those require (`guide.ids_done_for`).
-3. **What you want to do:** career checkboxes (hauling, combat, salvage,
-   mining, collection) become a `focus` filter that hides other careers.
-   Objectives with no career tag (the basics, your own) always show. Also
-   outlaw content, optional objectives, and compact mode.
-4. **How to use it:** the same help as ⚙ → *How to use mobiGuide*.
-
-The guide then opens on the next unfinished objective.
-
-## Card
-
-- **Level / XP bar.** Each finished objective gives XP (task 100, rank-up
-  150, purchase 200, grind 100 + 10 per counted run up to 50). Level *n*
-  needs 200 + 50·(n−1) XP. This is for motivation only; nothing in the game
-  is calculated.
-- **Chapter picker** with done/total per chapter, and **NEXT ▸** to jump to
-  the guide's next objective.
-- **Current objective:** type badges (TASK / RANK UP / GRIND / BUY, OPTIONAL,
-  ILLEGAL, YOURS), why it matters, target rank, reward, cost, and for purchases
-  the **live UEX price** at the cheapest shop. A "Usually done after" hint
-  appears when its prerequisites aren't done; it's a hint, not a lock.
-- **Steps:** done steps dimmed, the current step outlined with its
-  **DONE WHEN** check. `✓ I DID THIS STEP` advances; on the last step it reads
-  `✓ FINISH OBJECTIVE` and moves to the next objective. `◀ BACK`, `SKIP`
-  (moves on without XP), and `↺ NOT DONE YET` on a finished one.
-- **Grind counter:** `−` / `+1` with "4 / 10 Junior Rank hauls".
-- **Chapter checklist:** click the ☐ box to mark an objective done or not
-  done, click the title to open it (right-click also toggles).
-- **⚙ menu:** show optional objectives (on by default), show outlaw content
-  (off by default), compact mode (current step only, for flying), run setup
-  again, how to use, mark this chapter done, reset this objective, delete one
-  of yours, reload guide files, open my guide folder, reset all progress.
-- **SOURCES** opens the pages each objective's facts come from.
-- **+ ADD OBJECTIVE:** title, chapter, task or grind (with a target), why,
-  and steps (one per line; `=>` adds the "done when" check).
-
-Completion is always manual: no Game.log reading, no game input.
-
-## Adding content
-
-There are three ways, all using the same schema. Nothing in `host/` changes.
-
-1. **Bundled chapters** (ship with the app): `modules/leveling_guide/guides/*.json`,
-   one chapter per file. The spec bundles `modules/` whole, so new files
-   ship automatically.
-2. **Drop-in files** (no rebuild): any `*.json` in `leveling_guide/` next to
-   `config.json` (⚙ → Open my guide folder). A file can add a new chapter,
-   or reuse an existing `chapter.id` to append objectives to that chapter.
-3. **In the card:** + ADD OBJECTIVE writes `leveling_guide_custom.json` next
-   to `config.json`.
-
-A bad file or objective is skipped and counted in the card's "guide content
-problems" line (hover for details); the rest of the guide still loads.
-
-### Schema (v1)
+### pack.json
 
 ```json
 {
   "schema": 1,
-  "chapter": {"id": "hauling", "title": "First Paychecks: Hauling", "order": 20,
-              "patch": "4.10.3", "summary": "..."},
-  "objectives": [
-    {
-      "id": "haul-covalex-member",            // unique across the whole guide
-      "title": "Reach Covalex Member (5,250 rep)",
-      "kind": "grind",                        // task | rank | grind | purchase
-      "goal": {"target": 10, "unit": "Junior Rank hauls"},   // grind only
-      "reputation": {"faction": "Covalex", "ladder": "Hauling", "rank": "Member", "points": 5250},
-      "ship": {"uex_name": "Vulture", "display": "Drake Vulture"},  // purchase only
-      "optional": false,
-      "tags": ["stanton", "solo", "lawful", "hauling"],   // "unlawful" = hidden by default
-      "why": "...", "reward": "...", "cost": "...", "tips": "...",
-      "requires": ["haul-covalex-junior"],    // ordering hint; cycles are broken on load
-      "steps": [{"do": "...", "where": "...", "done_when": "..."}],
-      "sources": ["https://..."]
-    }
-  ]
+  "id": "5.0-ptu", "label": "5.0 (PTU)", "patch": "5.0.0", "channel": "ptu",
+  "game_version": "5.0.0-ptu.13284307",
+  "extends": "4.10.3-live",          // optional: inherit that pack's chapters
+  "remove": ["objective-id"],        // optional: drop inherited objectives
+  "reconfirmed": ["objective-id"],   // inherited objectives this patch's data backs (check_pack --write)
+  "also_confirmed": [{"title": "...", "source": "https://..."}],  // contracts confirmed by a second source
+  "categories": [...],               // replaces inherited categories
+  "categories_add": [...]            // or adds to them
 }
 ```
 
-New content should follow the same rule as v1: only facts confirmed against
-game data or official sources, with the source listed.
+How inheritance works:
+- A pack loads everything it `extends`, base first.
+- A chapter file with an existing chapter id adds to that chapter.
+- An objective with an existing id replaces the inherited one, in place.
+- `remove` drops objectives by id.
+- The newest **live** pack is the default; players switch packs in ⚙ → Game version.
+
+### Categories
+
+Categories are defined in the pack manifest, so a new patch can add or remap
+them without code changes. Each has:
+- `mission_types`: the game data's contract types it collects.
+- `ships` (optional): true for contracts that spawn ship encounters (ship combat), false for those that don't (FPS).
+- `illegal` (optional): collects every illegal contract.
+
+Chapters list their `categories`; an objective can override them.
+
+Bundled categories:
+- Getting Started
+- Hauling
+- Deliveries & Courier
+- Trading
+- Mining
+- Refining
+- Salvage
+- Bounty Hunting
+- Ship Combat
+- FPS Combat
+- Investigation & Rescue
+- Refuel, Repair & Maintenance
+- Collecting & Wikelo
+- Events
+- Outlaw Work
+- Ships & Gear
+- Guilds (5.0)
+
+### Objectives (chapter files)
+
+Same schema as before, plus:
+- `categories`: overrides the chapter's categories.
+- `contracts`: the contract titles the objective names; the pack checker validates them.
+- `verified`: the patch its facts were checked on; defaults to the chapter's `patch`.
+- `reputation.ladder`: now the game's scope name (`Hauling`, `FactionReputation`, `BountyHunter_BountyHuntersGuild`, `MissionProviderReputation_Battaglia`, `Guild`, ...).
+
+### contracts.json (generated)
+
+Built by `scripts/build_contract_catalog.py` from SCMDB's game-data files
+(scmdb.net; both its newer contract list and its older mission-broker list).
+
+Each contract records:
+- giver and faction
+- mission type, systems, legality, whether it repeats
+- aUEC reward range
+- reputation per faction ladder
+- rank gate, and whether it spawns ships
+
+The file also carries the game's ladders (rank thresholds) and every contract
+title. Older rank-titled hauls carry their gate only in the title ("Junior
+Rank - ..."); the builder infers it and marks it `from_title`.
+
+## Adding a patch (5.0.1, 5.1, ...)
+
+```bash
+mkdir -p modules/leveling_guide/packs/5.1-live/chapters
+# write pack.json: id, label, patch, channel, "extends": "5.0-ptu" (or the last live pack)
+python scripts/build_contract_catalog.py --list
+python scripts/build_contract_catalog.py <scmdb version> --label "5.1 (live)" --pack modules/leveling_guide/packs/5.1-live
+# add chapters for what's new; reuse an objective id to replace one; list ids under "remove" to drop them
+python scripts/check_pack.py 5.1-live --write
+python tests/run_all.py leveling
+```
+
+`check_pack.py` fails a pack when:
+- its content doesn't load;
+- a category it names doesn't exist;
+- an objective names a contract that isn't in the pack's data;
+- a rank-up's points don't match the game ladder.
+
+It also lists which inherited objectives the new data re-confirms. The card
+marks the rest **CHECKED ON <old patch>**. The test suite runs these checks
+on every bundled pack.
+
+## Importing and sharing guides
+
+Guides are data only (JSON). Nothing imported is ever executed.
+
+- **⚙ → Import guide** takes either of:
+  - a **pack .zip**: a folder with `pack.json` and `chapters/`, optionally `contracts.json`. It's checked (one manifest, a safe id, no paths outside the pack, only `.json` taken, size limits, loads and extends correctly) and installed to `leveling_guide/packs/<id>/` next to `config.json`. It then appears in ⚙ → Game version.
+  - a **chapter .json**: installed to `leveling_guide/`. It loads on top of every pack.
+- **⚙ → Export my objectives as a chapter** writes your + ADD OBJECTIVE items as one chapter file anyone can import.
+- **⚙ → Export pack** zips the active pack.
+- **Without the menu:** drop folders and files into the same `leveling_guide/` folder (⚙ → Open my guide folder).
+
+## Card
+
+- **Header:** level and XP bar, and ⚙ (game version, filters, setup, help, import/export, reset).
+- **First-run banner → setup:**
+  1. game version and experience
+  2. ranks already held, per faction ladder (seeds the reputation tracker and ticks off everything up to them)
+  3. categories to focus on, outlaw, optional, compact
+  4. how to use it
+- **GUIDE / CONTRACTS** tabs and a **category** picker, shared by both views.
+- **GUIDE:**
+  - chapter picker filtered by category;
+  - the current objective: badges, why, target, reward, cost, live UEX price for purchases, and a **CHECKED ON** badge when the facts aren't confirmed for the chosen version;
+  - steps with **DONE WHEN**;
+  - for rank-ups, a **reputation tracker**: current / target, **SET**, and the five best repeatable contracts for that ladder. Each row shows reputation, pay and "≈N to go"; locked ones show "needs <rank>".
+  - Clicking a contract logs one finished run: its reputation goes onto every ladder it rewards, and its pay onto earnings.
+- **CONTRACTS:**
+  - goals: reach a rank, save up aUEC, or buy a ship (live UEX price), with progress and **SET**;
+  - the best contracts for the goal, or with no goal, the category's best-paying repeatable contracts, unlocked first.
+- **↶ UNDO LAST RUN** takes back the last logged contract.
+
+Completion is always manual. No Game.log, no game input.
 
 ## Files
 
 | File | Role |
 |------|------|
-| `modules/leveling_guide/module.py` | card, actions, UEX price refresh |
-| `modules/leveling_guide/guide.py` | load, validate and order content; XP, level and price maths (pure, no Qt) |
-| `modules/leveling_guide/progress.py` | progress store and custom objectives (pure) |
-| `modules/leveling_guide/guides/*.json` | bundled chapters |
-| `app_root()/leveling_guide_progress.json` | done, skipped, current step and counter per objective id |
+| `module.py` | card, setup, goal dialog, import/export actions, UEX price refresh |
+| `guide.py` | pack discovery and inheritance, chapter layering, validation, setup maths (pure) |
+| `contracts.py` | catalog, categories, recommendations, unlock checks (pure) |
+| `progress.py` | progress: done/skip/step/count, reputation, logged runs, goals, custom objectives (pure) |
+| `packcheck.py` | pack validation against its data (pure; used by the script and the tests) |
+| `packio.py` | safe import/export of packs and chapters (pure) |
+| `scripts/build_contract_catalog.py` | SCMDB file → `contracts.json` |
+| `scripts/check_pack.py` | validate packs, write `reconfirmed` |
+| `app_root()/leveling_guide_progress.json` | progress, reputation, logged runs, goals |
 | `app_root()/leveling_guide_custom.json` | your objectives |
-| `app_root()/leveling_guide/*.json` | drop-in chapter files |
-| `config.json` → `modules.leveling_guide` | `show_optional`, `show_unlawful`, `compact`, `focus`, `setup_done`, `setup_dismissed`, `refresh_interval_seconds` (600) |
+| `app_root()/leveling_guide/` | drop-in chapters; `packs/` holds imported packs |
+| `config.json` → `modules.leveling_guide` | `pack`, `view`, `category`, `goal`, `focus`, `show_optional`, `show_unlawful`, `compact`, `setup_done`, `setup_dismissed` |
 
-Progress is keyed by objective id, so adding, removing or reordering content
-keeps it. Both files use `atomic_write_text` and corrupt-file quarantine,
-like mobiNotes.
+## Data and honesty rules
 
-## UEX use
+- Reputation and pay figures are the game's **base values** from the game files.
+- "≈N to go" is the remaining target divided by the contract's reputation or pay.
+- Recommendations are sorting and filtering only. Rank gates and illegality are shown as the data records them.
+- **Known gap:** some gates are missing from SCMDB (Foxwell's Red Level contracts are gated at Sr. Contractor in the wiki data, not in SCMDB), so those rows show no "needs".
+- Unknown ranks show "needs X?" until you set them.
 
-One endpoint, `vehicles_purchases_prices_all`, fetched through
-`refresh_job()` (off the GUI thread) only while a purchase objective is on
-screen, and cached for 30 minutes. The card shows the cheapest listing as UEX
-reports it. A UEX failure only changes the price line ("UEX unavailable, will
-retry"); the card never goes into its error state for it.
-
-## Tests
-
-`tests/test_leveling_guide.py` (96 checks):
-
-- **Bundled content:** loads with no errors, ids are unique, every objective
-  has https sources and complete steps, and requirements resolve.
-- **Pinned to verified data:** grind targets and rank thresholds match the
-  verified game data.
-- **Bad content is survivable:** broken JSON, a wrong schema, missing fields,
-  duplicate ids, unknown requirements and requirement cycles are all skipped
-  without breaking the load.
-- **User content:** drop-in files and custom objectives merge in correctly.
-- **Progress store:** round-trips, handles skip, and quarantines a corrupt file.
-- **Maths:** level, prices and next-objective selection.
-- **Offscreen card walk-through:** steps, back, skip, counter, filters, compact
-  mode, live price, a UEX failure, and a custom objective.
-- **Setup:** rank pickers, ticking from answers (including required
-  licenses), the focus filter, the wizard's answers, banner show and hide,
-  checklist box vs title clicks, and mark chapter done.
-
-## Not done / next
-
-- Not yet seen in the real overlay or used in game.
-- Two facts are left out until they can be confirmed in game: which Covalex
-  rank first offers interstellar hauls, and the Wikelo rank gate on
-  "Most Special Wolf".
-- **5.0 content:** guild ranks, contract boards and Nyx I. Add once 5.0 is
-  live and the data has been re-checked.
-- **Re-verify on each patch.** The research tooling (the star-citizen.wiki
-  mission API) makes this fast. Bump `patch` in each chapter after checking.
+See `docs/leveling-guide/verification.md` for every checked claim.

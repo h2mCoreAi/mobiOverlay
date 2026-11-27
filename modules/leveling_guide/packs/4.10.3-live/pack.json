@@ -1,0 +1,177 @@
+{
+  "schema": 1,
+  "id": "4.10.3-live",
+  "label": "4.10.3 (live)",
+  "patch": "4.10.3",
+  "channel": "live",
+  "game_version": "4.10.3-LIVE.13165946",
+  "verified": "2026-11-27",
+  "notes": "Facts checked against the star-citizen.wiki mission API and SCMDB (both read from the 4.10.3 game files), the RSI Knowledge Base and UEX. See docs/leveling-guide/verification.md.",
+  "categories": [
+    {
+      "id": "getting-started",
+      "title": "Getting Started",
+      "summary": "Moving, flying, landing and taking contracts.",
+      "mission_types": []
+    },
+    {
+      "id": "hauling",
+      "title": "Hauling",
+      "summary": "Cargo contracts and the hauling company ranks.",
+      "mission_types": [
+        "Hauling",
+        "Hauling - Local",
+        "Hauling - Planetary",
+        "Hauling - Stellar",
+        "Hauling - Interstellar"
+      ]
+    },
+    {
+      "id": "delivery",
+      "title": "Deliveries & Courier",
+      "summary": "Package and courier runs.",
+      "mission_types": [
+        "Delivery",
+        "Courier"
+      ]
+    },
+    {
+      "id": "trading",
+      "title": "Trading",
+      "summary": "Buying and selling commodities (see mobiOverlay's Commodity Prices and Trade Route cards).",
+      "mission_types": []
+    },
+    {
+      "id": "mining",
+      "title": "Mining",
+      "summary": "Ship, vehicle and hand mining, and Recco Battaglia's jobs.",
+      "mission_types": [
+        "Ship Mining",
+        "Hand Mining",
+        "Ground Vehicle Mining",
+        "Battaglia"
+      ]
+    },
+    {
+      "id": "refining",
+      "title": "Refining",
+      "summary": "Turning raw ore into refined material.",
+      "mission_types": []
+    },
+    {
+      "id": "salvage",
+      "title": "Salvage",
+      "summary": "Hull scraping and salvage orders.",
+      "mission_types": [
+        "Salvage"
+      ]
+    },
+    {
+      "id": "bounty-hunting",
+      "title": "Bounty Hunting",
+      "summary": "Licensed bounties from the Bounty Hunters Guild and security firms.",
+      "mission_types": [
+        "Bounty Hunter",
+        "PvP Missions"
+      ]
+    },
+    {
+      "id": "ship-combat",
+      "title": "Ship Combat",
+      "summary": "Mercenary work that puts you in a cockpit.",
+      "mission_types": [
+        "Mercenary"
+      ],
+      "ships": true
+    },
+    {
+      "id": "fps-combat",
+      "title": "FPS Combat",
+      "summary": "Mercenary work on foot: bunkers, outposts, boarding.",
+      "mission_types": [
+        "Mercenary"
+      ],
+      "ships": false
+    },
+    {
+      "id": "investigation",
+      "title": "Investigation & Rescue",
+      "summary": "Missing people, black boxes and search jobs.",
+      "mission_types": [
+        "Investigation"
+      ]
+    },
+    {
+      "id": "support",
+      "title": "Refuel, Repair & Maintenance",
+      "summary": "Refuelling ships and fixing stations.",
+      "mission_types": [
+        "Refueling",
+        "Maintenance"
+      ]
+    },
+    {
+      "id": "collecting",
+      "title": "Collecting & Wikelo",
+      "summary": "Collection contracts and Wikelo's trades.",
+      "mission_types": [
+        "Collection",
+        "Wikelo - Vehicles",
+        "Wikelo - Other Items"
+      ]
+    },
+    {
+      "id": "events",
+      "title": "Events",
+      "summary": "Priority and event contracts while they run.",
+      "mission_types": [
+        "Priority",
+        "RSI Discovery Event"
+      ]
+    },
+    {
+      "id": "outlaw",
+      "title": "Outlaw Work",
+      "summary": "Illegal contracts of every kind.",
+      "mission_types": [],
+      "illegal": true
+    },
+    {
+      "id": "ships",
+      "title": "Ships & Gear",
+      "summary": "Ships worth saving for.",
+      "mission_types": []
+    }
+  ],
+  "also_confirmed": [
+    {
+      "title": "Trainee Rank - Small Cargo Haul",
+      "source": "https://api.star-citizen.wiki/missions/004ebea5-5fb4-4f08-9ace-378df8734fd7"
+    },
+    {
+      "title": "Trainee Rank - Direct Small Cargo Haul",
+      "source": "https://api.star-citizen.wiki/missions/004ebea5-5fb4-4f08-9ace-378df8734fd7"
+    },
+    {
+      "title": "Ling Family Seeking New Contractors",
+      "source": "https://api.star-citizen.wiki/missions/ling-family-seeking-new-contractors"
+    },
+    {
+      "title": "Red Wind Seeking New Pilots",
+      "source": "https://api.star-citizen.wiki/missions/red-wind-seeking-new-pilots"
+    },
+    {
+      "title": "Active Bounty: [TargetName] (VLRT)",
+      "source": "https://api.star-citizen.wiki/missions/active-bounty-target-name-vlrt"
+    },
+    {
+      "title": "Wanted by ArcCorp: [TargetName] (VLRT)",
+      "source": "https://api.star-citizen.wiki/missions/wanted-by-arccorp-target-name-vlrt"
+    },
+    {
+      "title": "Active Bounty: [TargetName] (LRT)",
+      "source": "https://api.star-citizen.wiki/missions/active-bounty-target-name-lrt"
+    }
+  ],
+  "reconfirmed": []
+}

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "mining-basics",
+    "title": "Mining Basics",
+    "order": 65,
+    "patch": "4.10.3",
+    "categories": ["mining"],
+    "summary": "Scan, fracture and extract: how ship mining works."
+  },
+  "objectives": [
+    {
+      "id": "mine-first-rock",
+      "title": "Mine your first rock",
+      "kind": "task",
+      "tags": ["solo", "lawful"],
+      "why": "Ship mining has three phases: scanning, fracturing and extraction. This walks through one rock.",
+      "requires": ["fs-launch-own-ship"],
+      "steps": [
+        {"do": "In a mining ship, near an asteroid cluster or a planet or moon surface, press Tab for Scanning Mode.", "done_when": "Scanning Mode is on."},
+        {"do": "Hold the left mouse button about two seconds and release to send a pulse. Pinging also reveals you to nearby ships.", "done_when": "Mineable rocks nearby are highlighted."},
+        {"do": "Pick a rock and press M for Mining Mode. Aim at the rock to read its composition, resistance and instability.", "done_when": "The HUD shows the rock's details."},
+        {"do": "Make sure you're in Fracture Mode (right-click toggles), then left-click to fire the laser. It starts at a low throttle.", "done_when": "The laser is on the rock."},
+        {"do": "Scroll up slowly to raise the Laser Throttle until the Rock Energy Level enters the Green Zone, and hold it there without overcharging.", "done_when": "The Fracturing Sensor reaches 100% and the rock breaks."},
+        {"do": "Right-click to Extraction Mode and left-click purple-glowing fragments to pull them in. Yellow ones need fracturing again.", "done_when": "Your ore bags hold the extracted material."}
+      ],
+      "sources": ["https://support.robertsspaceindustries.com/hc/en-us/articles/360007611573-Mining-Basics"]
+    }
+  ]
+}

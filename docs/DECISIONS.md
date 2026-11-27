@@ -4255,3 +4255,35 @@ Append-only. Newest at bottom. Short entries — rationale, not essays.
   rows. Added a Ship Goals chapter (six ships, roles and capacities from UEX
   `vehicles`, live prices), placed last so it doesn't interrupt the linear
   path.
+
+- **2026-11-27 — mobiGuide becomes patch-modular, categorised and
+  goal-driven.** Owner asked for 5.0 coverage, repeatable contracts toward
+  goals, every facet of the game as categories, guides that work for any
+  player on any patch, and importable guides.
+  - **Patch packs** (`modules/leveling_guide/packs/<id>/`): a manifest,
+    chapters and a contract catalog per game version. A pack can `extend`
+    another, replace objectives by id and `remove` some. A new patch is a new
+    folder, with no code changes. Chosen over one guide with per-objective
+    patch flags because patches change contracts wholesale, and a pack keeps
+    each version's data and checks together.
+  - **Contract catalogs come from SCMDB** (game-file data, live and PTU),
+    because the star-citizen.wiki API, used for the first round of
+    verification, has no PTU data. The two agree on 4.10.3. The builder
+    (`scripts/build_contract_catalog.py`) is re-runnable for every patch.
+  - **Per-patch verification is enforced.** `packcheck.py` fails a pack
+    whose objectives name contracts missing from its data, or whose rank
+    points differ from the game ladder. Inherited objectives are
+    re-confirmed per patch or shown as "CHECKED ON <old patch>". The tests
+    run it on every bundled pack.
+  - **Categories live in pack manifests** and map the game's mission types
+    (ship combat vs FPS by ship encounters, outlaw by legality), so they
+    follow the data.
+  - **Repeat-to-goal:** reputation is tracked per faction ladder. Rank-ups and
+    goals (rank, aUEC, ship at its live UEX price) list repeatable contracts
+    by reputation or pay, unlocked first. Logging a run applies its game
+    values; undo is supported. This is sorting and filtering of game data, not
+    invented logic (safety rule 6).
+  - **Import/export is data-only.** Packs (.zip) and chapters (.json) are
+    validated, with no path escapes, JSON only and size limits, and they must
+    load and extend correctly before install. Nothing imported is executed.
+

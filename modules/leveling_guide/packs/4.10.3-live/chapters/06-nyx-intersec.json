@@ -1,0 +1,256 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "nyx-intersec",
+    "title": "Nyx: InterSec Defense Solutions",
+    "order": 60,
+    "patch": "4.10.3",
+    "summary": "Fight the Vanduul incursion in Nyx and unlock its story contracts.",
+    "categories": [
+      "ship-combat",
+      "fps-combat"
+    ]
+  },
+  "objectives": [
+    {
+      "id": "ids-intro",
+      "title": "InterSec: \"New Defense Contract: <target> Elimination\"",
+      "kind": "task",
+      "tags": [
+        "nyx",
+        "solo",
+        "lawful",
+        "combat"
+      ],
+      "why": "InterSec's intro contract (+100 standing). Its contracts are in Nyx.",
+      "requires": [
+        "fs-launch-own-ship"
+      ],
+      "steps": [
+        {
+          "do": "Travel to Nyx and accept \"New Defense Contract: <target> Elimination\".",
+          "where": "Nyx",
+          "done_when": "It is accepted."
+        },
+        {
+          "do": "Eliminate the target.",
+          "done_when": "It completes."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/new-defense-contract-target-name-elimination",
+        "https://api.star-citizen.wiki/api/factions/a9ab3e4f-30a3-4816-a1dd-4df51fd6678c"
+      ],
+      "contracts": [
+        "New Defense Contract: [TargetName] Elimination"
+      ]
+    },
+    {
+      "id": "ids-jr",
+      "title": "Reach InterSec Jr. Contractor (800 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 7,
+        "unit": "contracts"
+      },
+      "tags": [
+        "nyx",
+        "solo",
+        "lawful",
+        "combat"
+      ],
+      "why": "Neutral-rank InterSec contracts give 100-200 reputation (\"Patrol Dangerous Sector\" gives 200).",
+      "reputation": {
+        "faction": "InterSec Defense Solutions",
+        "ladder": "FactionReputation",
+        "rank": "Jr. Contractor",
+        "points": 800
+      },
+      "requires": [
+        "ids-intro"
+      ],
+      "steps": [
+        {
+          "do": "Take Neutral-rank InterSec contracts. Count each one here.",
+          "where": "Nyx",
+          "done_when": "\"Vanduul-Tech Smugglers\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/patrol-dangerous-sector"
+      ],
+      "contracts": [
+        "Patrol Dangerous Sector",
+        "Vanduul-Tech Smugglers"
+      ]
+    },
+    {
+      "id": "ids-smugglers",
+      "title": "InterSec: \"Vanduul-Tech Smugglers\"",
+      "kind": "task",
+      "tags": [
+        "nyx",
+        "lawful",
+        "combat"
+      ],
+      "why": "A one-time story contract for Jr. Contractors.",
+      "requires": [
+        "ids-jr"
+      ],
+      "steps": [
+        {
+          "do": "Accept and complete \"Vanduul-Tech Smugglers\".",
+          "where": "Nyx",
+          "done_when": "It completes."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/vanduul-tech-smugglers"
+      ],
+      "contracts": [
+        "Vanduul-Tech Smugglers"
+      ]
+    },
+    {
+      "id": "ids-contractor",
+      "title": "Reach InterSec Contractor (2,200 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 10,
+        "unit": "contracts"
+      },
+      "tags": [
+        "nyx",
+        "solo",
+        "lawful",
+        "combat"
+      ],
+      "why": "Jr. Contractor contracts (e.g. \"Operative Extraction\") give 100-250 reputation.",
+      "reputation": {
+        "faction": "InterSec Defense Solutions",
+        "ladder": "FactionReputation",
+        "rank": "Contractor",
+        "points": 2200
+      },
+      "requires": [
+        "ids-jr"
+      ],
+      "steps": [
+        {
+          "do": "Take Jr. Contractor InterSec contracts. Count each one here.",
+          "where": "Nyx",
+          "done_when": "\"Retake Boarded Vessel\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/operative-extraction"
+      ],
+      "contracts": [
+        "Operative Extraction",
+        "Retake Boarded Vessel"
+      ]
+    },
+    {
+      "id": "ids-retake",
+      "title": "InterSec: \"Retake Boarded Vessel\"",
+      "kind": "task",
+      "tags": [
+        "nyx",
+        "lawful",
+        "combat"
+      ],
+      "why": "On-foot ship boarding for Contractors (+300 standing).",
+      "requires": [
+        "ids-contractor"
+      ],
+      "steps": [
+        {
+          "do": "Accept and complete \"Retake Boarded Vessel\".",
+          "where": "Nyx",
+          "done_when": "It completes."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/retake-boarded-vessel"
+      ],
+      "contracts": [
+        "Retake Boarded Vessel"
+      ]
+    },
+    {
+      "id": "ids-sr",
+      "title": "Reach InterSec Sr. Contractor (5,800 rep)",
+      "kind": "grind",
+      "goal": {
+        "target": 15,
+        "unit": "contracts"
+      },
+      "tags": [
+        "nyx",
+        "lawful",
+        "combat"
+      ],
+      "why": "Contractor-rank contracts give 200-300 reputation.",
+      "reputation": {
+        "faction": "InterSec Defense Solutions",
+        "ladder": "FactionReputation",
+        "rank": "Sr. Contractor",
+        "points": 5800
+      },
+      "requires": [
+        "ids-contractor"
+      ],
+      "steps": [
+        {
+          "do": "Take Contractor-rank InterSec contracts. Count each one here.",
+          "where": "Nyx",
+          "done_when": "\"Pilot Under Fire From Vanduul\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/pilot-under-fire-from-vanduul"
+      ],
+      "contracts": [
+        "Pilot Under Fire From Vanduul"
+      ]
+    },
+    {
+      "id": "ids-veteran",
+      "title": "Reach InterSec Veteran Contractor (15,000 rep)",
+      "kind": "grind",
+      "optional": true,
+      "goal": {
+        "target": 37,
+        "unit": "contracts"
+      },
+      "tags": [
+        "nyx",
+        "lawful",
+        "combat"
+      ],
+      "why": "Sr. Contractor contracts give 200-250 reputation. Veteran opens the large Vanduul fleet fights.",
+      "reputation": {
+        "faction": "InterSec Defense Solutions",
+        "ladder": "FactionReputation",
+        "rank": "Veteran Contractor",
+        "points": 15000
+      },
+      "requires": [
+        "ids-sr"
+      ],
+      "steps": [
+        {
+          "do": "Take Sr. Contractor InterSec contracts. Count each one here.",
+          "where": "Nyx",
+          "done_when": "\"Intercept Vanduul Fleet\" is offered."
+        }
+      ],
+      "sources": [
+        "https://api.star-citizen.wiki/missions/intercept-vanduul-fleet"
+      ],
+      "contracts": [
+        "Intercept Vanduul Fleet"
+      ]
+    }
+  ]
+}

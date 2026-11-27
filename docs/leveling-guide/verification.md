@@ -85,3 +85,34 @@ All confirmed from each faction's `reputation_ladder` in the game data
 reputation per contract at that rank, rounded up, using the numbers above.
 Actual counts vary with which contracts appear and with failures (failed or
 abandoned contracts can cost reputation).
+
+## 5.0 and the contract catalogs (added 2026-11-27)
+
+### Sources
+
+| Source | What | Notes |
+|--------|------|-------|
+| [SCMDB](https://scmdb.net) `merged-4.10.3-live.13220821.json` | Contracts, ladders and rewards read from the 4.10.3 game files | Cross-checked against the wiki API: Covalex rank hauls give the same Hauling reputation in both (Rookie 50, Junior 500, Member 1,000, Experienced 2,000, Senior 4,000, Master 8,000) |
+| SCMDB `merged-5.0.0-ptu.13284307.json` | The same for the current 5.0 PTU build | The wiki API has no PTU data (`/api/game-versions` lists live builds only) |
+| [RSI Alpha 5.0 Patch Watch](https://robertsspaceindustries.com/spectrum/community/SC/forum/3/thread/alpha-5-0-patch-watch-new-horizons-new-opportuniti) | Official description of Guild Halls, boards and guild reputation | Read in the browser |
+| RSI KB [Commodities](https://support.robertsspaceindustries.com/hc/en-us/articles/360034785754-Commodities), [Mining Basics](https://support.robertsspaceindustries.com/hc/en-us/articles/360007611573-Mining-Basics) | Trading, mining and refining steps | Read in the browser |
+
+### 5.0 findings
+
+| # | Claim | Verdict | Evidence |
+|---|-------|---------|----------|
+| 44 | 5.0 PTU build 5.0.0-PTU.13284307 (Grok, ChatGPT, Muse, Gemini) | **Confirmed** | SCMDB's PTU file is that build |
+| 45 | Guild rank ladder in 5.0 (unknown to all AIs; Claude web cited a datamine, "8,206 to 18,461") | **Confirmed** | Guild scope: Applicant 0, Jr. Contractor 513, Contractor 2,051, Sr. Contractor 4,615, Veteran Contractor 8,205, Head Contractor 12,820, Elite Contractor 18,461 |
+| 46 | Guild Halls with Career Contract Boards (per-faction tabs) and Notice Boards (credits only, no reputation); career contracts raise faction and guild reputation; some need both (Grok, ChatGPT, Muse, Gemini) | **Confirmed** | RSI Patch Watch |
+| 47 | Guilds | **Confirmed (new)** | Guild reputation goes to Interstellar Transport Guild (16 contracts, 100-200 each), Mercenary Guild (13, 100-300), United Resource Workers (25, 100-250), Academy of Science (board only). Board labels: ITG Contracts, Merc. Contracts, URW Contracts, AOS Contracts |
+| 48 | 5.0 contracts gated on guild rank | Not found | No 5.0 PTU contract has a Guild-scope rank gate yet |
+| 49 | 5.0 keeps 4.10.3's ladders and hauling rewards | **Confirmed** | All seven ladders and the Covalex rank hauls are unchanged between the live and PTU files |
+| 50 | High Risk bounties give 4,000 rep (4.10.3 vs 5.0 dispute) | **Confirmed for both** | 4,000 in the 4.10.3 and 5.0 data |
+| 51 | Inherited 4.10.3 objectives valid in 5.0 | **48 of 67 re-confirmed** | Every contract they name is in the 5.0 data and every rank threshold matches. The other 19 (how-to steps, purchases, and 7 contracts SCMDB doesn't carry) show "CHECKED ON 4.10.3" in the 5.0 pack |
+
+### How the catalog is built and used
+
+- Rank gates come from `minStanding`. Older rank-titled hauls ("Junior Rank - ...") have no gate in the data; the builder takes it from the title and marks it `from_title`.
+- Contracts that spawn ship encounters count as ship combat; Mercenary contracts without them count as FPS.
+- Known gap: some gates are missing from SCMDB (Foxwell's Red Level contracts are gated at Sr. Contractor in the wiki data, not in SCMDB), so the card shows no "needs" for them.
+

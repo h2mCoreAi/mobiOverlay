@@ -1,0 +1,279 @@
+{
+  "schema": 1,
+  "chapter": {
+    "id": "guilds",
+    "title": "Guilds and Guild Halls",
+    "order": 15,
+    "patch": "5.0.0",
+    "categories": [
+      "guilds"
+    ],
+    "summary": "5.0 adds Guild Halls with career contract boards, and guild rank as a second ladder on top of faction reputation."
+  },
+  "objectives": [
+    {
+      "id": "guild-visit-hall",
+      "title": "Visit a Guild Hall and read its boards",
+      "kind": "task",
+      "tags": [
+        "nyx",
+        "lawful"
+      ],
+      "why": "In 5.0, Guild Halls are where career contracts come from. Each hall's boards depend on the locations around it.",
+      "requires": [
+        "fs-launch-own-ship"
+      ],
+      "steps": [
+        {
+          "do": "Fly to a Guild Hall (they are on Nyx I in the 5.0 PTU).",
+          "where": "Nyx I",
+          "done_when": "You are inside the Guild Hall."
+        },
+        {
+          "do": "Open a Career Contract Board. The terminals are labelled by guild: ITG Contracts, Merc. Contracts, URW Contracts or AOS Contracts.",
+          "where": "Guild Hall",
+          "done_when": "You see tabs for the factions offering contracts nearby."
+        },
+        {
+          "do": "Look at a Notice Board too. Its local jobs pay credits but give no faction or guild reputation.",
+          "where": "Guild Hall",
+          "done_when": "You know which board pays reputation and which only pays credits."
+        }
+      ],
+      "tips": "Guild Halls were not armistice zones in early 5.0 PTU builds; CIG said it is working on it. Watch your ship.",
+      "sources": [
+        "https://robertsspaceindustries.com/spectrum/community/SC/forum/3/thread/alpha-5-0-patch-watch-new-horizons-new-opportuniti",
+        "https://scmdb.net/?channel=ptu"
+      ]
+    },
+    {
+      "id": "guild-itg-jr",
+      "title": "Interstellar Transport Guild: reach Jr. Contractor (513)",
+      "kind": "grind",
+      "goal": {
+        "target": 3,
+        "unit": "guild contracts"
+      },
+      "tags": [
+        "lawful",
+        "hauling"
+      ],
+      "categories": [
+        "guilds",
+        "hauling",
+        "delivery"
+      ],
+      "why": "Higher-ranked hauling and courier contracts need guild rank as well as company rank. Covalex hauls and FTL courier runs give 100-200 ITG rank each.",
+      "reputation": {
+        "faction": "Interstellar Transport Guild",
+        "ladder": "Guild",
+        "rank": "Jr. Contractor",
+        "points": 513
+      },
+      "requires": [
+        "guild-visit-hall"
+      ],
+      "steps": [
+        {
+          "do": "Take ITG contracts from a Career Contract Board (for example Covalex's \"Large Multi-Delivery Supply Run\"). Log each one below.",
+          "done_when": "Your Interstellar Transport Guild rank shows Jr. Contractor."
+        }
+      ],
+      "contracts": [
+        "Large Multi-Delivery Supply Run",
+        "Large Mining Supplies Delivery Off-World"
+      ],
+      "sources": [
+        "https://scmdb.net/?channel=ptu"
+      ]
+    },
+    {
+      "id": "guild-itg-contractor",
+      "title": "Interstellar Transport Guild: reach Contractor (2,051)",
+      "kind": "grind",
+      "goal": {
+        "target": 11,
+        "unit": "guild contracts"
+      },
+      "tags": [
+        "lawful",
+        "hauling"
+      ],
+      "categories": [
+        "guilds",
+        "hauling",
+        "delivery"
+      ],
+      "why": "About 150 ITG rank per contract at this stage.",
+      "reputation": {
+        "faction": "Interstellar Transport Guild",
+        "ladder": "Guild",
+        "rank": "Contractor",
+        "points": 2051
+      },
+      "requires": [
+        "guild-itg-jr"
+      ],
+      "steps": [
+        {
+          "do": "Keep taking ITG contracts. Log each one below.",
+          "done_when": "Your Interstellar Transport Guild rank shows Contractor."
+        }
+      ],
+      "sources": [
+        "https://scmdb.net/?channel=ptu"
+      ]
+    },
+    {
+      "id": "guild-merc-jr",
+      "title": "Mercenary Guild: reach Jr. Contractor (513)",
+      "kind": "grind",
+      "goal": {
+        "target": 3,
+        "unit": "guild contracts"
+      },
+      "tags": [
+        "lawful",
+        "combat"
+      ],
+      "categories": [
+        "guilds",
+        "bounty-hunting",
+        "ship-combat",
+        "fps-combat"
+      ],
+      "why": "Combat career contracts can need Mercenary Guild rank even with strong faction reputation. Bounty Hunters Guild work gives 100-300 Mercenary Guild rank.",
+      "reputation": {
+        "faction": "Mercenary Guild",
+        "ladder": "Guild",
+        "rank": "Jr. Contractor",
+        "points": 513
+      },
+      "requires": [
+        "guild-visit-hall"
+      ],
+      "steps": [
+        {
+          "do": "Take Mercenary Guild contracts from a Merc. Contracts board. Log each one below.",
+          "done_when": "Your Mercenary Guild rank shows Jr. Contractor."
+        }
+      ],
+      "sources": [
+        "https://robertsspaceindustries.com/spectrum/community/SC/forum/3/thread/alpha-5-0-patch-watch-new-horizons-new-opportuniti",
+        "https://scmdb.net/?channel=ptu"
+      ]
+    },
+    {
+      "id": "guild-merc-contractor",
+      "title": "Mercenary Guild: reach Contractor (2,051)",
+      "kind": "grind",
+      "goal": {
+        "target": 8,
+        "unit": "guild contracts"
+      },
+      "tags": [
+        "lawful",
+        "combat"
+      ],
+      "categories": [
+        "guilds",
+        "bounty-hunting",
+        "ship-combat",
+        "fps-combat"
+      ],
+      "why": "About 200 Mercenary Guild rank per contract at this stage.",
+      "reputation": {
+        "faction": "Mercenary Guild",
+        "ladder": "Guild",
+        "rank": "Contractor",
+        "points": 2051
+      },
+      "requires": [
+        "guild-merc-jr"
+      ],
+      "steps": [
+        {
+          "do": "Keep taking Mercenary Guild contracts. Log each one below.",
+          "done_when": "Your Mercenary Guild rank shows Contractor."
+        }
+      ],
+      "sources": [
+        "https://scmdb.net/?channel=ptu"
+      ]
+    },
+    {
+      "id": "guild-urw-jr",
+      "title": "United Resource Workers: reach Jr. Contractor (513)",
+      "kind": "grind",
+      "goal": {
+        "target": 3,
+        "unit": "guild contracts"
+      },
+      "tags": [
+        "lawful",
+        "mining"
+      ],
+      "categories": [
+        "guilds",
+        "mining",
+        "salvage"
+      ],
+      "why": "The resource guild. Shubin's mining purchase orders give 100-250 URW rank each.",
+      "reputation": {
+        "faction": "United Resource Workers",
+        "ladder": "Guild",
+        "rank": "Jr. Contractor",
+        "points": 513
+      },
+      "requires": [
+        "guild-visit-hall"
+      ],
+      "steps": [
+        {
+          "do": "Take contracts from a URW Contracts board (for example Shubin purchase orders). Log each one below.",
+          "done_when": "Your United Resource Workers rank shows Jr. Contractor."
+        }
+      ],
+      "sources": [
+        "https://scmdb.net/?channel=ptu"
+      ]
+    },
+    {
+      "id": "guild-urw-contractor",
+      "title": "United Resource Workers: reach Contractor (2,051)",
+      "kind": "grind",
+      "goal": {
+        "target": 8,
+        "unit": "guild contracts"
+      },
+      "tags": [
+        "lawful",
+        "mining"
+      ],
+      "categories": [
+        "guilds",
+        "mining",
+        "salvage"
+      ],
+      "why": "About 200 URW rank per contract at this stage.",
+      "reputation": {
+        "faction": "United Resource Workers",
+        "ladder": "Guild",
+        "rank": "Contractor",
+        "points": 2051
+      },
+      "requires": [
+        "guild-urw-jr"
+      ],
+      "steps": [
+        {
+          "do": "Keep taking URW contracts. Log each one below.",
+          "done_when": "Your United Resource Workers rank shows Contractor."
+        }
+      ],
+      "sources": [
+        "https://scmdb.net/?channel=ptu"
+      ]
+    }
+  ]
+}
