@@ -414,10 +414,12 @@ def _load_module():
     return mod
 
 
-def _make_card(api=None, pack=None):
+def _make_card(api=None, pack=None, view="guide"):
     mod = _load_module()
     d = _tmpdir()
     config = Config(path=d / "config.json")
+    if view:
+        config.module_settings("leveling_guide")["view"] = view
     if pack:
         config.module_settings("leveling_guide")["pack"] = pack
     module = mod.LevelingGuideModule(api or _FakeApi(), config, MagicMock(),
@@ -471,6 +473,41 @@ def test_card_walkthrough() -> int:
     assert module.steps_layout.count() == 1 and not module.list_container.isVisibleTo(card)
     module._set_option("compact", False)
     return 12
+
+
+def test_now_view() -> int:
+    """The default view: one objective, one step, one button."""
+    mod, module, card, d = _make_card(view=None)
+    assert module.settings["view"] == "now"
+    assert module.now_view.isVisibleTo(card) and not module.guide_view.isVisibleTo(card)
+    assert not module.cat_widget.isVisibleTo(card) and not module.filter_row.isVisibleTo(card)
+    first = module.current_objective()
+    assert module.now_title.text() == first.title
+    assert "STEP 1 OF" in module.now_step.text() and first.steps[0].do in module.now_body.text()
+    assert "NEXT STEP" in module.now_done_btn.text() or "FINISH" in module.now_done_btn.text()
+    # the big button walks through the steps, then on to the next objective
+    for _ in range(len(first.steps)):
+        module.now_done_btn.click()
+    assert module.progress.is_done(first.id) and module.now_title.text() != first.title
+    # back / skip work from here
+    module.now_skip_btn.click()
+    assert module.now_title.text()
+    # rank-up objectives show the goal and the best contract to repeat
+    module._view("haul-covalex-member")
+    assert "GOAL" in module.now_info.text() and "BEST CONTRACT" in module.now_info.text(), module.now_info.text()
+    # the other tabs still work and the choice is remembered
+    module.guide_tab.click()
+    assert module.guide_view.isVisibleTo(card) and not module.now_view.isVisibleTo(card)
+    assert module.settings["view"] == "guide"
+    module.now_tab.click()
+    assert module.now_view.isVisibleTo(card) and module.settings["view"] == "now"
+    # nothing left
+    module._set_option("show_unlawful", False)
+    for o in module.guide.objectives:
+        module.progress.set_done(o.id, True)
+    module._advance()
+    assert not module.now_done_btn.isEnabled() and "CAUGHT UP" in module.now_where.text()
+    return 14
 
 
 def test_card_versions_goals_and_prices() -> int:
@@ -611,7 +648,7 @@ def run() -> int:
                  test_pack_inheritance_overrides_and_categories, test_user_files_extend_chapters_and_custom_objectives,
                  test_categories_and_contract_recommendations, test_progress_reputation_log_and_goals,
                  test_progress_store_basics, test_maths, test_import_export, test_setup_logic,
-                 test_card_walkthrough, test_card_versions_goals_and_prices, test_card_setup_flow_and_import,
+                 test_card_walkthrough, test_now_view, test_card_versions_goals_and_prices, test_card_setup_flow_and_import,
                  test_cross_source_catalogs, test_contract_filters):
         total += test()
     return total

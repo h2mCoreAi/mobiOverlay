@@ -525,7 +525,7 @@ class LevelingGuideModule(ModuleBase):
         super().__init__(api_client, config, locations)
         for key, value in (("show_optional", True), ("show_unlawful", False), ("compact", False),
                            ("focus", []), ("setup_done", False), ("refresh_interval_seconds", 600),
-                           ("view", "guide"), ("category", ""), ("pack", None), ("goal", None),
+                           ("view", "now"), ("category", ""), ("pack", None), ("goal", None),
                            ("f_type", ""), ("f_system", ""), ("f_unlocked", False)):
             self.settings.setdefault(key, value)
         self.progress = progress or progress_mod.ProgressStore()
@@ -655,14 +655,19 @@ class LevelingGuideModule(ModuleBase):
         # -- view switch, version and category ------------------------------
         nav = QHBoxLayout()
         nav.setSpacing(4)
-        self.guide_tab = _button("GUIDE", tooltip="Step-by-step objectives")
+        self.now_tab = _button("NOW", tooltip="Just the next thing to do")
+        self.guide_tab = _button("FULL GUIDE", tooltip="Every step, chapter and objective")
         self.contracts_tab = _button("CONTRACTS", tooltip="Goals and repeatable contracts")
+        self.now_tab.clicked.connect(lambda: self.set_view("now"))
         self.guide_tab.clicked.connect(lambda: self.set_view("guide"))
         self.contracts_tab.clicked.connect(lambda: self.set_view("contracts"))
+        nav.addWidget(self.now_tab, stretch=1)
         nav.addWidget(self.guide_tab, stretch=1)
         nav.addWidget(self.contracts_tab, stretch=1)
         layout.addLayout(nav)
-        cat_row = QHBoxLayout()
+        self.cat_widget = QWidget()
+        cat_row = QHBoxLayout(self.cat_widget)
+        cat_row.setContentsMargins(0, 0, 0, 0)
         cat_row.setSpacing(6)
         self.category_combo = QComboBox()
         self.category_combo.setStyleSheet(_COMBO_STYLE)
@@ -673,7 +678,7 @@ class LevelingGuideModule(ModuleBase):
         self.pack_label = _label("", _DIM_STYLE, wrap=False)
         self.pack_label.setToolTip("Game version this guide is for. Change it in ⚙.")
         cat_row.addWidget(self.pack_label)
-        layout.addLayout(cat_row)
+        layout.addWidget(self.cat_widget)
 
         # -- contract filter row: shown wherever a contract list is
         self.filter_row = QWidget()
@@ -697,6 +702,58 @@ class LevelingGuideModule(ModuleBase):
         self.unlocked_check.toggled.connect(lambda on: self._set_filter("f_unlocked", bool(on)))
         fr.addWidget(self.unlocked_check)
         layout.addWidget(self.filter_row)
+
+        # ================= NOW view =================
+        self.now_view = QWidget()
+        nl = QVBoxLayout(self.now_view)
+        nl.setContentsMargins(0, 0, 0, 0)
+        nl.setSpacing(6)
+        self.now_where = _label("", _CYAN_STYLE)
+        nl.addWidget(self.now_where)
+        self.now_bar = QProgressBar()
+        self.now_bar.setStyleSheet(_XP_BAR.replace(theme.ACCENT_AMBER, theme.ACCENT_CYAN))
+        self.now_bar.setTextVisible(False)
+        self.now_bar.setFixedHeight(6)
+        nl.addWidget(self.now_bar)
+        self.now_title = _label("", _TITLE_STYLE)
+        nl.addWidget(self.now_title)
+        self.now_step = _label("", _DIM_STYLE, wrap=False)
+        nl.addWidget(self.now_step)
+        self.now_body = QLabel()
+        self.now_body.setObjectName("lgRow")
+        self.now_body.setTextFormat(Qt.RichText)
+        self.now_body.setWordWrap(True)
+        self.now_body.setStyleSheet(_STEP_CURRENT_STYLE)
+        nl.addWidget(self.now_body)
+        self.now_info = _label("", _AMBER_STYLE)
+        self.now_info.setTextFormat(Qt.RichText)
+        nl.addWidget(self.now_info)
+        self.now_count_row = QWidget()
+        ncr = QHBoxLayout(self.now_count_row)
+        ncr.setContentsMargins(0, 0, 0, 0)
+        self.now_count = _label("", _BODY_STYLE, wrap=False)
+        ncr.addWidget(self.now_count, stretch=1)
+        self.now_plus = _button("+1", _PRIMARY_BTN, "Count one more")
+        self.now_plus.setFixedSize(44, 26)
+        self.now_plus.clicked.connect(lambda: self._on_count(1))
+        ncr.addWidget(self.now_plus)
+        nl.addWidget(self.now_count_row)
+        self.now_done_btn = _button("✓ DONE", _PRIMARY_BTN, "Finished this step: show me the next one")
+        self.now_done_btn.setMinimumHeight(34)
+        self.now_done_btn.clicked.connect(self._on_step_done)
+        nl.addWidget(self.now_done_btn)
+        now_actions = QHBoxLayout()
+        now_actions.setSpacing(4)
+        self.now_back_btn = _button("◀ BACK", tooltip="Go back one step")
+        self.now_back_btn.clicked.connect(self._on_back)
+        now_actions.addWidget(self.now_back_btn)
+        self.now_skip_btn = _button("SKIP", tooltip="Skip this objective for now (no XP). It stays unticked.")
+        self.now_skip_btn.clicked.connect(self._on_skip)
+        now_actions.addWidget(self.now_skip_btn)
+        nl.addLayout(now_actions)
+        self.now_next = _label("", _DIM_STYLE)
+        nl.addWidget(self.now_next)
+        layout.addWidget(self.now_view)
 
         # ================= GUIDE view =================
         self.guide_view = QWidget()
@@ -899,16 +956,22 @@ class LevelingGuideModule(ModuleBase):
         show_banner = not self.settings.get("setup_done") and not self.settings.get("setup_dismissed")
         self.setup_text.setVisible(show_banner)
         self.setup_buttons.setVisible(show_banner)
+        self.now_tab.setStyleSheet(_PRIMARY_BTN if view == "now" else _ACTION_BTN)
         self.guide_tab.setStyleSheet(_PRIMARY_BTN if view == "guide" else _ACTION_BTN)
         self.contracts_tab.setStyleSheet(_PRIMARY_BTN if view == "contracts" else _ACTION_BTN)
         pack = self.guide.pack
         self.pack_label.setText(pack.label if pack else "no pack")
         self._render_header()
         self._render_categories()
+        self.now_view.setVisible(view == "now")
         self.guide_view.setVisible(view == "guide")
         self.contracts_view.setVisible(view == "contracts")
-        if view == "guide":
-            self._render_guide()
+        self.cat_widget.setVisible(view != "now")
+        self._render_guide()          # always: keeps the hidden widgets current
+        if view == "now":
+            self._render_now()
+            self._render_filters(False)
+        elif view == "guide":
             self._render_filters(self.rep_box.isVisibleTo(self.card))
         else:
             self._render_contracts()
@@ -1093,6 +1156,93 @@ class LevelingGuideModule(ModuleBase):
         self.sources_btn.setEnabled(bool(obj.sources))
         self._render_list(chapter if not compact else None)
         self.list_container.setVisible(not compact)
+
+    def _render_now(self):
+        """The simple view: where you are, what to do now, one big button."""
+        show_opt, show_unl, focus = self._filters()
+        done = self.progress.done_ids()
+        obj = self.current_objective()
+        if obj is None:
+            self.now_where.setText("ALL CAUGHT UP")
+            self.now_bar.setVisible(False)
+            self.now_title.setText("Nothing left to do in this view.")
+            self.now_step.setVisible(False)
+            self.now_body.setText("Open <b>CONTRACTS</b> for repeatable work to earn money or reputation, "
+                                  "or <b>FULL GUIDE</b> to pick another chapter or category.")
+            for w in (self.now_info, self.now_count_row, self.now_next):
+                w.setVisible(False)
+            for b in (self.now_done_btn, self.now_back_btn, self.now_skip_btn):
+                b.setEnabled(False)
+            self.now_done_btn.setText("✓ DONE")
+            return
+        chapter = self.guide.chapter(obj.chapter_id)
+        is_done = obj.id in done
+        d, t = guide_mod.chapter_progress(chapter, done, show_opt, show_unl, focus) if chapter else (0, 0)
+        self.now_where.setText(f"{chapter.title.upper() if chapter else 'GUIDE'}  ·  {d} OF {t} DONE")
+        self.now_bar.setVisible(t > 0)
+        self.now_bar.setMaximum(max(1, t))
+        self.now_bar.setValue(min(d, t))
+        self.now_title.setText(obj.title)
+
+        step_index = min(self.progress.step(obj.id), len(obj.steps) - 1)
+        step = obj.steps[step_index]
+        self.now_step.setVisible(True)
+        self.now_step.setText("OBJECTIVE COMPLETE" if is_done else f"STEP {step_index + 1} OF {len(obj.steps)}")
+        parts = [f'<span style="color:{theme.TEXT_PRIMARY};">{escape(step.do)}</span>']
+        if step.where and not is_done:
+            parts.append(f'<span style="color:{theme.TEXT_MUTED};">WHERE: {escape(step.where)}</span>')
+        if not is_done:
+            parts.append(f'<span style="color:{theme.ACCENT_CYAN};">DONE WHEN: {escape(step.done_when)}</span>')
+        self.now_body.setText("<br>".join(parts))
+
+        info = []
+        if not self.guide.is_verified(obj):
+            info.append(f"⚠ Not re-checked for {self.guide.pack.label if self.guide.pack else 'this version'} "
+                        f"(last checked {escape(str(obj.verified_patch))})")
+        rep = obj.reputation
+        catalog = self.guide.catalog
+        if rep and isinstance(rep.get("points"), int) and catalog is not None:
+            key = guide_mod.rep_key(rep["faction"], rep.get("ladder", ""))
+            known = self.known_rep()
+            have = known.get(key)
+            if have is None:
+                info.append(f"GOAL: {escape(rep['faction'])} · {escape(rep['rank'])} "
+                            f"({rep['points']:,} rep). Set your current rep in FULL GUIDE.")
+            else:
+                info.append(f"GOAL: {escape(rep['rank'])}: {have:,} / {rep['points']:,} · "
+                            f"{max(0, rep['points'] - have):,} to go")
+            best = contracts_mod.for_reputation(catalog, rep["faction"], rep.get("ladder", ""), known,
+                                                bool(self.settings.get("show_unlawful")), None, 1,
+                                                self.contract_filter())
+            if best:
+                c = best[0]["contract"]
+                info.append(f"BEST CONTRACT TO REPEAT: {escape(c['title'])} (+{best[0]['gain']:,} rep)")
+        if obj.cost:
+            info.append(f"COST: {escape(obj.cost)}")
+        if obj.ship:
+            info.append(self._price_text(obj.ship.get("display") or obj.ship.get("uex_name"), obj.ship["uex_name"]))
+        self.now_info.setText("<br>".join(info))
+        self.now_info.setVisible(bool(info))
+
+        is_grind = obj.kind == "grind" and not (rep and isinstance(rep.get("points"), int) and catalog is not None)
+        self.now_count_row.setVisible(is_grind)
+        if is_grind:
+            count = self.progress.count(obj.id)
+            self.now_count.setText(f"{count} / {obj.goal_target} {obj.goal_unit or 'times'}")
+
+        last = step_index >= len(obj.steps) - 1
+        self.now_done_btn.setEnabled(True)
+        self.now_done_btn.setText("↺ NOT DONE YET" if is_done else
+                                  "✓ DONE: FINISH OBJECTIVE" if last else "✓ DONE: NEXT STEP")
+        self.now_back_btn.setEnabled(step_index > 0 and not is_done)
+        self.now_skip_btn.setEnabled(not is_done)
+
+        passed = self.progress.passed_ids()
+        later = [o for o in self.guide.objectives if o.id not in passed and o.id != obj.id and self._visible(o)]
+        idx = next((i for i, o in enumerate(self.guide.objectives) if o.id == obj.id), -1)
+        nxt = next((o for o in later if self.guide.objectives.index(o) > idx), later[0] if later else None)
+        self.now_next.setText(f"NEXT UP: {nxt.title}" if nxt and last else "")
+        self.now_next.setVisible(bool(nxt) and last)
 
     def _render_rep_tracker(self, obj, compact: bool) -> bool:
         """Reputation progress plus the best repeatable contracts for a
